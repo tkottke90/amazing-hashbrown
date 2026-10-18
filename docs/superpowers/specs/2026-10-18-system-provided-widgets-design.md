@@ -13,6 +13,7 @@ Domain model: `GLOSSARY.md` (System Widget, Metric, Metric Registry), `docs/adr/
 A System Widget is not a variant of the existing write-based Widget — it is read-only by construction. See `GLOSSARY.md` for the canonical definitions of **System Widget**, **Metric**, and **Metric Registry**, and ADR-0011 for why this diverges from #315's write path rather than reusing it.
 
 In short:
+
 - A System Widget's file still lives in the dashboard folder and still has Widget Metadata (`title`, `subtitle`, `order`, `w`, `h`) — it participates in the grid exactly like any other widget.
 - Its frontmatter carries a `metric` id instead of a Widget Payload. No value, body, or CSV Body is ever written to or read from that file.
 - The dashboard read handler resolves `metric` against the Metric Registry on every GET and returns the live result alongside the file's metadata. Nothing is cached or persisted between requests for v1 (see §6, non-goals).
@@ -23,6 +24,7 @@ In short:
 ### Metric Registry shape
 
 Each registered Metric declares:
+
 - an `id` (stable string, stored in a widget's frontmatter)
 - the widget `type`(s) it's valid for
 - a resolver function, called in-process against the app's own stores (`WorkspaceStore`, `ObservabilityStore`, the `v_usage` view, etc.) — never an HTTP round-trip, mirroring how #315's agent tool calls handler functions directly rather than hitting the REST API over the loopback interface
@@ -34,30 +36,31 @@ The catalog of Metric ids is fixed in code, the same way the widget-type union i
 
 Corrected from the original list: several "distribution" metrics fit the existing **Pie Graph** type (per #176's own worked example — "Agent Usage: Tool distribution") better than a Markdown list, so the type column below isn't limited to Big Number/Markdown as first discussed; it draws from all four existing widget types per Q12's "no new widget type" answer.
 
-| # | Metric | Widget type | Status | Data source |
-|---|---|---|---|---|
-| 1 | Current Version Info | Markdown | **Wave 1** | `package.json` name/version; `COMMIT_SHA`/`APP_VERSION` env (set by `Dockerfile`/`bin/docker-build.sh`, currently unread by app code — needs wiring); static GH repo link; release date + "newer version available" via opt-in GitHub Releases API call, falling back to a static "View Releases" link when disabled or on failure (Q11) |
-| 7 | Total inference spending (USD) | Big Number | **Wave 1** | `v_usage` view (`lib/observability/src/cost-store.ts`), `SUM(estimated_cost)` |
-| 11 | Workspace Count | Big Number | **Wave 1** | `WorkspaceStore.listWorkspaces().length` |
-| 12 | Workspace List | Markdown | **Wave 1** | `WorkspaceStore.listWorkspaces()`, tagged Workspace/Project by presence of a `projects` row (Q10), linking to `/workspaces/:id` |
-| 13 | Project Count | Big Number | **Wave 1** | `WorkspaceStore.listProjects().length` |
-| 2 | Current Version Details (= #1 + changelog) | Markdown | Follow-up | same opt-in GitHub Releases call as #1, release notes body as changelog text |
-| 3 | Usage by provider (tokens) | Pie Graph | Follow-up | `observability_traces`/`observability_spans`, grouped by provider — **not** "checkpoints" (Q3): a checkpoint is LangGraph thread state and carries no provider |
-| 4 | Usage by model (tokens) | Pie Graph | Follow-up | same tables, grouped by model+provider |
-| 5 | Usage by tool (count) | Pie Graph | Follow-up | `observability_spans` where `type = 'tool-call'`, grouped by tool name |
-| 10 | Failure rate by tool (count) | Markdown (table) | Follow-up | same spans, `WHERE error IS NOT NULL` vs. total, grouped by tool name |
-| 8 | Spend by provider (USD) | Pie Graph | Follow-up | `v_usage`, grouped by provider |
-| 9 | Spend by model (USD) | Pie Graph | Follow-up | `v_usage`, grouped by model+provider |
-| 14 | Queued Task Count | Big Number | Follow-up | `task_queue` rows where `status = 'pending'` |
-| 15 | In Progress Tasks | Markdown | Follow-up | `task_queue` rows where `status = 'running'`, joined to `tasks`/`workspaces`; links go to `/workspaces/:id` only — there is no standalone task-detail URL today |
-| 6 | Skill usage (count) | — | **Deferred** | nothing records a skill invocation today (`skill-expansion.middleware.ts` only expands `/command` text) — needs its own instrumentation issue before it can become a Metric |
-| 16 | In-progress tasks by provider | — | **Deferred** | `Task.provider` is a creation-time pin, not a live "currently executing" field (Q13) — grouped alongside #6 as needing real instrumentation rather than a stand-in |
+| #   | Metric                                     | Widget type      | Status       | Data source                                                                                                                                                                                                                                                                                                                              |
+| --- | ------------------------------------------ | ---------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Current Version Info                       | Markdown         | **Wave 1**   | `package.json` name/version; `COMMIT_SHA`/`APP_VERSION` env (set by `Dockerfile`/`bin/docker-build.sh`, currently unread by app code — needs wiring); static GH repo link; release date + "newer version available" via opt-in GitHub Releases API call, falling back to a static "View Releases" link when disabled or on failure (Q11) |
+| 7   | Total inference spending (USD)             | Big Number       | **Wave 1**   | `v_usage` view (`lib/observability/src/cost-store.ts`), `SUM(estimated_cost)`                                                                                                                                                                                                                                                            |
+| 11  | Workspace Count                            | Big Number       | **Wave 1**   | `WorkspaceStore.listWorkspaces().length`                                                                                                                                                                                                                                                                                                 |
+| 12  | Workspace List                             | Markdown         | **Wave 1**   | `WorkspaceStore.listWorkspaces()`, tagged Workspace/Project by presence of a `projects` row (Q10), linking to `/workspaces/:id`                                                                                                                                                                                                          |
+| 13  | Project Count                              | Big Number       | **Wave 1**   | `WorkspaceStore.listProjects().length`                                                                                                                                                                                                                                                                                                   |
+| 2   | Current Version Details (= #1 + changelog) | Markdown         | Follow-up    | same opt-in GitHub Releases call as #1, release notes body as changelog text                                                                                                                                                                                                                                                             |
+| 3   | Usage by provider (tokens)                 | Pie Graph        | Follow-up    | `observability_traces`/`observability_spans`, grouped by provider — **not** "checkpoints" (Q3): a checkpoint is LangGraph thread state and carries no provider                                                                                                                                                                           |
+| 4   | Usage by model (tokens)                    | Pie Graph        | Follow-up    | same tables, grouped by model+provider                                                                                                                                                                                                                                                                                                   |
+| 5   | Usage by tool (count)                      | Pie Graph        | Follow-up    | `observability_spans` where `type = 'tool-call'`, grouped by tool name                                                                                                                                                                                                                                                                   |
+| 10  | Failure rate by tool (count)               | Markdown (table) | Follow-up    | same spans, `WHERE error IS NOT NULL` vs. total, grouped by tool name                                                                                                                                                                                                                                                                    |
+| 8   | Spend by provider (USD)                    | Pie Graph        | Follow-up    | `v_usage`, grouped by provider                                                                                                                                                                                                                                                                                                           |
+| 9   | Spend by model (USD)                       | Pie Graph        | Follow-up    | `v_usage`, grouped by model+provider                                                                                                                                                                                                                                                                                                     |
+| 14  | Queued Task Count                          | Big Number       | Follow-up    | `task_queue` rows where `status = 'pending'`                                                                                                                                                                                                                                                                                             |
+| 15  | In Progress Tasks                          | Markdown         | Follow-up    | `task_queue` rows where `status = 'running'`, joined to `tasks`/`workspaces`; links go to `/workspaces/:id` only — there is no standalone task-detail URL today                                                                                                                                                                          |
+| 6   | Skill usage (count)                        | —                | **Deferred** | nothing records a skill invocation today (`skill-expansion.middleware.ts` only expands `/command` text) — needs its own instrumentation issue before it can become a Metric                                                                                                                                                              |
+| 16  | In-progress tasks by provider              | —                | **Deferred** | `Task.provider` is a creation-time pin, not a live "currently executing" field (Q13) — grouped alongside #6 as needing real instrumentation rather than a stand-in                                                                                                                                                                       |
 
 ## 4. Scope for this implementation
 
 **Wave 1** (this issue): the Metric Registry mechanism plus #1, #7, #11, #12, #13 — one Big Number, one USD Big Number, one Markdown list with links and a type tag, and one Markdown widget exercising the opt-in-external-call-with-fallback pattern. No Pie/Line Graph Metric ships in wave 1; the follow-up issues below are where that path gets exercised for the first time and should budget for it.
 
 **Follow-up issues** (filed separately, not part of this implementation):
+
 - `{#3, #4}` — usage by provider/model (tokens), same tables, first Pie Graph Metrics
 - `{#5, #10}` — tool usage + failure rate, same tables
 - `{#8, #9}` — spend by provider/model (USD)

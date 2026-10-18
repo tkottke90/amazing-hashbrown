@@ -165,6 +165,13 @@ export const AfterAgentSchema = z.object({
   enabled: z.boolean().default(true),
 });
 
+// Opt-in, off by default (design spec §Q11): this app makes no outbound
+// network call of its own accord. The Version Info system widget's "newer
+// version available" check is the one thing that reads this.
+export const UpdatesSchema = z.object({
+  checkForUpdates: z.boolean().default(false),
+});
+
 export const ContextWindowSchema = z.object({
   enabled: z.boolean().default(true),
   maxTokens: z.number().default(32000),
@@ -372,6 +379,7 @@ const AppConfigSchema = z.object({
   database: DatabaseSchema.optional(),
   observability: ObservabilitySchema.optional(),
   afterAgent: AfterAgentSchema.optional(),
+  updates: UpdatesSchema.optional(),
   chat: ChatSchema.optional(),
   embeddings: EmbeddingsSchema.optional(),
   agent: AgentSchema.optional(),
@@ -495,6 +503,16 @@ export const env = {
       >;
     } catch {
       return AfterAgentSchema.parse({});
+    }
+  },
+  get updates(): z.infer<typeof UpdatesSchema> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (configManager as any).getSection('updates', UpdatesSchema) as z.infer<
+        typeof UpdatesSchema
+      >;
+    } catch {
+      return UpdatesSchema.parse({});
     }
   },
   get chat(): z.infer<typeof ChatSchema> {

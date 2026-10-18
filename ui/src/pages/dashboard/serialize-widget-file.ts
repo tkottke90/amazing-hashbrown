@@ -23,6 +23,13 @@ export type WidgetFrontmatterInput =
       order: number;
       data: string;
       colors?: string[];
+    }
+  | {
+      type: 'system';
+      title: string;
+      subtitle?: string;
+      order: number;
+      metric: string;
     };
 
 function assertNeverWidgetType(type: never): never {
@@ -76,6 +83,13 @@ export function serializeWidgetFile(input: WidgetFrontmatterInput): string {
     case 'pie-graph':
       if (input.colors !== undefined) lines.push(`colors: ${JSON.stringify(input.colors)}`);
       body = input.data;
+      break;
+    case 'system':
+      // No Widget Payload (ADR-0011) — functionally unreachable, since the
+      // drawer hides the Form/Raw tab toggle entirely for this type, but
+      // required here to satisfy assertNeverWidgetType.
+      lines.push(`metric: ${JSON.stringify(input.metric)}`);
+      body = '';
       break;
     default:
       return assertNeverWidgetType(input);

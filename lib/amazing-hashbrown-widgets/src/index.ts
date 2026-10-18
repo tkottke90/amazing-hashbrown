@@ -13,6 +13,7 @@ export {
   deleteWidget,
   reorderWidget,
   ensureSeeded,
+  peekWidgetFrontmatter,
   WidgetNotFoundError,
 } from './store.js';
 

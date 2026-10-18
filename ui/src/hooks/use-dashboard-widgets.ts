@@ -16,6 +16,28 @@ function setDashboardWidgets(dashboardId: string, list: WidgetLoadResult[]): voi
 }
 
 /**
+ * A system widget's `resolved` value only ever comes from a GET's own
+ * Metric Registry resolution (ADR-0011) — never from a write response, so a
+ * PATCH (e.g. the resize handle's optimistic single-widget update) always
+ * comes back with `resolved` undefined. Preserving the previous value here
+ * avoids a brief flash to "—" on every resize, without re-resolving
+ * server-side on every mutation.
+ */
+function mergeResolved(
+  incoming: DashboardWidget,
+  previous: DashboardWidget | undefined,
+): DashboardWidget {
+  if (
+    incoming.type === 'system' &&
+    incoming.resolved === undefined &&
+    previous?.type === 'system'
+  ) {
+    return { ...incoming, resolved: previous.resolved };
+  }
+  return incoming;
+}
+
+/**
  * Patches one widget in place within a dashboard's already-loaded list — a
  * no-op if that dashboard hasn't been loaded yet in this tab (nothing to
  * patch). Called from use-live-events.ts on a `widget_updated` broadcast.
@@ -26,7 +48,9 @@ export function patchDashboardWidget(dashboardId: string, widget: DashboardWidge
   setDashboardWidgets(
     dashboardId,
     current.map((r) =>
-      r.status === 'ok' && r.widget.id === widget.id ? { status: 'ok', widget } : r,
+      r.status === 'ok' && r.widget.id === widget.id
+        ? { status: 'ok', widget: mergeResolved(widget, r.widget) }
+        : r,
     ),
   );
 }
@@ -46,7 +70,7 @@ export function patchDashboardWidgets(dashboardId: string, widgets: DashboardWid
     dashboardId,
     current.map((r) =>
       r.status === 'ok' && byId.has(r.widget.id)
-        ? { status: 'ok', widget: byId.get(r.widget.id)! }
+        ? { status: 'ok', widget: mergeResolved(byId.get(r.widget.id)!, r.widget) }
         : r,
     ),
   );

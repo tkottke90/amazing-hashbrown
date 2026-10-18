@@ -6,6 +6,7 @@ import {
   DatabaseSchema,
   ObservabilitySchema,
   AfterAgentSchema,
+  UpdatesSchema,
   ChatSchema,
   EmbeddingsSchema,
   RLMConfigSchema,
@@ -71,6 +72,7 @@ export interface EnvAccessor {
   database: { path: string };
   observability: z.infer<typeof ObservabilitySchema>;
   afterAgent: z.infer<typeof AfterAgentSchema>;
+  updates: z.infer<typeof UpdatesSchema>;
   chat: z.infer<typeof ChatSchema>;
   embeddings: z.infer<typeof EmbeddingsSchema>;
   webFetch: z.infer<typeof WebFetchConfigSchema>;
@@ -158,7 +160,7 @@ export function readRawWorkspacesConfig(configDir: string): z.infer<typeof Works
 // rather than redeclaring the shape by hand, so a schema change here surfaces as a
 // compile error at the call site instead of a silently-stale test.
 
-export type GeneralSettings = { port: number; logLevel: string };
+export type GeneralSettings = { port: number; logLevel: string; checkForUpdates: boolean };
 
 export type StorageSettings = {
   wikiRoot: string;
@@ -262,11 +264,17 @@ const SLUG_MAP: Record<string, SlugDef> = {
     get: (env, config) => ({
       port: config.getNumber('port', 3000),
       logLevel: config.get('logLevel', 'info'),
+      checkForUpdates: env.updates.checkForUpdates,
     }),
-    patchSchema: z.object({ logLevel: z.string() }).partial(),
-    write: (v, configDir) => {
-      const data = v as { logLevel?: string };
+    patchSchema: z.object({ logLevel: z.string(), checkForUpdates: z.boolean() }).partial(),
+    write: (v, configDir, env) => {
+      const data = v as { logLevel?: string; checkForUpdates?: boolean };
       if (data.logLevel !== undefined) mergeConfigYaml(configDir, { logLevel: data.logLevel });
+      if (data.checkForUpdates !== undefined) {
+        mergeConfigYaml(configDir, {
+          updates: { ...env.updates, checkForUpdates: data.checkForUpdates },
+        });
+      }
     },
   },
 
