@@ -1,0 +1,3 @@
+# System-sourced widgets have no `maintainer` field
+
+Widget Maintainer names the automation or person responsible for an agent-sourced widget's ongoing updates — useful because an agent-written widget is produced by some other actor the user might need to trace. A system-sourced widget has no such actor: it's computed by the application's own Metric Registry, not a separate script or service, and the point of the "System" badge (per #320) is that the user perceives it as coming from the application itself. Giving it a maintainer label would imply a traceable external producer that doesn't exist, so `maintainer` is omitted entirely for `source: 'system'` widgets rather than populated with something like `"system"` or a producer module name.
