@@ -163,6 +163,7 @@ export function parseWidgetFile(raw: string): WidgetFileParseResult {
       return { ok: true, widget: { ...result.data, data: body } };
     }
     case 'system':
+    case 'spacer':
       return { ok: true, widget: { ...result.data } };
     default:
       return assertNeverWidgetType(result.data);

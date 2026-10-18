@@ -112,6 +112,38 @@ describe('WidgetRenderer', () => {
     expect(screen.getByTestId('pie-graph-widget')).toBeInTheDocument();
   });
 
+  it('dispatches an ok spacer result to SpacerWidget, invisible outside Edit Mode [unit]', () => {
+    const result: WidgetLoadResult = {
+      status: 'ok',
+      widget: {
+        id: 'w5',
+        type: 'spacer',
+        title: 'Spacer',
+        order: 0,
+        source: 'manual',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    };
+    const { container } = render(<WidgetRenderer result={result} onChanged={noop} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('dispatches an ok spacer result to SpacerWidget, visible in Edit Mode [unit]', () => {
+    const result: WidgetLoadResult = {
+      status: 'ok',
+      widget: {
+        id: 'w5',
+        type: 'spacer',
+        title: 'Spacer',
+        order: 0,
+        source: 'manual',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    };
+    render(<WidgetRenderer result={result} onChanged={noop} editMode />);
+    expect(screen.getByText('Spacer')).toBeInTheDocument();
+  });
+
   it('dispatches an error result to the error card, which opens straight onto Raw [unit]', () => {
     const result: WidgetLoadResult = {
       status: 'error',

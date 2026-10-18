@@ -30,7 +30,7 @@ const WidgetMaintainerSchema = z.string().optional();
  * source of real sizing numbers in this repo (design spec, Problem section).
  */
 export const WIDGET_SIZE_MIN: Record<
-  'markdown' | 'big-number' | 'line-graph' | 'pie-graph' | 'system',
+  'markdown' | 'big-number' | 'line-graph' | 'pie-graph' | 'system' | 'spacer',
   { w: number; h: number }
 > = {
   'big-number': { w: 2, h: 2 },
@@ -41,6 +41,9 @@ export const WIDGET_SIZE_MIN: Record<
   // markdown, for now) isn't known until read time, so the stored widget
   // type alone can't pick a tighter minimum the way the other types do.
   system: { w: 3, h: 2 },
+  // Smaller than any content widget's minimum (Q5) — a Spacer Widget's
+  // whole purpose is fine-grained whitespace control (see GLOSSARY.md).
+  spacer: { w: 1, h: 1 },
 };
 
 export const WIDGET_SIZE_MAX = { w: 12, h: 8 } as const;
@@ -115,12 +118,32 @@ export const SystemWidgetFrontmatterSchema = z.object({
   source: WidgetSourceSchema,
 });
 
+/**
+ * Validated shape of a `SpacerWidget`'s frontmatter block (no body — see
+ * GLOSSARY.md's Spacer Widget entry). `title` is still a required field
+ * here, same as every other type's frontmatter — the API layer never lets
+ * a caller supply anything but the fixed `'Spacer'` value for it (see
+ * `dashboards.handlers.ts`), but the persisted file still carries a real
+ * `title` string like every other widget file.
+ */
+export const SpacerWidgetFrontmatterSchema = z.object({
+  title: z.string().min(1),
+  subtitle: z.string().optional(),
+  type: z.literal('spacer'),
+  order: z.number(),
+  w: z.number().min(WIDGET_SIZE_MIN.spacer.w).max(WIDGET_SIZE_MAX.w),
+  h: z.number().min(WIDGET_SIZE_MIN.spacer.h).max(WIDGET_SIZE_MAX.h),
+  source: WidgetSourceSchema,
+  maintainer: WidgetMaintainerSchema,
+});
+
 export const WidgetFrontmatterSchema = z.discriminatedUnion('type', [
   MarkdownWidgetFrontmatterSchema,
   BigNumberWidgetFrontmatterSchema,
   LineGraphWidgetFrontmatterSchema,
   PieGraphWidgetFrontmatterSchema,
   SystemWidgetFrontmatterSchema,
+  SpacerWidgetFrontmatterSchema,
 ]);
 
 export type MarkdownWidgetFrontmatter = z.infer<typeof MarkdownWidgetFrontmatterSchema>;

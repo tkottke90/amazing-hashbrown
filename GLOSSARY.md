@@ -41,8 +41,16 @@ A widget's `w`/`h` Widget Metadata fields — its span in grid columns/rows. Cla
 _Avoid_: Dimensions, bounds
 
 **Edit Mode**:
-A dashboard-wide toggle state that enables grid drag (Reorder) and resize-handle (Widget Size) interactions on widgets. Other dashboard interactions are disabled while it's active. Purely a client-side UI state — never itself persisted; every dashboard load starts with it off regardless of how the previous session left it.
+A dashboard-wide toggle state that enables grid drag (Reorder) and resize-handle (Widget Size) interactions on widgets, and gates both Ghost Cell rendering and Spacer Widget visibility. Other dashboard interactions are disabled while it's active. Purely a client-side UI state — never itself persisted; every dashboard load starts with it off regardless of how the previous session left it.
 _Avoid_: Edit state, drag mode
+
+**Spacer Widget**:
+A Widget type with no content of its own — pure grid-occupying whitespace a user places and reorders like any other Widget, giving manual control over layout gaps without absolute positioning. Invisible outside Edit Mode; in Edit Mode it renders as a labeled, draggable, resizable placeholder like any other widget, minus a title/subtitle/provenance footer.
+_Avoid_: Whitespace widget, blank widget, filler
+
+**Ghost Cell**:
+A decorative, non-interactive overlay shown only in Edit Mode over grid cells no Widget currently occupies — a dashed, 50%-opacity visual aid for arranging Widgets and Spacer Widgets. Never a drop target itself; see ADR-0011 for how its occupancy is computed.
+_Avoid_: Ghost card (collides with Widget Card, the shared widget shell component), empty cell
 
 **Reorder**:
 The drag operation that moves a dragged widget to the position of whichever widget it's dropped on; every widget between the dragged widget's old and new slot shifts by one position. Supersedes #179's own "swap" description — a drop never exchanges just two widgets' positions, it's a full splice.

@@ -336,15 +336,40 @@ describe('WidgetDrawer', () => {
   });
 
   describe('type picker and per-type field sets', () => {
-    it('the type picker offers all 4 types and swaps the field set on selection [unit]', async () => {
+    it('the type picker offers all 5 types and swaps the field set on selection [unit]', async () => {
       renderDrawer(<WidgetDrawer mode="add" onSaved={jest.fn()} trigger={<button>Add</button>} />);
 
       fireEvent.click(screen.getByTestId('widget-type-picker'));
-      fireEvent.click(await screen.findByRole('option', { name: 'Big Number' }));
+      expect(await screen.findByRole('option', { name: 'Spacer' })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('option', { name: 'Big Number' }));
 
       expect(screen.getByLabelText('Value')).toBeInTheDocument();
       expect(screen.getByLabelText('Unit')).toBeInTheDocument();
       expect(screen.queryByLabelText('Content (Markdown)')).not.toBeInTheDocument();
+    });
+
+    it('switching to Spacer hides Title/Subtitle and submits a bare {type: "spacer"} payload [unit]', async () => {
+      mockCreate.mockResolvedValue({
+        id: 'new',
+        type: 'spacer',
+        title: 'Spacer',
+        order: 0,
+        w: 1,
+        h: 1,
+        source: 'manual',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      });
+      renderDrawer(<WidgetDrawer mode="add" onSaved={jest.fn()} trigger={<button>Add</button>} />);
+
+      fireEvent.click(screen.getByTestId('widget-type-picker'));
+      fireEvent.click(await screen.findByRole('option', { name: 'Spacer' }));
+
+      expect(screen.queryByLabelText('Title')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Subtitle')).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() => expect(mockCreate).toHaveBeenCalledWith('default', { type: 'spacer' }));
     });
 
     it('switching to Line Graph shows the color override field and the CSV editor [unit]', async () => {

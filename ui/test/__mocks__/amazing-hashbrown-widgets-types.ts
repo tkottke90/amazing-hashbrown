@@ -7,13 +7,15 @@
 // the handful of places that need WIDGET_SIZE_MIN/MAX as a real runtime
 // value (the resize handle's clamp).
 export const WIDGET_SIZE_MIN: Record<
-  'markdown' | 'big-number' | 'line-graph' | 'pie-graph',
+  'markdown' | 'big-number' | 'line-graph' | 'pie-graph' | 'system' | 'spacer',
   { w: number; h: number }
 > = {
   'big-number': { w: 2, h: 2 },
   'line-graph': { w: 4, h: 3 },
   'pie-graph': { w: 4, h: 3 },
   markdown: { w: 3, h: 2 },
+  system: { w: 3, h: 2 },
+  spacer: { w: 1, h: 1 },
 };
 
 export const WIDGET_SIZE_MAX = { w: 12, h: 8 } as const;

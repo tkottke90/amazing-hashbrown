@@ -1,8 +1,5 @@
 import type { ComponentChildren } from 'preact';
-import { GripVertical } from 'lucide-preact';
 import { cn } from '@/lib/utils';
-import { formatRelativeTime } from '@/lib/format-relative-time';
-import type { DashboardWidget } from '@tkottke90/amazing-hashbrown-widgets/types';
 import { useWidgetResize } from './use-widget-resize';
 
 /** dnd-kit's drag attributes/listeners — typed for React DOM, same as every
@@ -11,20 +8,10 @@ import { useWidgetResize } from './use-widget-resize';
 export type DragHandleProps = Record<string, unknown>;
 
 interface WidgetCardProps {
-  title: string;
-  subtitle?: string;
   children: ComponentChildren;
   className?: string;
-  /** Widget Source — see GLOSSARY.md. */
-  source?: DashboardWidget['source'];
-  /** Widget Maintainer — see GLOSSARY.md. Rendered as a badge sub-label when `source` is 'agent'. */
-  maintainer?: string;
-  /** Derived from the widget file's mtime (ADR-0006) — rendered as a relative-time footer. */
-  updatedAt?: string;
-  /** Edit Mode (see GLOSSARY.md) — gates the drag grip and resize handle below. */
+  /** Edit Mode (see GLOSSARY.md) — gates the resize handle below. */
   editMode?: boolean;
-  /** Spread onto the drag grip only — keeps Reorder and the rest of the card on disjoint hit areas. */
-  dragHandleProps?: DragHandleProps;
   /** Widget Size (see GLOSSARY.md) — current w/h and this type's minimum, for the resize handle's live clamp. */
   w?: number;
   h?: number;
@@ -33,40 +20,21 @@ interface WidgetCardProps {
   onResize?: (w: number, h: number) => void;
 }
 
-function provenanceBadgeLabel(
-  source: DashboardWidget['source'] | undefined,
-  maintainer: string | undefined,
-): string | null {
-  switch (source) {
-    case 'manual':
-      return 'Manual';
-    case 'agent':
-      return maintainer ? `Agent · ${maintainer}` : 'Agent';
-    case 'system':
-      // System widgets never have a maintainer (ADR-0012) — just the badge.
-      return 'System';
-    default:
-      return null;
-  }
-}
-
+// A bare flex-column shell, shadcn-Card style — composes with WidgetHeader,
+// WidgetContent, WidgetAction, WidgetFooter (siblings passed as children) in
+// that stacking order. Owns only the resize handle + live-size badge, the
+// one piece of chrome that overlays the whole card rather than stacking
+// with its content (design spec §3.1).
 export function WidgetCard({
-  title,
-  subtitle,
   children,
   className,
-  source,
-  maintainer,
-  updatedAt,
   editMode = false,
-  dragHandleProps,
   w,
   h,
   minW,
   minH,
   onResize,
 }: WidgetCardProps) {
-  const badgeLabel = provenanceBadgeLabel(source, maintainer);
   const resizable = editMode && w !== undefined && h !== undefined && onResize !== undefined;
   const { cardRef, liveSize, onPointerDown } = useWidgetResize({
     w: w ?? 0,
@@ -91,35 +59,7 @@ export function WidgetCard({
         className,
       )}
     >
-      <div className="flex items-start gap-2">
-        {editMode && (
-          <button
-            type="button"
-            data-testid="widget-drag-handle"
-            aria-label="Drag to reorder"
-            className="mt-0.5 cursor-grab touch-none text-muted-foreground hover:text-foreground"
-            {...dragHandleProps}
-          >
-            <GripVertical className="size-4" />
-          </button>
-        )}
-        <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-medium text-foreground">{title}</h2>
-          {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
-        </div>
-      </div>
       {children}
-      {(badgeLabel || updatedAt) && (
-        <div
-          data-testid="widget-card-provenance"
-          className="flex items-center justify-between text-xs text-muted-foreground"
-        >
-          {badgeLabel && <span data-testid="widget-card-badge">{badgeLabel}</span>}
-          {updatedAt && (
-            <span data-testid="widget-card-updated-at">{formatRelativeTime(updatedAt)}</span>
-          )}
-        </div>
-      )}
       {resizable && (
         <div
           data-testid="widget-resize-handle"

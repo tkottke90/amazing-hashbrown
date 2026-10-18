@@ -125,12 +125,23 @@ const SystemWidgetInputSchema = z.object({
   h: z.number().min(WIDGET_SIZE_MIN.system.h).max(WIDGET_SIZE_MAX.h).optional(),
 });
 
+// No `title` key — same convention `source` already follows on every
+// variant above (never part of the input, always assigned by the
+// handler). A Spacer Widget has no title field in the UI (design spec
+// §1.3), so nothing should be able to supply one through the API either.
+const SpacerWidgetInputSchema = z.object({
+  type: z.literal('spacer'),
+  w: z.number().min(WIDGET_SIZE_MIN.spacer.w).max(WIDGET_SIZE_MAX.w).optional(),
+  h: z.number().min(WIDGET_SIZE_MIN.spacer.h).max(WIDGET_SIZE_MAX.h).optional(),
+});
+
 const WidgetInputSchema = z.discriminatedUnion('type', [
   MarkdownWidgetInputSchema,
   BigNumberWidgetInputSchema,
   LineGraphWidgetInputSchema,
   PieGraphWidgetInputSchema,
   SystemWidgetInputSchema,
+  SpacerWidgetInputSchema,
 ]);
 
 const WidgetRawSchema = z.object({
@@ -266,8 +277,14 @@ export async function createWidgetHandler(
   const { w, h, ...contentFields } = parsed.data;
   void w;
   void h;
+  // A Spacer Widget's title is never caller-supplied — SpacerWidgetInputSchema
+  // has no title key at all, so the fixed 'Spacer' literal is assigned here,
+  // the one place it's genuinely needed (there's no prior widget to inherit
+  // from, unlike updateWidgetHandler below).
+  const content =
+    contentFields.type === 'spacer' ? { ...contentFields, title: 'Spacer' } : contentFields;
   const widget = await store.createWidget(dashboardRoot, dashboardId, {
-    ...contentFields,
+    ...content,
     source: parsed.data.type === 'system' ? 'system' : 'manual',
   });
   broadcast({ type: 'widget_updated', dashboardId, widget });
@@ -315,13 +332,19 @@ export async function updateWidgetHandler(
   // existing size itself — this handler doesn't need to know what it was.
   const { w, h, ...contentFields } = parsed.data;
   const size = w !== undefined && h !== undefined ? { w, h } : undefined;
+  // Same preserve-pattern as `maintainer` just above: a Spacer Widget's
+  // title is never caller-supplied (no input field for it), so a resize
+  // PATCH — the only PATCH a Spacer ever reaches — keeps whatever title it
+  // already has rather than trusting (the absent) `contentFields.title`.
+  const content =
+    contentFields.type === 'spacer' ? { ...contentFields, title: existing.title } : contentFields;
   try {
     const widget = await store.updateWidget(
       dashboardRoot,
       dashboardId,
       id,
       {
-        ...contentFields,
+        ...content,
         source: parsed.data.type === 'system' ? 'system' : 'manual',
         maintainer: existing.maintainer,
       },
@@ -395,6 +418,13 @@ export async function updateWidgetContentHandler(
   // in-process (api/src/agents/tools/update-widget-content.tool.ts).
   if (existing.type === 'system') {
     return badRequest(`Widget "${id}" is a system widget and cannot be written to.`);
+  }
+
+  // A Spacer Widget has no Widget Payload at all (GLOSSARY.md), so it has
+  // no entry in CONTENT_INPUT_SCHEMAS below — guard explicitly rather than
+  // letting that lookup return undefined and crash `.safeParse`.
+  if (existing.type === 'spacer') {
+    return badRequest('Spacer widgets have no content to update.');
   }
 
   const parsed = CONTENT_INPUT_SCHEMAS[existing.type].safeParse(body);

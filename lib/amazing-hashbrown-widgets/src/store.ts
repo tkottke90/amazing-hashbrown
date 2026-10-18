@@ -142,6 +142,8 @@ function buildWidget(
       return { ...base, type: 'pie-graph', data: input.data, colors: input.colors };
     case 'system':
       return { ...base, type: 'system', metric: input.metric };
+    case 'spacer':
+      return { ...base, type: 'spacer' };
     default:
       return assertNeverWidgetType(input);
   }
@@ -232,6 +234,9 @@ async function writeWidgetFile(
       // type-specific field, and `resolved` is never written: it isn't on
       // `WritableDashboardWidget` in the first place (see types.ts).
       data.metric = widget.metric;
+      body = '';
+      break;
+    case 'spacer':
       body = '';
       break;
     default:

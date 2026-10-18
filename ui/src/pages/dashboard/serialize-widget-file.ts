@@ -30,7 +30,11 @@ export type WidgetFrontmatterInput =
       subtitle?: string;
       order: number;
       metric: string;
-    };
+    }
+  // subtitle kept optional (never populated in practice — Spacer has no UI
+  // field for it) purely so the shared prefix logic below can read
+  // `input.subtitle` generically, same as every other member.
+  | { type: 'spacer'; title: string; subtitle?: string; order: number };
 
 function assertNeverWidgetType(type: never): never {
   throw new Error(`Unhandled widget type: ${type}`);
@@ -89,6 +93,9 @@ export function serializeWidgetFile(input: WidgetFrontmatterInput): string {
       // drawer hides the Form/Raw tab toggle entirely for this type, but
       // required here to satisfy assertNeverWidgetType.
       lines.push(`metric: ${JSON.stringify(input.metric)}`);
+      body = '';
+      break;
+    case 'spacer':
       body = '';
       break;
     default:

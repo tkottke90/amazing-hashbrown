@@ -3,54 +3,26 @@ import { WidgetCard } from '@/pages/dashboard/widget-card';
 
 describe('WidgetCard', () => {
   describe('Edit Mode', () => {
-    it('shows no drag handle or resize handle outside Edit Mode [unit]', () => {
+    it('shows no resize handle outside Edit Mode [unit]', () => {
       render(
-        <WidgetCard title="My Widget" w={6} h={3} minW={3} minH={2} onResize={() => {}}>
+        <WidgetCard w={6} h={3} minW={3} minH={2} onResize={() => {}}>
           content
         </WidgetCard>,
       );
-      expect(screen.queryByTestId('widget-drag-handle')).not.toBeInTheDocument();
       expect(screen.queryByTestId('widget-resize-handle')).not.toBeInTheDocument();
     });
 
-    it('shows both the drag handle and resize handle in Edit Mode [unit]', () => {
+    it('shows the resize handle in Edit Mode [unit]', () => {
       render(
-        <WidgetCard title="My Widget" editMode w={6} h={3} minW={3} minH={2} onResize={() => {}}>
+        <WidgetCard editMode w={6} h={3} minW={3} minH={2} onResize={() => {}}>
           content
         </WidgetCard>,
       );
-      expect(screen.getByTestId('widget-drag-handle')).toBeInTheDocument();
       expect(screen.getByTestId('widget-resize-handle')).toBeInTheDocument();
     });
 
-    it('spreads dragHandleProps only onto the drag handle, not the rest of the card [unit]', () => {
-      const onPointerDown = jest.fn();
-      render(
-        <WidgetCard
-          title="My Widget"
-          editMode
-          dragHandleProps={{ onPointerDown, 'data-drag': 'x' }}
-          w={6}
-          h={3}
-          minW={3}
-          minH={2}
-          onResize={() => {}}
-        >
-          content
-        </WidgetCard>,
-      );
-      const handle = screen.getByTestId('widget-drag-handle');
-      expect(handle).toHaveAttribute('data-drag', 'x');
-      expect(screen.getByTestId('widget-card')).not.toHaveAttribute('data-drag');
-    });
-
     it('omits the resize handle when no onResize/size is supplied, even in Edit Mode [unit]', () => {
-      render(
-        <WidgetCard title="My Widget" editMode>
-          content
-        </WidgetCard>,
-      );
-      expect(screen.getByTestId('widget-drag-handle')).toBeInTheDocument();
+      render(<WidgetCard editMode>content</WidgetCard>);
       expect(screen.queryByTestId('widget-resize-handle')).not.toBeInTheDocument();
     });
   });
@@ -58,7 +30,7 @@ describe('WidgetCard', () => {
   describe('resize handle', () => {
     function renderResizable(onResize: (w: number, h: number) => void) {
       return render(
-        <WidgetCard title="My Widget" editMode w={6} h={3} minW={3} minH={2} onResize={onResize}>
+        <WidgetCard editMode w={6} h={3} minW={3} minH={2} onResize={onResize}>
           content
         </WidgetCard>,
       );
@@ -135,79 +107,12 @@ describe('WidgetCard', () => {
     });
   });
 
-  it('renders the title and children [unit]', () => {
+  it('renders children [unit]', () => {
     render(
-      <WidgetCard title="My Widget">
+      <WidgetCard>
         <span>child content</span>
       </WidgetCard>,
     );
-    expect(screen.getByText('My Widget')).toBeInTheDocument();
     expect(screen.getByText('child content')).toBeInTheDocument();
-  });
-
-  it('renders the subtitle when provided [unit]', () => {
-    render(
-      <WidgetCard title="My Widget" subtitle="My Subtitle">
-        content
-      </WidgetCard>,
-    );
-    expect(screen.getByText('My Subtitle')).toBeInTheDocument();
-  });
-
-  it('omits subtitle markup when absent, rather than rendering an empty element [unit]', () => {
-    const { container } = render(<WidgetCard title="My Widget">content</WidgetCard>);
-    expect(container.querySelector('p')).toBeNull();
-  });
-
-  it('omits the provenance footer entirely when no source/updatedAt is given [unit]', () => {
-    render(<WidgetCard title="My Widget">content</WidgetCard>);
-    expect(screen.queryByTestId('widget-card-provenance')).not.toBeInTheDocument();
-  });
-
-  it('renders a "Manual" badge for a manual-sourced widget [unit]', () => {
-    render(
-      <WidgetCard title="My Widget" source="manual">
-        content
-      </WidgetCard>,
-    );
-    expect(screen.getByTestId('widget-card-badge')).toHaveTextContent('Manual');
-  });
-
-  it('renders a plain "Agent" badge when source is agent and no maintainer is set [unit]', () => {
-    render(
-      <WidgetCard title="My Widget" source="agent">
-        content
-      </WidgetCard>,
-    );
-    expect(screen.getByTestId('widget-card-badge')).toHaveTextContent('Agent');
-  });
-
-  it('renders "Agent · <maintainer>" when source is agent and a maintainer is set [unit]', () => {
-    render(
-      <WidgetCard title="My Widget" source="agent" maintainer="check-disk-space.sh">
-        content
-      </WidgetCard>,
-    );
-    expect(screen.getByTestId('widget-card-badge')).toHaveTextContent(
-      'Agent · check-disk-space.sh',
-    );
-  });
-
-  it('renders a "System" badge for the system source (#320) [unit]', () => {
-    render(
-      <WidgetCard title="My Widget" source="system">
-        content
-      </WidgetCard>,
-    );
-    expect(screen.getByTestId('widget-card-badge')).toHaveTextContent('System');
-  });
-
-  it('renders a relative-time footer derived from updatedAt [unit]', () => {
-    render(
-      <WidgetCard title="My Widget" updatedAt={new Date().toISOString()}>
-        content
-      </WidgetCard>,
-    );
-    expect(screen.getByTestId('widget-card-updated-at')).toHaveTextContent('just now');
   });
 });

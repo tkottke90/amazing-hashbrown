@@ -90,4 +90,14 @@ describe('LineGraphWidget', () => {
     expect(screen.getByTestId('widget-edit-button')).toBeInTheDocument();
     expect(screen.getByTestId('widget-drawer-form')).toBeInTheDocument();
   });
+
+  it('renders content in the scrollable region and buttons in the pinned action row [unit]', () => {
+    renderWidget(<LineGraphWidget widget={widget()} onChanged={jest.fn()} />);
+    expect(screen.getByTestId('widget-content')).toContainElement(
+      screen.getByTestId('line-graph-widget'),
+    );
+    expect(screen.getByTestId('widget-action')).toContainElement(
+      screen.getByTestId('widget-delete-button'),
+    );
+  });
 });

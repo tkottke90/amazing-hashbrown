@@ -54,4 +54,18 @@ describe('WidgetErrorCard', () => {
     expect(screen.getByTestId('widget-drawer-raw-editor')).toBeInTheDocument();
     expect(screen.queryByLabelText('Title')).not.toBeInTheDocument();
   });
+
+  it('renders the error text in the scrollable region and the Edit raw file link as an action [unit]', () => {
+    render(
+      <ThemeProvider>
+        <WidgetErrorCard result={errorResult({ error: 'bad frontmatter' })} onChanged={jest.fn()} />
+      </ThemeProvider>,
+    );
+    expect(screen.getByTestId('widget-content')).toContainElement(
+      screen.getByText('bad frontmatter'),
+    );
+    expect(screen.getByTestId('widget-action')).toContainElement(
+      screen.getByTestId('widget-edit-raw-button'),
+    );
+  });
 });

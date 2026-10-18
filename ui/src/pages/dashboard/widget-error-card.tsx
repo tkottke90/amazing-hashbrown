@@ -1,5 +1,8 @@
 import type { WidgetLoadResult } from '@tkottke90/amazing-hashbrown-widgets/types';
 import { WidgetCard } from './widget-card';
+import { WidgetHeader } from './widget-header';
+import { WidgetContent } from './widget-content';
+import { WidgetAction } from './widget-action';
 import { WidgetDrawer } from './widget-drawer';
 
 interface WidgetErrorCardProps {
@@ -20,22 +23,27 @@ export function WidgetErrorCard({ result, onChanged }: WidgetErrorCardProps) {
     // of the shell's own "widget-card" one, rather than threading an
     // error-only prop into the shared component.
     <div data-testid="widget-error-card" className="h-full">
-      <WidgetCard title="Unable to load this widget">
-        <p className="text-sm text-destructive">{result.error}</p>
-        <WidgetDrawer
-          mode="edit"
-          target={result}
-          onSaved={onChanged}
-          trigger={
-            <button
-              type="button"
-              data-testid="widget-edit-raw-button"
-              className="self-start text-sm text-primary underline-offset-4 hover:underline"
-            >
-              Edit raw file
-            </button>
-          }
-        />
+      <WidgetCard>
+        <WidgetHeader title="Unable to load this widget" />
+        <WidgetContent>
+          <p className="text-sm text-destructive">{result.error}</p>
+        </WidgetContent>
+        <WidgetAction>
+          <WidgetDrawer
+            mode="edit"
+            target={result}
+            onSaved={onChanged}
+            trigger={
+              <button
+                type="button"
+                data-testid="widget-edit-raw-button"
+                className="self-start text-sm text-primary underline-offset-4 hover:underline"
+              >
+                Edit raw file
+              </button>
+            }
+          />
+        </WidgetAction>
       </WidgetCard>
     </div>
   );
