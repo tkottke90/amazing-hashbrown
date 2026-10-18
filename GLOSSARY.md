@@ -77,3 +77,29 @@ _Avoid_: Stat, KPI, system metadata
 **Metric Registry**:
 The in-process lookup from a Metric's id to the function that computes its current value, called directly by the dashboard read handler against the app's own stores — never over HTTP, never from a widget's file.
 _Avoid_: Metrics API, producer registry
+
+# AfterAgent & Wiki Write Scope
+
+The background pipeline that inspects each conversational turn for durable knowledge and files it into the wiki, and the rule set that decides which wiki domain(s) a given turn — chat or AfterAgent — may write to.
+
+## Language
+
+**Write Scope**:
+The set of wiki domains a given turn may write to, resolved fresh on every write (by `resolveWikiWriteScope`) from the originating thread/workspace — never fixed once when an agent is built, since an unbound workspace's exclusions depend on other workspaces' bindings, which can change independently. One of three kinds: Locked Scope, Open Scope, Unresolved Scope.
+_Avoid_: Permission, access level, write policy
+
+**Locked Scope**:
+A Write Scope restricted to exactly one domain: the originating workspace's Bound Wiki. The only domain ever offered to AfterAgent's extraction step, or accepted by a chat write tool, under this scope.
+_Avoid_: Restricted scope, project scope
+
+**Open Scope**:
+A Write Scope covering every wiki domain not Bound to a *different* workspace — the default for a workspace (or global chat) with no Bound Wiki of its own. Deliberately broad by design, for throwaway/no-commitment workspaces and global contexts; it is not itself a topical-relevance filter.
+_Avoid_: Unrestricted scope, default scope
+
+**Unresolved Scope**:
+A Write Scope returned when the originating thread or workspace can't be determined at all. Denies every write; the fail-closed case.
+_Avoid_: Unknown scope, null scope
+
+**Bound Wiki**:
+The one wiki domain a workspace is tied to via its `wikiId`. Binding is what turns a workspace's Write Scope from Open to Locked; an unbound workspace has no Bound Wiki and stays in Open Scope.
+_Avoid_: Linked wiki, assigned wiki, dedicated wiki
