@@ -48,3 +48,10 @@ v1Router.use('/metrics', metricsRouter);
 v1Router.use('/tool-settings', toolSettingsRouter);
 v1Router.use('/webhooks', webhooksRouter);
 v1Router.use('/api-keys', apiKeysRouter);
+
+v1Router.get('/', (_req, res) => {
+  res.json({
+    version: process.env.APP_VERSION,
+    sha: process.env.APP_SHA,
+  });
+});
