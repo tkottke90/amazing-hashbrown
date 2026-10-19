@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SkillsManager } from '../../src/skills-manager.js';
+import { writeValidSkill } from './fixtures.js';
 
 async function makeManager(): Promise<{ manager: SkillsManager; root: string }> {
   const root = await mkdtemp(join(tmpdir(), 'skills-manager-test-'));
@@ -119,6 +120,54 @@ describe('SkillsManager', () => {
       }
       expect(error).to.be.instanceOf(Error);
       expect((error as Error).message).to.include('not found');
+    });
+  });
+
+  describe('list', () => {
+    it('returns skills sorted alphabetically by name, not creation order', async () => {
+      await manager.create({ name: 'zebra-skill', description: 'x', body: 'y' });
+      await manager.create({ name: 'apple-skill', description: 'x', body: 'y' });
+      await manager.create({ name: 'mango-skill', description: 'x', body: 'y' });
+      expect(manager.list().map((s) => s.name)).to.deep.equal([
+        'apple-skill',
+        'mango-skill',
+        'zebra-skill',
+      ]);
+    });
+
+    it('sorts case-insensitively rather than by raw character code', async () => {
+      await writeValidSkill(root, 'banana-skill');
+      await writeValidSkill(root, 'Cherry-skill');
+      await manager.boot();
+      // A raw ASCII/byte sort would put 'Cherry-skill' first ('C' = 67 < 'b' = 98);
+      // locale-aware comparison correctly orders by letter, ignoring case.
+      expect(manager.list().map((s) => s.name)).to.deep.equal(['banana-skill', 'Cherry-skill']);
+    });
+  });
+
+  describe('search', () => {
+    beforeEach(async () => {
+      await manager.create({ name: 'apple-skill', description: 'x', body: 'y' });
+      await manager.create({ name: 'banana-skill', description: 'x', body: 'y' });
+      await manager.create({ name: 'cherry-skill', description: 'x', body: 'y' });
+      await manager.create({ name: 'fig-skill', description: 'x', body: 'y' });
+    });
+
+    it('returns all enabled skills sorted alphabetically when no keyword is given', () => {
+      expect(manager.search().map((s) => s.name)).to.deep.equal([
+        'apple-skill',
+        'banana-skill',
+        'cherry-skill',
+        'fig-skill',
+      ]);
+    });
+
+    it('preserves alphabetical order within a keyword-filtered subset', () => {
+      // 'a' matches apple-skill and banana-skill only, not cherry-skill or fig-skill.
+      expect(manager.search('a').map((s) => s.name)).to.deep.equal([
+        'apple-skill',
+        'banana-skill',
+      ]);
     });
   });
 

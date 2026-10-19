@@ -100,13 +100,20 @@ export class SkillsManager {
 
   list(): SkillSummary[] {
     const own = Array.from(this.cache.values());
-    if (!this.parent) return own;
-    const inherited = this.parent.list();
-    const parentNames = new Set(inherited.map((s) => s.name));
-    return [
-      ...inherited.filter((s) => !this.cache.has(s.name)),
-      ...own.map((s) => (parentNames.has(s.name) ? { ...s, overrides: true } : s)),
-    ];
+    let result: SkillSummary[];
+    if (!this.parent) {
+      result = own;
+    } else {
+      const inherited = this.parent.list();
+      const parentNames = new Set(inherited.map((s) => s.name));
+      result = [
+        ...inherited.filter((s) => !this.cache.has(s.name)),
+        ...own.map((s) => (parentNames.has(s.name) ? { ...s, overrides: true } : s)),
+      ];
+    }
+    return result.sort(
+      (a, b) => a.name.localeCompare(b.name) || a.slashCommand.localeCompare(b.slashCommand),
+    );
   }
 
   search(keyword?: string): SkillSummary[] {
