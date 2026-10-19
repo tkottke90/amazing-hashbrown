@@ -45,7 +45,9 @@ describe('WidgetRenderer', () => {
         content: 'hello',
       },
     };
-    render(<WidgetRenderer result={result} onChanged={noop} />);
+    render(
+      <WidgetRenderer result={result} dashboardId="default" density="compact" onChanged={noop} />,
+    );
     expect(screen.getByText('My Title')).toBeInTheDocument();
     expect(screen.getByText('hello')).toBeInTheDocument();
   });
@@ -64,7 +66,9 @@ describe('WidgetRenderer', () => {
         unit: 'msgs',
       },
     };
-    render(<WidgetRenderer result={result} onChanged={noop} />);
+    render(
+      <WidgetRenderer result={result} dashboardId="default" density="compact" onChanged={noop} />,
+    );
     expect(screen.getByTestId('big-number-widget')).toBeInTheDocument();
   });
 
@@ -85,7 +89,7 @@ describe('WidgetRenderer', () => {
     // mounts a CSV CodeEditor immediately for this type (unlike Markdown).
     render(
       <ThemeProvider>
-        <WidgetRenderer result={result} onChanged={noop} />
+        <WidgetRenderer result={result} dashboardId="default" density="compact" onChanged={noop} />
       </ThemeProvider>,
     );
     expect(screen.getByTestId('line-graph-widget')).toBeInTheDocument();
@@ -106,7 +110,7 @@ describe('WidgetRenderer', () => {
     };
     render(
       <ThemeProvider>
-        <WidgetRenderer result={result} onChanged={noop} />
+        <WidgetRenderer result={result} dashboardId="default" density="compact" onChanged={noop} />
       </ThemeProvider>,
     );
     expect(screen.getByTestId('pie-graph-widget')).toBeInTheDocument();
@@ -124,7 +128,9 @@ describe('WidgetRenderer', () => {
         updatedAt: '2026-01-01T00:00:00.000Z',
       },
     };
-    const { container } = render(<WidgetRenderer result={result} onChanged={noop} />);
+    const { container } = render(
+      <WidgetRenderer result={result} dashboardId="default" density="compact" onChanged={noop} />,
+    );
     expect(container).toBeEmptyDOMElement();
   });
 
@@ -140,7 +146,15 @@ describe('WidgetRenderer', () => {
         updatedAt: '2026-01-01T00:00:00.000Z',
       },
     };
-    render(<WidgetRenderer result={result} onChanged={noop} editMode />);
+    render(
+      <WidgetRenderer
+        result={result}
+        dashboardId="default"
+        density="compact"
+        onChanged={noop}
+        editMode
+      />,
+    );
     expect(screen.getByText('Spacer')).toBeInTheDocument();
   });
 
@@ -155,7 +169,7 @@ describe('WidgetRenderer', () => {
     // the Raw tab, which mounts the CodeMirror-based CodeEditor immediately.
     render(
       <ThemeProvider>
-        <WidgetRenderer result={result} onChanged={noop} />
+        <WidgetRenderer result={result} dashboardId="default" density="compact" onChanged={noop} />
       </ThemeProvider>,
     );
     expect(screen.getByText('Unable to load this widget')).toBeInTheDocument();
@@ -203,7 +217,15 @@ describe('WidgetRenderer', () => {
       mockResizeWidget.mockResolvedValue(resized);
       const result: WidgetLoadResult = { status: 'ok', widget };
 
-      render(<WidgetRenderer result={result} onChanged={noop} editMode />);
+      render(
+        <WidgetRenderer
+          result={result}
+          dashboardId="default"
+          density="compact"
+          onChanged={noop}
+          editMode
+        />,
+      );
       const card = screen.getByTestId('widget-card');
       jest.spyOn(card, 'getBoundingClientRect').mockReturnValue({
         width: 400,

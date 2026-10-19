@@ -13,7 +13,7 @@ A named collection of Widgets, stored as one subfolder on disk. Users can create
 _Avoid_: Board, page
 
 **Dashboard Id**:
-A Dashboard's permanent identifier, assigned once at creation and never changed — it names the Dashboard's on-disk subfolder and is unaffected by renaming. Generated as a nanoid for new Dashboards; the original Dashboard keeps its pre-existing id, `default` (see ADR-0017).
+A Dashboard's permanent identifier, assigned once at creation and never changed — it names the Dashboard's on-disk subfolder and is unaffected by renaming. Generated via `randomUUID()` for new Dashboards; the original Dashboard keeps its pre-existing id, `default` (see ADR-0017).
 _Avoid_: Slug, key, dashboard slug
 
 **Dashboard Name**:

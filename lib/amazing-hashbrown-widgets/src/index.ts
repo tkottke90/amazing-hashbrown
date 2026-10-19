@@ -15,6 +15,12 @@ export {
   ensureSeeded,
   peekWidgetFrontmatter,
   WidgetNotFoundError,
+  listDashboards,
+  getDashboardMetadata,
+  createDashboard,
+  updateDashboardMetadata,
+  deleteDashboard,
+  migrateDefaultDashboardMetadata,
 } from './store.js';
 
 export { parseWidgetFile, parseCsvBody } from './internal/frontmatter.js';

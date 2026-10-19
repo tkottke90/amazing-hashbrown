@@ -1,5 +1,6 @@
-import { request } from '@/utils/fetch.utils';
+import { request, RequestError } from '@/utils/fetch.utils';
 import type {
+  Dashboard,
   DashboardWidget,
   DistributiveOmit,
   ResolvedMetricValue,
@@ -7,11 +8,59 @@ import type {
   WidgetLoadResult,
 } from '@tkottke90/amazing-hashbrown-widgets/types';
 
-// Only one dashboard exists so far — see the design doc's D4/D16. The UI
-// never passes anything else; multi-dashboard selection is future scope.
+// The original single dashboard's permanent id (see ADR-0017) — kept as the
+// agent tool/CLI default; the UI resolves a real active dashboard via
+// useDashboards() instead of relying on this constant for anything.
 export const DEFAULT_DASHBOARD_ID = 'default';
 
 export type { WidgetContentInput };
+
+// ---- Dashboard Metadata (see GLOSSARY.md, ADR-0016/0017/0018) --------------------
+
+export interface DashboardListEntry extends Dashboard {
+  /** Derived, never persisted — the Settings panel's read-only folder display. */
+  path: string;
+}
+
+export async function listDashboards(): Promise<DashboardListEntry[]> {
+  return request<DashboardListEntry[]>('/api/v1/dashboards');
+}
+
+export async function createDashboard(name: string): Promise<DashboardListEntry> {
+  return request<DashboardListEntry>('/api/v1/dashboards', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export interface DashboardUpdateInput {
+  name?: string;
+  description?: string;
+  density?: 'compact' | 'roomy';
+}
+
+export async function updateDashboard(
+  id: string,
+  patch: DashboardUpdateInput,
+): Promise<DashboardListEntry> {
+  return request<DashboardListEntry>(`/api/v1/dashboards/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function deleteDashboard(id: string): Promise<void> {
+  // A 204 has no body for request() to parse (same reason tasks-api.ts's
+  // deleteTask() bypasses it) — a refused delete (400, the last-dashboard
+  // guard) must still surface, not vanish, so check the status here.
+  const res = await fetch(`/api/v1/dashboards/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new RequestError(body.error ?? `Request failed: ${res.status}`, res.status);
+  }
+}
 
 export async function fetchWidgets(dashboardId: string): Promise<WidgetLoadResult[]> {
   return request<WidgetLoadResult[]>(

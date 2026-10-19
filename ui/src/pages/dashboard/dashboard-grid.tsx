@@ -19,15 +19,17 @@ import type { WidgetLoadResult } from '@tkottke90/amazing-hashbrown-widgets/type
 import { showToast } from '@/lib/toast';
 import { useIsDesktopViewport } from '@/hooks/use-media-query';
 import { patchDashboardWidgets } from '@/hooks/use-dashboard-widgets';
-import { reorderWidget, DEFAULT_DASHBOARD_ID } from '@/services/dashboard-api';
+import { reorderWidget } from '@/services/dashboard-api';
 import { WidgetRenderer } from './widget-renderer';
-import { GRID_COLUMNS, GRID_ROW_HEIGHT_PX } from './grid-constants';
+import { GRID_COLUMNS, rowHeightPx } from './grid-constants';
 import { computeOccupiedCells, ghostGridRowCount, type GridItemSpan } from './ghost-cells';
 
 interface DashboardGridProps {
   results: WidgetLoadResult[];
   onChanged: () => void;
   editMode: boolean;
+  dashboardId: string;
+  density: 'compact' | 'roomy';
 }
 
 function resultKey(result: WidgetLoadResult): string {
@@ -97,10 +99,14 @@ function GhostCells({ items }: { items: GridItemSpan[] }) {
 
 function SortableGridItem({
   result,
+  dashboardId,
+  density,
   editMode,
   onChanged,
 }: {
   result: WidgetLoadResult;
+  dashboardId: string;
+  density: 'compact' | 'roomy';
   editMode: boolean;
   onChanged: () => void;
 }) {
@@ -124,6 +130,8 @@ function SortableGridItem({
     >
       <WidgetRenderer
         result={result}
+        dashboardId={dashboardId}
+        density={density}
         onChanged={onChanged}
         editMode={editMode}
         dragHandleProps={result.status === 'ok' ? { ...attributes, ...listeners } : undefined}
@@ -132,7 +140,13 @@ function SortableGridItem({
   );
 }
 
-export function DashboardGrid({ results, onChanged, editMode }: DashboardGridProps) {
+export function DashboardGrid({
+  results,
+  dashboardId,
+  density,
+  onChanged,
+  editMode,
+}: DashboardGridProps) {
   const isDesktop = useIsDesktopViewport();
   const activeId = useSignal<string | null>(null);
   const ordered = sortedResults(results);
@@ -148,6 +162,8 @@ export function DashboardGrid({ results, onChanged, editMode }: DashboardGridPro
           <WidgetRenderer
             key={resultKey(result)}
             result={result}
+            dashboardId={dashboardId}
+            density={density}
             onChanged={onChanged}
             editMode={false}
           />
@@ -167,8 +183,8 @@ export function DashboardGrid({ results, onChanged, editMode }: DashboardGridPro
     const targetId = String(event.over.id);
     if (movedId === targetId) return;
     try {
-      const changed = await reorderWidget(DEFAULT_DASHBOARD_ID, movedId, targetId);
-      patchDashboardWidgets(DEFAULT_DASHBOARD_ID, changed);
+      const changed = await reorderWidget(dashboardId, movedId, targetId);
+      patchDashboardWidgets(dashboardId, changed);
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Failed to reorder widgets');
     }
@@ -192,7 +208,7 @@ export function DashboardGrid({ results, onChanged, editMode }: DashboardGridPro
           className="grid gap-4 p-4"
           style={{
             gridTemplateColumns: `repeat(${GRID_COLUMNS}, 1fr)`,
-            gridAutoRows: `${GRID_ROW_HEIGHT_PX}px`,
+            gridAutoRows: `${rowHeightPx(density)}px`,
             gridAutoFlow: 'row',
           }}
         >
@@ -205,6 +221,8 @@ export function DashboardGrid({ results, onChanged, editMode }: DashboardGridPro
             <SortableGridItem
               key={resultKey(result)}
               result={result}
+              dashboardId={dashboardId}
+              density={density}
               editMode={editMode}
               onChanged={onChanged}
             />
@@ -214,7 +232,13 @@ export function DashboardGrid({ results, onChanged, editMode }: DashboardGridPro
       <DragOverlay>
         {activeResult ? (
           <div style={{ width: 320 }}>
-            <WidgetRenderer result={activeResult} onChanged={onChanged} editMode={false} />
+            <WidgetRenderer
+              result={activeResult}
+              dashboardId={dashboardId}
+              density={density}
+              onChanged={onChanged}
+              editMode={false}
+            />
           </div>
         ) : null}
       </DragOverlay>

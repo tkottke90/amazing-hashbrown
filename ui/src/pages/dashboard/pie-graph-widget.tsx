@@ -4,7 +4,7 @@ import * as d3Shape from 'd3-shape';
 import { Pencil, Trash2 } from 'lucide-preact';
 import { Button } from '@/components/ui/button';
 import { showToast } from '@/lib/toast';
-import { deleteWidget, DEFAULT_DASHBOARD_ID } from '@/services/dashboard-api';
+import { deleteWidget } from '@/services/dashboard-api';
 import { getDomainColor } from '@/pages/wiki/domain-filter';
 import { parseCsvBody } from './parse-csv-body';
 import { WidgetCard, type DragHandleProps } from './widget-card';
@@ -17,6 +17,8 @@ import type { PieGraphWidget as PieGraphWidgetData } from '@tkottke90/amazing-ha
 
 interface PieGraphWidgetProps {
   widget: PieGraphWidgetData;
+  dashboardId: string;
+  density: 'compact' | 'roomy';
   onChanged: () => void;
   editMode?: boolean;
   dragHandleProps?: DragHandleProps;
@@ -32,6 +34,8 @@ const RADIUS = CHART_SIZE / 2;
 
 export function PieGraphWidget({
   widget,
+  dashboardId,
+  density,
   onChanged,
   editMode,
   dragHandleProps,
@@ -76,7 +80,7 @@ export function PieGraphWidget({
   async function handleDelete() {
     if (!confirm(`Remove widget "${widget.title}"? This cannot be undone.`)) return;
     try {
-      await deleteWidget(DEFAULT_DASHBOARD_ID, widget.id);
+      await deleteWidget(dashboardId, widget.id);
       onChanged();
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Failed to remove widget');
@@ -84,7 +88,15 @@ export function PieGraphWidget({
   }
 
   return (
-    <WidgetCard editMode={editMode} w={w} h={h} minW={minW} minH={minH} onResize={onResize}>
+    <WidgetCard
+      editMode={editMode}
+      w={w}
+      h={h}
+      minW={minW}
+      minH={minH}
+      density={density}
+      onResize={onResize}
+    >
       <WidgetHeader
         title={widget.title}
         subtitle={widget.subtitle}
@@ -99,6 +111,7 @@ export function PieGraphWidget({
       <WidgetAction>
         <WidgetDrawer
           mode="edit"
+          dashboardId={dashboardId}
           target={{ status: 'ok', widget }}
           onSaved={onChanged}
           trigger={

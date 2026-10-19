@@ -5,7 +5,7 @@ import * as d3Shape from 'd3-shape';
 import { Pencil, Trash2 } from 'lucide-preact';
 import { Button } from '@/components/ui/button';
 import { showToast } from '@/lib/toast';
-import { deleteWidget, DEFAULT_DASHBOARD_ID } from '@/services/dashboard-api';
+import { deleteWidget } from '@/services/dashboard-api';
 import { getDomainColor } from '@/pages/wiki/domain-filter';
 import { parseCsvBody } from './parse-csv-body';
 import { WidgetCard, type DragHandleProps } from './widget-card';
@@ -18,6 +18,8 @@ import type { LineGraphWidget as LineGraphWidgetData } from '@tkottke90/amazing-
 
 interface LineGraphWidgetProps {
   widget: LineGraphWidgetData;
+  dashboardId: string;
+  density: 'compact' | 'roomy';
   onChanged: () => void;
   editMode?: boolean;
   dragHandleProps?: DragHandleProps;
@@ -37,6 +39,8 @@ const MAX_TICKS = 5;
 
 export function LineGraphWidget({
   widget,
+  dashboardId,
+  density,
   onChanged,
   editMode,
   dragHandleProps,
@@ -100,7 +104,7 @@ export function LineGraphWidget({
   async function handleDelete() {
     if (!confirm(`Remove widget "${widget.title}"? This cannot be undone.`)) return;
     try {
-      await deleteWidget(DEFAULT_DASHBOARD_ID, widget.id);
+      await deleteWidget(dashboardId, widget.id);
       onChanged();
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Failed to remove widget');
@@ -108,7 +112,15 @@ export function LineGraphWidget({
   }
 
   return (
-    <WidgetCard editMode={editMode} w={w} h={h} minW={minW} minH={minH} onResize={onResize}>
+    <WidgetCard
+      editMode={editMode}
+      w={w}
+      h={h}
+      minW={minW}
+      minH={minH}
+      density={density}
+      onResize={onResize}
+    >
       <WidgetHeader
         title={widget.title}
         subtitle={widget.subtitle}
@@ -127,6 +139,7 @@ export function LineGraphWidget({
       <WidgetAction>
         <WidgetDrawer
           mode="edit"
+          dashboardId={dashboardId}
           target={{ status: 'ok', widget }}
           onSaved={onChanged}
           trigger={

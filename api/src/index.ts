@@ -17,7 +17,10 @@ import { bootTrackerRegistry } from './services/tracker-registry.js';
 import { bootTaskScheduler } from './services/task-scheduler.js';
 import { bootCronRegistry, getCronRegistry, withCronResync } from './services/cron-registry.js';
 import { bootKnowledgeBase } from './knowledge-base/index.js';
-import { ensureSeeded as ensureDashboardSeeded } from '@tkottke90/amazing-hashbrown-widgets';
+import {
+  ensureSeeded as ensureDashboardSeeded,
+  migrateDefaultDashboardMetadata,
+} from '@tkottke90/amazing-hashbrown-widgets';
 import { bootArtifactStore } from './artifacts/artifact-store.js';
 import { startArtifactGc } from './artifacts/artifact-gc.js';
 import { bootSkillsManager, skillsManager } from './services/skills-manager.js';
@@ -76,6 +79,7 @@ initWikiAgent(db);
 await bootKnowledgeBase();
 app.logger.info('Knowledge base booted');
 await ensureDashboardSeeded(env.dashboardRoot, 'default');
+await migrateDefaultDashboardMetadata(env.dashboardRoot);
 app.logger.info('Dashboard widgets booted');
 await loadAgentInstructions();
 app.logger.info('Agent instructions loaded');

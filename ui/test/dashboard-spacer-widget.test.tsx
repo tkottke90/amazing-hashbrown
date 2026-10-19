@@ -38,19 +38,42 @@ describe('SpacerWidget', () => {
   });
 
   it('renders nothing outside Edit Mode — invisible, blank grid space [unit]', () => {
-    const { container } = render(<SpacerWidget widget={widget()} onChanged={jest.fn()} />);
+    const { container } = render(
+      <SpacerWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget()}
+        onChanged={jest.fn()}
+      />,
+    );
     expect(container).toBeEmptyDOMElement();
   });
 
   it('shows a generic "Spacer" header, drag grip, and delete button in Edit Mode [unit]', () => {
-    render(<SpacerWidget widget={widget()} onChanged={jest.fn()} editMode />);
+    render(
+      <SpacerWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget()}
+        onChanged={jest.fn()}
+        editMode
+      />,
+    );
     expect(screen.getByText('Spacer')).toBeInTheDocument();
     expect(screen.getByTestId('widget-drag-handle')).toBeInTheDocument();
     expect(screen.getByTestId('widget-delete-button')).toBeInTheDocument();
   });
 
   it('shows no provenance footer or content region — nothing but header and action [unit]', () => {
-    render(<SpacerWidget widget={widget()} onChanged={jest.fn()} editMode />);
+    render(
+      <SpacerWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget()}
+        onChanged={jest.fn()}
+        editMode
+      />,
+    );
     expect(screen.queryByTestId('widget-card-provenance')).not.toBeInTheDocument();
     expect(screen.queryByTestId('widget-content')).not.toBeInTheDocument();
   });
@@ -58,7 +81,15 @@ describe('SpacerWidget', () => {
   it('delete asks for confirmation, then deletes and calls onChanged [unit]', async () => {
     mockDelete.mockResolvedValue(undefined);
     const onChanged = jest.fn();
-    render(<SpacerWidget widget={widget()} onChanged={onChanged} editMode />);
+    render(
+      <SpacerWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget()}
+        onChanged={onChanged}
+        editMode
+      />,
+    );
 
     fireEvent.click(screen.getByTestId('widget-delete-button'));
 
@@ -72,7 +103,15 @@ describe('SpacerWidget', () => {
   it('delete does nothing when confirmation is declined [unit]', () => {
     global.confirm = jest.fn(() => false);
     const onChanged = jest.fn();
-    render(<SpacerWidget widget={widget()} onChanged={onChanged} editMode />);
+    render(
+      <SpacerWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget()}
+        onChanged={onChanged}
+        editMode
+      />,
+    );
 
     fireEvent.click(screen.getByTestId('widget-delete-button'));
 
@@ -82,7 +121,15 @@ describe('SpacerWidget', () => {
 
   it('shows a toast when delete fails [unit]', async () => {
     mockDelete.mockRejectedValue(new Error('server error'));
-    render(<SpacerWidget widget={widget()} onChanged={jest.fn()} editMode />);
+    render(
+      <SpacerWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget()}
+        onChanged={jest.fn()}
+        editMode
+      />,
+    );
 
     fireEvent.click(screen.getByTestId('widget-delete-button'));
 

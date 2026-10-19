@@ -731,6 +731,138 @@ describe('store', () => {
     });
   });
 
+  describe('listDashboards', () => {
+    it('returns an empty list for a root with no dashboard folders', async () => {
+      const root = await tmpRoot();
+      expect(await store.listDashboards(root)).to.deep.equal([]);
+    });
+
+    it('reads a folder with no dashboard.json using id-as-name / compact / empty defaults', async () => {
+      const root = await tmpRoot();
+      await store.createWidget(root, 'default', {
+        type: 'markdown',
+        title: 'Tip',
+        source: 'manual',
+        content: 'x',
+      });
+      const results = await store.listDashboards(root);
+      expect(results).to.have.length(1);
+      expect(results[0]).to.deep.include({
+        id: 'default',
+        name: 'default',
+        description: '',
+        density: 'compact',
+      });
+    });
+
+    it('reads a real dashboard.json file verbatim', async () => {
+      const root = await tmpRoot();
+      const created = await store.createDashboard(root, 'Homelab');
+      const results = await store.listDashboards(root);
+      expect(results).to.have.length(1);
+      expect(results[0]).to.deep.equal(created);
+    });
+
+    it('sorts by createdAt ascending (first-created first)', async () => {
+      const root = await tmpRoot();
+      const first = await store.createDashboard(root, 'First');
+      const second = await store.createDashboard(root, 'Second');
+      const results = await store.listDashboards(root);
+      expect(results.map((d) => d.id)).to.deep.equal([first.id, second.id]);
+    });
+  });
+
+  describe('createDashboard', () => {
+    it('creates an empty dashboard with the given name and compact-density defaults', async () => {
+      const root = await tmpRoot();
+      const dashboard = await store.createDashboard(root, 'Research');
+      expect(dashboard.name).to.equal('Research');
+      expect(dashboard.description).to.equal('');
+      expect(dashboard.density).to.equal('compact');
+      expect(await store.listWidgets(root, dashboard.id)).to.deep.equal([]);
+    });
+
+    it('generates a UUID-shaped id, not derived from the name', async () => {
+      const root = await tmpRoot();
+      const dashboard = await store.createDashboard(root, 'Research');
+      expect(dashboard.id).to.match(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+      );
+    });
+
+    it('gives two dashboards with the same name different ids', async () => {
+      const root = await tmpRoot();
+      const a = await store.createDashboard(root, 'Duplicate');
+      const b = await store.createDashboard(root, 'Duplicate');
+      expect(a.id).to.not.equal(b.id);
+    });
+  });
+
+  describe('updateDashboardMetadata', () => {
+    it('preserves name/description/createdAt when only density is patched', async () => {
+      const root = await tmpRoot();
+      const created = await store.createDashboard(root, 'Original');
+      const updated = await store.updateDashboardMetadata(root, created.id, { density: 'roomy' });
+      expect(updated).to.deep.equal({ ...created, density: 'roomy' });
+    });
+
+    it('preserves createdAt when name/description are patched', async () => {
+      const root = await tmpRoot();
+      const created = await store.createDashboard(root, 'Original');
+      const updated = await store.updateDashboardMetadata(root, created.id, {
+        name: 'Renamed',
+        description: 'New description',
+      });
+      expect(updated.createdAt).to.equal(created.createdAt);
+      expect(updated.name).to.equal('Renamed');
+      expect(updated.description).to.equal('New description');
+    });
+  });
+
+  describe('deleteDashboard', () => {
+    it('removes the folder entirely, including its widgets', async () => {
+      const root = await tmpRoot();
+      const created = await store.createDashboard(root, 'Temp');
+      await store.createWidget(root, created.id, {
+        type: 'markdown',
+        title: 'X',
+        source: 'manual',
+        content: 'x',
+      });
+      await store.deleteDashboard(root, created.id);
+      expect(await store.listDashboards(root)).to.deep.equal([]);
+    });
+
+    it('does not throw deleting an already-gone folder', async () => {
+      const root = await tmpRoot();
+      await store.deleteDashboard(root, 'never-existed');
+    });
+  });
+
+  describe('migrateDefaultDashboardMetadata', () => {
+    it('writes a Default dashboard.json when `default` has none yet', async () => {
+      const root = await tmpRoot();
+      await store.migrateDefaultDashboardMetadata(root);
+      const results = await store.listDashboards(root);
+      expect(results).to.have.length(1);
+      expect(results[0]).to.deep.include({
+        id: 'default',
+        name: 'Default',
+        description: '',
+        density: 'compact',
+      });
+    });
+
+    it('is idempotent and never overwrites an already-renamed Default', async () => {
+      const root = await tmpRoot();
+      await store.migrateDefaultDashboardMetadata(root);
+      await store.updateDashboardMetadata(root, 'default', { name: 'My Dashboard' });
+      await store.migrateDefaultDashboardMetadata(root);
+      const dashboard = await store.getDashboardMetadata(root, 'default');
+      expect(dashboard?.name).to.equal('My Dashboard');
+    });
+  });
+
   describe('path-traversal guard', () => {
     it('rejects a dashboardId containing a path separator', async () => {
       const root = await tmpRoot();

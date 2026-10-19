@@ -7,6 +7,7 @@ import { WidgetDrawer } from './widget-drawer';
 
 interface WidgetErrorCardProps {
   result: Extract<WidgetLoadResult, { status: 'error' }>;
+  dashboardId: string;
   onChanged: () => void;
 }
 
@@ -16,7 +17,7 @@ interface WidgetErrorCardProps {
 // "Edit raw file" opens the same edit drawer as a healthy widget's Edit
 // button — its entry rules land it on the Raw tab automatically with Form
 // unreachable, since there's nothing valid to show in Form.
-export function WidgetErrorCard({ result, onChanged }: WidgetErrorCardProps) {
+export function WidgetErrorCard({ result, dashboardId, onChanged }: WidgetErrorCardProps) {
   return (
     // widget-card.tsx stays type-agnostic (no error-specific prop) per the
     // design doc's D13 — this wrapper adds the distinguishing testid on top
@@ -31,6 +32,7 @@ export function WidgetErrorCard({ result, onChanged }: WidgetErrorCardProps) {
         <WidgetAction>
           <WidgetDrawer
             mode="edit"
+            dashboardId={dashboardId}
             target={result}
             onSaved={onChanged}
             trigger={

@@ -13,7 +13,12 @@ import {
   updateWidgetContentHandler,
   updateWidgetRawHandler,
   deleteWidgetHandler,
+  listDashboardsHandler,
+  createDashboardHandler,
+  updateDashboardHandler,
+  deleteDashboardHandler,
 } from './dashboards.handlers.js';
+import path from 'node:path';
 
 describe('routes/v1/dashboards.handlers', () => {
   let root: string;
@@ -746,6 +751,135 @@ describe('routes/v1/dashboards.handlers', () => {
 
     it('returns 404 for a widget id that does not exist [unit]', async () => {
       const result = await deleteWidgetHandler(root, 'default', 'nope');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
+    });
+  });
+
+  describe('listDashboardsHandler()', () => {
+    it('returns [] for an empty root [unit]', async () => {
+      const result = await listDashboardsHandler(root);
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data).to.deep.equal([]);
+    });
+
+    it('includes a derived path field equal to path.join(root, id) [unit]', async () => {
+      const created = await createDashboardHandler(root, { name: 'Homelab' });
+      if (!created.ok) throw new Error('setup failed');
+
+      const result = await listDashboardsHandler(root);
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(result.data).to.have.length(1);
+        expect(result.data[0]?.path).to.equal(path.join(root, created.data.id));
+      }
+    });
+
+    it('sorts by createdAt ascending [unit]', async () => {
+      const first = await createDashboardHandler(root, { name: 'First' });
+      const second = await createDashboardHandler(root, { name: 'Second' });
+      if (!first.ok || !second.ok) throw new Error('setup failed');
+
+      const result = await listDashboardsHandler(root);
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(result.data.map((d) => d.id)).to.deep.equal([first.data.id, second.data.id]);
+      }
+    });
+  });
+
+  describe('createDashboardHandler()', () => {
+    it('creates a dashboard with the given name, empty description, density compact [unit]', async () => {
+      const result = await createDashboardHandler(root, { name: 'Research' });
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(result.data.name).to.equal('Research');
+        expect(result.data.description).to.equal('');
+        expect(result.data.density).to.equal('compact');
+      }
+    });
+
+    it('starts with zero widgets [unit]', async () => {
+      const created = await createDashboardHandler(root, { name: 'Research' });
+      if (!created.ok) throw new Error('setup failed');
+
+      const widgets = await listWidgetsHandler(root, created.data.id);
+      expect(widgets.ok).to.equal(true);
+      if (widgets.ok) expect(widgets.data).to.deep.equal([]);
+    });
+
+    it('rejects an empty/missing name with 400 [unit]', async () => {
+      const result = await createDashboardHandler(root, { name: '' });
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+    });
+  });
+
+  describe('updateDashboardHandler()', () => {
+    it('updates name only, preserving description/density [unit]', async () => {
+      const created = await createDashboardHandler(root, { name: 'Original' });
+      if (!created.ok) throw new Error('setup failed');
+
+      const result = await updateDashboardHandler(root, created.data.id, { name: 'Renamed' });
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(result.data.name).to.equal('Renamed');
+        expect(result.data.description).to.equal(created.data.description);
+        expect(result.data.density).to.equal(created.data.density);
+      }
+    });
+
+    it('updates density to roomy [unit]', async () => {
+      const created = await createDashboardHandler(root, { name: 'Original' });
+      if (!created.ok) throw new Error('setup failed');
+
+      const result = await updateDashboardHandler(root, created.data.id, { density: 'roomy' });
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data.density).to.equal('roomy');
+    });
+
+    it('returns 404 for an unknown dashboard id [unit]', async () => {
+      const result = await updateDashboardHandler(root, 'nope', { name: 'X' });
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
+    });
+
+    it('returns 400 for an invalid density value [unit]', async () => {
+      const created = await createDashboardHandler(root, { name: 'Original' });
+      if (!created.ok) throw new Error('setup failed');
+
+      const result = await updateDashboardHandler(root, created.data.id, {
+        density: 'spacious',
+      });
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+    });
+  });
+
+  describe('deleteDashboardHandler()', () => {
+    it('deletes a dashboard when 2+ exist [unit]', async () => {
+      const first = await createDashboardHandler(root, { name: 'First' });
+      const second = await createDashboardHandler(root, { name: 'Second' });
+      if (!first.ok || !second.ok) throw new Error('setup failed');
+
+      const result = await deleteDashboardHandler(root, second.data.id);
+      expect(result.ok).to.equal(true);
+
+      const list = await listDashboardsHandler(root);
+      if (list.ok) expect(list.data.map((d) => d.id)).to.deep.equal([first.data.id]);
+    });
+
+    it('returns 400 (delete-guard) when it is the only dashboard [unit]', async () => {
+      const created = await createDashboardHandler(root, { name: 'Only' });
+      if (!created.ok) throw new Error('setup failed');
+
+      const result = await deleteDashboardHandler(root, created.data.id);
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+    });
+
+    it('returns 404 for an unknown dashboard id [unit]', async () => {
+      const result = await deleteDashboardHandler(root, 'nope');
       expect(result.ok).to.equal(false);
       if (!result.ok) expect(result.status).to.equal(404);
     });

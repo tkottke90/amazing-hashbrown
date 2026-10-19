@@ -1,6 +1,6 @@
 import { useRef } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
-import { GRID_COLUMNS, GRID_MAX_ROWS, GRID_ROW_HEIGHT_PX } from './grid-constants';
+import { GRID_COLUMNS, GRID_MAX_ROWS, rowHeightPx } from './grid-constants';
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -11,6 +11,8 @@ interface UseWidgetResizeOptions {
   h: number;
   minW: number;
   minH: number;
+  /** Density (see GLOSSARY.md) — which fixed row height the drag-delta math divides by. */
+  density: 'compact' | 'roomy';
   onResize: (w: number, h: number) => void;
 }
 
@@ -24,7 +26,7 @@ interface UseWidgetResizeOptions {
  * unlike row height, it has no fixed pixel constant — it's 1/GRID_COLUMNS
  * of the grid's own rendered width.
  */
-export function useWidgetResize({ w, h, minW, minH, onResize }: UseWidgetResizeOptions) {
+export function useWidgetResize({ w, h, minW, minH, density, onResize }: UseWidgetResizeOptions) {
   const cardRef = useRef<HTMLDivElement>(null);
   const liveSize = useSignal<{ w: number; h: number } | null>(null);
   const drag = useRef<{
@@ -52,7 +54,7 @@ export function useWidgetResize({ w, h, minW, minH, onResize }: UseWidgetResizeO
     const current = drag.current;
     if (!current) return;
     const deltaColumns = Math.round((event.clientX - current.startX) / current.columnPx);
-    const deltaRows = Math.round((event.clientY - current.startY) / GRID_ROW_HEIGHT_PX);
+    const deltaRows = Math.round((event.clientY - current.startY) / rowHeightPx(density));
     liveSize.value = {
       w: clamp(current.startW + deltaColumns, minW, GRID_COLUMNS),
       h: clamp(current.startH + deltaRows, minH, GRID_MAX_ROWS),

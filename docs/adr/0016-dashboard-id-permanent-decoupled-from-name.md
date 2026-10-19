@@ -1,6 +1,6 @@
 # Dashboard id is permanent and decoupled from Dashboard Name
 
-Dashboard identity — its on-disk folder, every API path, every agent-tool reference — is carried by a Dashboard Id, assigned once at creation and never changed. Renaming a Dashboard only updates its Dashboard Metadata, never touches the folder. New Dashboard ids are nanoid-generated rather than derived from the Dashboard Name, because Dashboard Names are explicitly not unique (two Dashboards may share a display name), and a name-derived slug would need its own collision handling for no benefit once id and name are kept independent regardless.
+Dashboard identity — its on-disk folder, every API path, every agent-tool reference — is carried by a Dashboard Id, assigned once at creation and never changed. Renaming a Dashboard only updates its Dashboard Metadata, never touches the folder. New Dashboard ids are generated via `node:crypto`'s `randomUUID()` rather than derived from the Dashboard Name, because Dashboard Names are explicitly not unique (two Dashboards may share a display name), and a name-derived slug would need its own collision handling for no benefit once id and name are kept independent regardless. `randomUUID()` matches this codebase's existing id-generation pattern (`lib/amazing-hashbrown-widgets/src/internal/slug.ts`'s collision suffix already uses it) rather than adding a new dependency (e.g. nanoid) for no behavioral difference.
 
 ## Considered Options
 

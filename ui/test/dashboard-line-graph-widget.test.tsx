@@ -53,20 +53,41 @@ describe('LineGraphWidget', () => {
   });
 
   it('renders an svg line from the CSV Body [unit]', () => {
-    renderWidget(<LineGraphWidget widget={widget()} onChanged={jest.fn()} />);
+    renderWidget(
+      <LineGraphWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget()}
+        onChanged={jest.fn()}
+      />,
+    );
     const chart = screen.getByTestId('line-graph-widget');
     expect(chart).toBeInTheDocument();
     expect(chart.querySelector('svg path')).not.toBeNull();
   });
 
   it("uses the widget's Color Override for the line stroke when present [unit]", () => {
-    renderWidget(<LineGraphWidget widget={widget({ color: '#ff0000' })} onChanged={jest.fn()} />);
+    renderWidget(
+      <LineGraphWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget({ color: '#ff0000' })}
+        onChanged={jest.fn()}
+      />,
+    );
     const path = screen.getByTestId('line-graph-widget').querySelector('svg path');
     expect(path?.getAttribute('stroke')).toBe('#ff0000');
   });
 
   it('falls back to the default palette color when no override is set [unit]', () => {
-    renderWidget(<LineGraphWidget widget={widget()} onChanged={jest.fn()} />);
+    renderWidget(
+      <LineGraphWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget()}
+        onChanged={jest.fn()}
+      />,
+    );
     const path = screen.getByTestId('line-graph-widget').querySelector('svg path');
     expect(path?.getAttribute('stroke')).toBe('#6366f1');
   });
@@ -74,7 +95,14 @@ describe('LineGraphWidget', () => {
   it('delete asks for confirmation, then deletes and calls onChanged [unit]', async () => {
     mockDelete.mockResolvedValue(undefined);
     const onChanged = jest.fn();
-    renderWidget(<LineGraphWidget widget={widget()} onChanged={onChanged} />);
+    renderWidget(
+      <LineGraphWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget()}
+        onChanged={onChanged}
+      />,
+    );
 
     fireEvent.click(screen.getByTestId('widget-delete-button'));
 
@@ -86,13 +114,27 @@ describe('LineGraphWidget', () => {
   });
 
   it('renders an edit button that opens the widget drawer form [unit]', () => {
-    renderWidget(<LineGraphWidget widget={widget()} onChanged={jest.fn()} />);
+    renderWidget(
+      <LineGraphWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget()}
+        onChanged={jest.fn()}
+      />,
+    );
     expect(screen.getByTestId('widget-edit-button')).toBeInTheDocument();
     expect(screen.getByTestId('widget-drawer-form')).toBeInTheDocument();
   });
 
   it('renders content in the scrollable region and buttons in the pinned action row [unit]', () => {
-    renderWidget(<LineGraphWidget widget={widget()} onChanged={jest.fn()} />);
+    renderWidget(
+      <LineGraphWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget()}
+        onChanged={jest.fn()}
+      />,
+    );
     expect(screen.getByTestId('widget-content')).toContainElement(
       screen.getByTestId('line-graph-widget'),
     );

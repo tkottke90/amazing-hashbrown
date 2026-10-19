@@ -64,7 +64,14 @@ describe('WidgetDrawer', () => {
   });
 
   it('add mode defaults to Markdown, with a type selector and empty title/subtitle/content fields [unit]', () => {
-    renderDrawer(<WidgetDrawer mode="add" onSaved={jest.fn()} trigger={<button>Add</button>} />);
+    renderDrawer(
+      <WidgetDrawer
+        mode="add"
+        dashboardId="default"
+        onSaved={jest.fn()}
+        trigger={<button>Add</button>}
+      />,
+    );
     expect(screen.getByTestId('widget-type-picker')).toBeInTheDocument();
     expect(screen.getByLabelText('Title')).toHaveValue('');
     expect(screen.getByLabelText('Subtitle')).toHaveValue('');
@@ -74,7 +81,14 @@ describe('WidgetDrawer', () => {
   it('add mode calls createWidget with the entered fields (including type) and onSaved on success [unit]', async () => {
     mockCreate.mockResolvedValue({ ...WIDGET, id: 'new' });
     const onSaved = jest.fn();
-    renderDrawer(<WidgetDrawer mode="add" onSaved={onSaved} trigger={<button>Add</button>} />);
+    renderDrawer(
+      <WidgetDrawer
+        mode="add"
+        dashboardId="default"
+        onSaved={onSaved}
+        trigger={<button>Add</button>}
+      />,
+    );
 
     fireEvent.input(screen.getByLabelText('Title'), { target: { value: 'New widget' } });
     fireEvent.input(screen.getByLabelText('Content (Markdown)'), { target: { value: 'body' } });
@@ -94,7 +108,14 @@ describe('WidgetDrawer', () => {
   it('shows the error message and does not call onSaved when the save rejects [unit]', async () => {
     mockCreate.mockRejectedValue(new Error('title already taken'));
     const onSaved = jest.fn();
-    renderDrawer(<WidgetDrawer mode="add" onSaved={onSaved} trigger={<button>Add</button>} />);
+    renderDrawer(
+      <WidgetDrawer
+        mode="add"
+        dashboardId="default"
+        onSaved={onSaved}
+        trigger={<button>Add</button>}
+      />,
+    );
 
     fireEvent.input(screen.getByLabelText('Title'), { target: { value: 'x' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
@@ -107,6 +128,7 @@ describe('WidgetDrawer', () => {
     renderDrawer(
       <WidgetDrawer
         mode="edit"
+        dashboardId="default"
         target={OK_TARGET}
         onSaved={jest.fn()}
         trigger={<button>Edit</button>}
@@ -126,6 +148,7 @@ describe('WidgetDrawer', () => {
     renderDrawer(
       <WidgetDrawer
         mode="edit"
+        dashboardId="default"
         target={OK_TARGET}
         onSaved={onSaved}
         trigger={<button>Edit</button>}
@@ -151,6 +174,7 @@ describe('WidgetDrawer', () => {
     renderDrawer(
       <WidgetDrawer
         mode="edit"
+        dashboardId="default"
         target={ERROR_TARGET}
         onSaved={jest.fn()}
         trigger={<button>Fix</button>}
@@ -172,6 +196,7 @@ describe('WidgetDrawer', () => {
     renderDrawer(
       <WidgetDrawer
         mode="edit"
+        dashboardId="default"
         target={OK_TARGET}
         onSaved={onSaved}
         trigger={<button>Edit</button>}
@@ -204,6 +229,7 @@ describe('WidgetDrawer', () => {
     renderDrawer(
       <WidgetDrawer
         mode="edit"
+        dashboardId="default"
         target={OK_TARGET}
         onSaved={onSaved}
         trigger={<button>Edit</button>}
@@ -232,6 +258,7 @@ describe('WidgetDrawer', () => {
     renderDrawer(
       <WidgetDrawer
         mode="edit"
+        dashboardId="default"
         target={OK_TARGET}
         onSaved={jest.fn()}
         trigger={<button>Edit</button>}
@@ -262,6 +289,7 @@ describe('WidgetDrawer', () => {
     renderDrawer(
       <WidgetDrawer
         mode="edit"
+        dashboardId="default"
         target={OK_TARGET}
         onSaved={jest.fn()}
         trigger={<button>Edit</button>}
@@ -300,6 +328,7 @@ describe('WidgetDrawer', () => {
     renderDrawer(
       <WidgetDrawer
         mode="edit"
+        dashboardId="default"
         target={OK_TARGET}
         onSaved={jest.fn()}
         trigger={<button>Edit</button>}
@@ -319,6 +348,7 @@ describe('WidgetDrawer', () => {
     renderDrawer(
       <WidgetDrawer
         mode="edit"
+        dashboardId="default"
         target={OK_TARGET}
         onSaved={jest.fn()}
         trigger={<button>Edit</button>}
@@ -337,7 +367,14 @@ describe('WidgetDrawer', () => {
 
   describe('type picker and per-type field sets', () => {
     it('the type picker offers all 5 types and swaps the field set on selection [unit]', async () => {
-      renderDrawer(<WidgetDrawer mode="add" onSaved={jest.fn()} trigger={<button>Add</button>} />);
+      renderDrawer(
+        <WidgetDrawer
+          mode="add"
+          dashboardId="default"
+          onSaved={jest.fn()}
+          trigger={<button>Add</button>}
+        />,
+      );
 
       fireEvent.click(screen.getByTestId('widget-type-picker'));
       expect(await screen.findByRole('option', { name: 'Spacer' })).toBeInTheDocument();
@@ -359,7 +396,14 @@ describe('WidgetDrawer', () => {
         source: 'manual',
         updatedAt: '2026-01-01T00:00:00.000Z',
       });
-      renderDrawer(<WidgetDrawer mode="add" onSaved={jest.fn()} trigger={<button>Add</button>} />);
+      renderDrawer(
+        <WidgetDrawer
+          mode="add"
+          dashboardId="default"
+          onSaved={jest.fn()}
+          trigger={<button>Add</button>}
+        />,
+      );
 
       fireEvent.click(screen.getByTestId('widget-type-picker'));
       fireEvent.click(await screen.findByRole('option', { name: 'Spacer' }));
@@ -373,7 +417,14 @@ describe('WidgetDrawer', () => {
     });
 
     it('switching to Line Graph shows the color override field and the CSV editor [unit]', async () => {
-      renderDrawer(<WidgetDrawer mode="add" onSaved={jest.fn()} trigger={<button>Add</button>} />);
+      renderDrawer(
+        <WidgetDrawer
+          mode="add"
+          dashboardId="default"
+          onSaved={jest.fn()}
+          trigger={<button>Add</button>}
+        />,
+      );
 
       fireEvent.click(screen.getByTestId('widget-type-picker'));
       fireEvent.click(await screen.findByRole('option', { name: 'Line Graph' }));
@@ -383,7 +434,14 @@ describe('WidgetDrawer', () => {
     });
 
     it('switching to Pie Graph shows the colors override field and the CSV editor [unit]', async () => {
-      renderDrawer(<WidgetDrawer mode="add" onSaved={jest.fn()} trigger={<button>Add</button>} />);
+      renderDrawer(
+        <WidgetDrawer
+          mode="add"
+          dashboardId="default"
+          onSaved={jest.fn()}
+          trigger={<button>Add</button>}
+        />,
+      );
 
       fireEvent.click(screen.getByTestId('widget-type-picker'));
       fireEvent.click(await screen.findByRole('option', { name: 'Pie Graph' }));
@@ -403,7 +461,14 @@ describe('WidgetDrawer', () => {
         source: 'manual',
         updatedAt: '2026-01-01T00:00:00.000Z',
       });
-      renderDrawer(<WidgetDrawer mode="add" onSaved={jest.fn()} trigger={<button>Add</button>} />);
+      renderDrawer(
+        <WidgetDrawer
+          mode="add"
+          dashboardId="default"
+          onSaved={jest.fn()}
+          trigger={<button>Add</button>}
+        />,
+      );
 
       fireEvent.click(screen.getByTestId('widget-type-picker'));
       fireEvent.click(await screen.findByRole('option', { name: 'Big Number' }));
@@ -430,7 +495,14 @@ describe('WidgetDrawer', () => {
         source: 'manual',
         updatedAt: '2026-01-01T00:00:00.000Z',
       });
-      renderDrawer(<WidgetDrawer mode="add" onSaved={jest.fn()} trigger={<button>Add</button>} />);
+      renderDrawer(
+        <WidgetDrawer
+          mode="add"
+          dashboardId="default"
+          onSaved={jest.fn()}
+          trigger={<button>Add</button>}
+        />,
+      );
 
       fireEvent.click(screen.getByTestId('widget-type-picker'));
       fireEvent.click(await screen.findByRole('option', { name: 'Big Number' }));
@@ -452,7 +524,14 @@ describe('WidgetDrawer', () => {
 
     it("a line-graph widget's Save validates the CSV before creating, and blocks on a validation failure [unit]", async () => {
       mockValidate.mockResolvedValue({ ok: false, error: 'bad csv' });
-      renderDrawer(<WidgetDrawer mode="add" onSaved={jest.fn()} trigger={<button>Add</button>} />);
+      renderDrawer(
+        <WidgetDrawer
+          mode="add"
+          dashboardId="default"
+          onSaved={jest.fn()}
+          trigger={<button>Add</button>}
+        />,
+      );
 
       fireEvent.click(screen.getByTestId('widget-type-picker'));
       fireEvent.click(await screen.findByRole('option', { name: 'Line Graph' }));
@@ -485,7 +564,14 @@ describe('WidgetDrawer', () => {
         data: 'label,value\n09:00,120',
       });
       const onSaved = jest.fn();
-      renderDrawer(<WidgetDrawer mode="add" onSaved={onSaved} trigger={<button>Add</button>} />);
+      renderDrawer(
+        <WidgetDrawer
+          mode="add"
+          dashboardId="default"
+          onSaved={onSaved}
+          trigger={<button>Add</button>}
+        />,
+      );
 
       fireEvent.click(screen.getByTestId('widget-type-picker'));
       fireEvent.click(await screen.findByRole('option', { name: 'Line Graph' }));

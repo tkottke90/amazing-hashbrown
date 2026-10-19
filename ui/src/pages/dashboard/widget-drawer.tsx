@@ -28,7 +28,6 @@ import {
   validateWidgetRaw,
   fetchMetricCatalog,
   previewMetricValue,
-  DEFAULT_DASHBOARD_ID,
   type ValidatedWidgetFields,
   type ValidateWidgetResult,
   type MetricCatalogEntry,
@@ -39,8 +38,21 @@ import type { WidgetContentInput } from '@tkottke90/amazing-hashbrown-widgets/ty
 export type WidgetDrawerMode = 'add' | 'edit';
 
 export type WidgetDrawerProps =
-  | { mode: 'add'; onSaved: () => void; trigger: JSX.Element }
-  | { mode: 'edit'; target: WidgetLoadResult; onSaved: () => void; trigger: JSX.Element };
+  | {
+      mode: 'add';
+      dashboardId: string;
+      onSaved: () => void;
+      trigger: JSX.Element;
+      open?: Signal<boolean>;
+    }
+  | {
+      mode: 'edit';
+      dashboardId: string;
+      target: WidgetLoadResult;
+      onSaved: () => void;
+      trigger: JSX.Element;
+      open?: Signal<boolean>;
+    };
 
 function assertNeverWidgetType(type: never): never {
   throw new Error(`Unhandled widget type: ${type}`);
@@ -66,6 +78,7 @@ export function WidgetDrawer(props: WidgetDrawerProps) {
       side="right"
       className="w-[90vw]! sm:w-lg! sm:max-w-[90vw]! py-4"
       trigger={props.trigger}
+      open={props.open}
       onOpen={() => {
         openCount.value++;
       }}
@@ -83,7 +96,7 @@ interface LastChecked {
 }
 
 function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number> }) {
-  const { mode, onSaved, openCount } = props;
+  const { mode, dashboardId, onSaved, openCount } = props;
   const target = props.mode === 'edit' ? props.target : undefined;
   const { close } = useDialog();
 
@@ -338,7 +351,7 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
     isValidating.value = true;
     try {
       const result = await validateWidgetRaw({
-        dashboardId: DEFAULT_DASHBOARD_ID,
+        dashboardId,
         widgetId: widgetId ?? 'new',
         raw: text,
       });
@@ -438,7 +451,7 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
       if (!(await ensureValidated())) return;
       isSaving.value = true;
       try {
-        await updateWidgetRaw(DEFAULT_DASHBOARD_ID, widgetId as string, readRawText());
+        await updateWidgetRaw(dashboardId, widgetId as string, readRawText());
         onSaved();
         close();
       } catch (err) {
@@ -455,9 +468,9 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
     try {
       const input = buildWidgetContentInput();
       if (mode === 'add') {
-        await createWidget(DEFAULT_DASHBOARD_ID, input);
+        await createWidget(dashboardId, input);
       } else if (widgetId) {
-        await updateWidget(DEFAULT_DASHBOARD_ID, widgetId, input);
+        await updateWidget(dashboardId, widgetId, input);
       }
       onSaved();
       close();
