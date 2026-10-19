@@ -43,4 +43,6 @@ export default {
   },
   transformIgnorePatterns: ['/node_modules/(?!d3-[a-z-]+|internmap)'],
   testMatch: ['<rootDir>/test/**/*.test.tsx', '<rootDir>/test/**/*.test.ts'],
+  collectCoverageFrom: ['src/**/*.{ts,tsx}', '!src/**/*.d.ts'],
+  coverageReporters: ['lcov', 'text'],
 };

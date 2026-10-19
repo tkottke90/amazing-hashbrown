@@ -33,6 +33,22 @@ jobs:
       - name: Run Tests
         run: npm test
 
+      - name: Sonar (UI)
+        uses: SonarSource/sonarqube-scan-action@v6
+        with:
+          projectBaseDir: ui
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN_UI }}
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+
+      - name: Sonar (API)
+        uses: SonarSource/sonarqube-scan-action@v6
+        with:
+          projectBaseDir: api
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN_API }}
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+
   e2e:
     runs-on: ubuntu-latest
     permissions:
