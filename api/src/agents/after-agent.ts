@@ -4,7 +4,8 @@ import type { WikiEntry, WikiRegistry } from '@tkottke90/llm-wiki';
 import type { AfterAgentState } from '@tkottke90/llm-common-types/chat';
 import { createProvider } from '../services/provider-factory.js';
 import { getWikiRegistry } from '../services/wiki.js';
-import type { WorkspaceStore } from '../services/workspace-store.js';
+import { getWorkspaceStore, type WorkspaceStore } from '../services/workspace-store.js';
+import { getTaskScheduler } from '../services/task-scheduler.js';
 import type { ThreadStore } from '../services/thread-store.js';
 import { checkWikiWrite, resolveWikiWriteScope } from '../services/wiki-write-scope.js';
 import {
@@ -90,11 +91,16 @@ function setAfterAgentState(threadId: string, state: AfterAgentState): void {
   broadcast({ type: 'after_agent_state', threadId, state });
 }
 
-function setAfterAgentDone(threadId: string, outcome: 'identified' | 'no-op' | 'error'): void {
+function setAfterAgentDone(
+  threadId: string,
+  outcome: 'identified' | 'no-op' | 'error',
+  disposition?: 'written' | 'review',
+): void {
   setAfterAgentState(threadId, {
     status: 'done',
     outcome,
     finishedAt: new Date().toISOString(),
+    ...(disposition ? { disposition } : {}),
   });
 }
 
@@ -133,12 +139,37 @@ const ClassifyOutputSchema = z.object({
 // to the wiki root, which would collide with the wiki's real index.md/log.md.
 const ExtractOutputSchema = z.object({
   domainId: z.string().describe('The id of the wiki domain this content belongs in.'),
+  fitScore: z
+    .number()
+    .int()
+    .min(1)
+    .max(10)
+    .describe(
+      'How well this content actually matches domainId, from 1 (no real match) to 10 ' +
+        '(obviously belongs here). Judge this independently of whether the content is worth ' +
+        'saving at all — that was already decided.',
+    ),
   type: z.enum(['entity', 'concept', 'comparison', 'query', 'summary']),
   title: z.string(),
   tags: z.array(z.string()),
   body: z.string().describe('Page body as markdown (no frontmatter).'),
   summary: z.string().optional().describe('One-line summary for the wiki index entry.'),
 });
+
+// Domain Fit Score bands (see GLOSSARY.md's "AfterAgent & Wiki Write Scope"
+// section and docs/superpowers/specs/2026-10-18-afteragent-domain-fit-gate-design.md).
+// Named constants, not config — tuned by changing the number and re-running
+// suites/after-agent.yaml, same as any other prompt-tuning in this pipeline.
+const WRITE_BAND_MIN = 8;
+const REVIEW_BAND_MIN = 5;
+
+/** Which of the three Domain Fit Score bands a score falls into. Only
+ * consulted under Open Scope — see runAfterAgentPipeline. */
+export function fitScoreBand(fitScore: number): 'write' | 'review' | 'drop' {
+  if (fitScore >= WRITE_BAND_MIN) return 'write';
+  if (fitScore >= REVIEW_BAND_MIN) return 'review';
+  return 'drop';
+}
 
 const MergeOutputSchema = z.object({
   body: z
@@ -195,6 +226,12 @@ function buildExtractPrompt(turnText: string, summary: string, domains: WikiEntr
     'tags/domain best match the content.',
     `Available domains:\n${domainList}`,
     '',
+    'Also rate how well the content actually fits the domain you picked, from 1 (no real match —',
+    'you only picked it because you had to choose something) to 10 (obviously belongs here). Judge',
+    'this fit honestly and independently of whether the content is worth saving at all — that was',
+    'already decided. A low score is a normal, expected answer when none of the available domains',
+    'are a good match for this content.',
+    '',
     'Choose a type: "entity" for a specific person/place/thing/organization, "concept" for an',
     'explanation of an idea, "comparison" for content that contrasts two or more things,',
     '"query" for a captured question-and-answer, or "summary" for a higher-level rollup.',
@@ -203,7 +240,7 @@ function buildExtractPrompt(turnText: string, summary: string, domains: WikiEntr
     '',
     `Latest turn:\n${turnText}`,
     '',
-    'Return the domainId, type, a short title, relevant tags, and the page body as markdown.',
+    'Return the domainId, fitScore, type, a short title, relevant tags, and the page body as markdown.',
   ].join('\n');
 }
 
@@ -267,6 +304,73 @@ export async function invokeStructured<T extends z.ZodTypeAny>(
   // LLM call this handler actually observes — see setNextSpanName()'s doc.
   handler.setNextSpanName(runName);
   return chain.invoke(prompt, { callbacks: [handler], runName }) as Promise<z.infer<T>>;
+}
+
+// ---------------------------------------------------------------------------
+// Placement Review Task — created for a Review Band extraction instead of
+// writing it (ADR-0015). Self-contained: everything the task's own run
+// needs lives in `description`, with no reliance on this conversation's
+// memory, per api/AGENTS.md's task-run convention. Mirrors the
+// create→patch(ready/agent)→enqueue→wake shape already used outside the
+// create_tasks LangChain tool — see WorkspaceStore.createSubAgentTask and
+// routes/v1/webhooks.handlers.ts's createWebhookTaskHandler.
+// ---------------------------------------------------------------------------
+
+function createPlacementReviewTask(
+  store: WorkspaceStore,
+  params: {
+    workspaceId?: string;
+    extract: z.infer<typeof ExtractOutputSchema>;
+    candidateDomainId: string;
+    turnText: string;
+  },
+): void {
+  const { extract, candidateDomainId, turnText } = params;
+
+  const description = [
+    `AfterAgent extracted the page below from a conversation but wasn't confident enough in the`,
+    `domain match to save it automatically (fit score ${extract.fitScore}/10, tentatively matched`,
+    `to wiki domain "${candidateDomainId}").`,
+    '',
+    `Title: ${extract.title}`,
+    `Type: ${extract.type}`,
+    `Tags: ${extract.tags.join(', ') || '(none)'}`,
+    ...(extract.summary ? [`Summary: ${extract.summary}`] : []),
+    '',
+    'Page body:',
+    extract.body,
+    '',
+    'Original conversation turn (for provenance):',
+    turnText,
+    '',
+    `Call ask_user to ask whether to save this to wiki domain "${candidateDomainId}", a different`,
+    'domain (use wiki_locate/wiki_orient to find one), or not at all. If the human picks a domain,',
+    'call wiki_create_page (or wiki_update_page, if it matches an existing page) with this body,',
+    'passing the original conversation turn text above as sourceText so the written page keeps',
+    'its provenance. If the human says not to save it, complete this task without writing anything.',
+  ].join('\n');
+
+  const task = store.createTask({
+    workspaceId: params.workspaceId ?? null,
+    title: `Wiki placement: ${extract.title}`,
+    description,
+    assignedTo: 'agent',
+    origin: 'agent',
+  });
+  store.patchTask(task.id, { status: 'ready', assignedTo: 'agent' });
+  store.enqueueTask(task.id, { triggerSource: 'agent' });
+  try {
+    getTaskScheduler().wake();
+  } catch (err) {
+    // The queue row above is already durable — a missed wake (scheduler not
+    // booted, e.g. unit tests; or a transient tick error) only delays the
+    // run until the next real wake from anywhere else. Never let this fail
+    // the pipeline — same posture as every other failure branch in this file.
+    logger.warn('after-agent: could not wake the task scheduler for a placement review task', {
+      taskId: task.id,
+      err: serializeError(err),
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -424,6 +528,39 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
       return;
     }
 
+    // Domain Fit Score gate (ADR-0014) — only meaningful under Open Scope:
+    // under Locked Scope there is exactly one candidate (the workspace's
+    // Bound Wiki), so a low score reflects a mediocre tag match, not real
+    // ambiguity, and shouldn't block a write the user already pre-approved
+    // by binding.
+    const band = scope.kind === 'open' ? fitScoreBand(extract.fitScore) : 'write';
+
+    if (band === 'drop') {
+      logger.info('AfterAgent no-op — domain fit too low to write', {
+        threadId,
+        domainId: domainEntry.id,
+        fitScore: extract.fitScore,
+      });
+      setAfterAgentDone(threadId, 'no-op');
+      return;
+    }
+
+    if (band === 'review') {
+      createPlacementReviewTask(params.store ?? getWorkspaceStore(), {
+        workspaceId: params.workspaceId,
+        extract,
+        candidateDomainId: domainEntry.id,
+        turnText,
+      });
+      logger.info('AfterAgent identified — sent for placement review', {
+        threadId,
+        domainId: domainEntry.id,
+        fitScore: extract.fitScore,
+      });
+      setAfterAgentDone(threadId, 'identified', 'review');
+      return;
+    }
+
     const wiki = await registry.load(domainEntry.id);
     const prep = await wiki.ingestPrep({
       content: extract.body,
@@ -502,7 +639,7 @@ export async function runAfterAgentPipeline(params: RunAfterAgentPipelineParams)
       wikiName: domainEntry.id,
       path: commitResult.path,
     });
-    setAfterAgentDone(threadId, 'identified');
+    setAfterAgentDone(threadId, 'identified', 'written');
 
     // The pipeline extracts and commits exactly one page per turn today — no
     // batch/delete path exists yet — so these counts are always 0 or 1, but

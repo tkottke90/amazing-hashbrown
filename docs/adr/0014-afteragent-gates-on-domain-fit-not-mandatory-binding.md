@@ -1,0 +1,8 @@
+# AfterAgent gates on Domain Fit Score instead of mandating wiki binding
+
+Issue #333 traced a thread's AfterAgent writes scattering across unrelated wiki domains (`amazing-hashbrown`, `user`, `writing-worldbuilding`) back to the workspace running in Open Scope with no topically relevant domain among its candidates — not to a bypassed write-scope check. The write-scope guardrail (#79/#202) was already working as designed; the gap was that `extract` was never allowed to say "none of these fit," so Open Scope's breadth became misrouting whenever no candidate actually matched. We considered closing this by pushing every long-lived workspace toward a mandatory Bound Wiki, which would make misrouting structurally impossible via Locked Scope — but rejected it: Open Scope has genuine intended uses (throwaway workspaces, global chat) that a hard requirement would break, and it's a bigger workspace-creation UX change than this bug justifies. Instead, `extract` now emits a Domain Fit Score, and Open Scope's breadth is tempered by that score rather than removed.
+
+## Considered Options
+
+- Mandatory (or auto-provisioned) wiki binding for every workspace, retiring Open Scope for named workspaces — rejected: contradicts #202's own non-goals, and breaks legitimate no-commitment workspace/global-chat use cases.
+- Narrowing what Open Scope offers by some other topical pre-filter (e.g. tag overlap) before `extract` ever sees the list — rejected: `extract` already has to read the content and judge fit as part of picking a domain; a separate pre-filter step would duplicate that judgment rather than refine it.

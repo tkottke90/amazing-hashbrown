@@ -88,4 +88,53 @@ describe('agents/tools/wiki-update-page', () => {
     expect(result as unknown as string).to.include('not found');
     expect(sseEvents).to.have.length(0);
   });
+
+  describe('sourceText provenance', () => {
+    it('saves a raw-source snapshot and records it on the page when sourceText is given [orchestration]', async () => {
+      const created = await createWikiPage(
+        { wikiId: 'test-wiki', title: 'Provenance Target', content: 'v1.', section: 'entity' },
+        registry,
+        undefined,
+        store,
+      );
+      expect(created.status).to.equal('written');
+      if (created.status !== 'written') return;
+
+      const tool = makeWikiUpdatePageTool(registry, store, threadStore);
+      await tool.invoke(
+        {
+          wikiId: 'test-wiki',
+          path: created.result.path,
+          content: 'v2.',
+          sourceText: 'human: the original conversation turn this update came from',
+        },
+        invokeConfig(),
+      );
+
+      const wiki = await registry.load('test-wiki');
+      const page = await wiki.readPage(created.result.path);
+      expect(page.frontmatter.sources).to.have.length(1);
+    });
+
+    it('preserves the existing sources when sourceText is omitted, unchanged from before this field existed [orchestration]', async () => {
+      const created = await createWikiPage(
+        { wikiId: 'test-wiki', title: 'No Provenance Target', content: 'v1.', section: 'entity' },
+        registry,
+        undefined,
+        store,
+      );
+      expect(created.status).to.equal('written');
+      if (created.status !== 'written') return;
+
+      const tool = makeWikiUpdatePageTool(registry, store, threadStore);
+      await tool.invoke(
+        { wikiId: 'test-wiki', path: created.result.path, content: 'v2.' },
+        invokeConfig(),
+      );
+
+      const wiki = await registry.load('test-wiki');
+      const page = await wiki.readPage(created.result.path);
+      expect(page.frontmatter.sources ?? []).to.have.length(0);
+    });
+  });
 });

@@ -250,12 +250,13 @@ scenarios:
       type: object
       properties:
         domainId: { type: string }
+        fitScore: { type: integer, minimum: 1, maximum: 10 }
         type: { type: string, enum: [entity, concept, comparison, query, summary] }
         title: { type: string }
         tags: { type: array, items: { type: string } }
         body: { type: string }
         summary: { type: string }
-      required: [domainId, type, title, tags, body]
+      required: [domainId, fitScore, type, title, tags, body]
     input: >
       Extract a wiki page from the novel knowledge in this conversation turn.
 
@@ -264,6 +265,13 @@ scenarios:
       tags/domain best match the content.
       Available domains:
       - id: "user" (domain: user, tags: [personal])
+
+
+      Also rate how well the content actually fits the domain you picked, from 1 (no real match —
+      you only picked it because you had to choose something) to 10 (obviously belongs here). Judge
+      this fit honestly and independently of whether the content is worth saving at all — that was
+      already decided. A low score is a normal, expected answer when none of the available domains
+      are a good match for this content.
 
 
       Choose a type: "entity" for a specific person/place/thing/organization, "concept" for an
@@ -279,7 +287,7 @@ scenarios:
       ai: Got it, thanks for sharing!
 
 
-      Return the domainId, type, a short title, relevant tags, and the page body as markdown.
+      Return the domainId, fitScore, type, a short title, relevant tags, and the page body as markdown.
     fieldChecks:
       - path: domainId
         match: equals
@@ -301,12 +309,13 @@ scenarios:
       type: object
       properties:
         domainId: { type: string }
+        fitScore: { type: integer, minimum: 1, maximum: 10 }
         type: { type: string, enum: [entity, concept, comparison, query, summary] }
         title: { type: string }
         tags: { type: array, items: { type: string } }
         body: { type: string }
         summary: { type: string }
-      required: [domainId, type, title, tags, body]
+      required: [domainId, fitScore, type, title, tags, body]
     input: >
       Extract a wiki page from the novel knowledge in this conversation turn.
 
@@ -315,6 +324,13 @@ scenarios:
       tags/domain best match the content.
       Available domains:
       - id: "user" (domain: user, tags: [personal])
+
+
+      Also rate how well the content actually fits the domain you picked, from 1 (no real match —
+      you only picked it because you had to choose something) to 10 (obviously belongs here). Judge
+      this fit honestly and independently of whether the content is worth saving at all — that was
+      already decided. A low score is a normal, expected answer when none of the available domains
+      are a good match for this content.
 
 
       Choose a type: "entity" for a specific person/place/thing/organization, "concept" for an
@@ -331,7 +347,7 @@ scenarios:
       ai: That's a great summary of GraphQL!
 
 
-      Return the domainId, type, a short title, relevant tags, and the page body as markdown.
+      Return the domainId, fitScore, type, a short title, relevant tags, and the page body as markdown.
     fieldChecks:
       - path: type
         match: equals
@@ -346,12 +362,13 @@ scenarios:
       type: object
       properties:
         domainId: { type: string }
+        fitScore: { type: integer, minimum: 1, maximum: 10 }
         type: { type: string, enum: [entity, concept, comparison, query, summary] }
         title: { type: string }
         tags: { type: array, items: { type: string } }
         body: { type: string }
         summary: { type: string }
-      required: [domainId, type, title, tags, body]
+      required: [domainId, fitScore, type, title, tags, body]
     input: >
       Extract a wiki page from the novel knowledge in this conversation turn.
 
@@ -360,6 +377,13 @@ scenarios:
       tags/domain best match the content.
       Available domains:
       - id: "user" (domain: user, tags: [personal])
+
+
+      Also rate how well the content actually fits the domain you picked, from 1 (no real match —
+      you only picked it because you had to choose something) to 10 (obviously belongs here). Judge
+      this fit honestly and independently of whether the content is worth saving at all — that was
+      already decided. A low score is a normal, expected answer when none of the available domains
+      are a good match for this content.
 
 
       Choose a type: "entity" for a specific person/place/thing/organization, "concept" for an
@@ -376,7 +400,7 @@ scenarios:
       ai: Nicely put — that's a key distinction between the two.
 
 
-      Return the domainId, type, a short title, relevant tags, and the page body as markdown.
+      Return the domainId, fitScore, type, a short title, relevant tags, and the page body as markdown.
     fieldChecks:
       - path: type
         match: equals
@@ -392,12 +416,13 @@ scenarios:
       type: object
       properties:
         domainId: { type: string }
+        fitScore: { type: integer, minimum: 1, maximum: 10 }
         type: { type: string, enum: [entity, concept, comparison, query, summary] }
         title: { type: string }
         tags: { type: array, items: { type: string } }
         body: { type: string }
         summary: { type: string }
-      required: [domainId, type, title, tags, body]
+      required: [domainId, fitScore, type, title, tags, body]
     input: >
       Extract a wiki page from the novel knowledge in this conversation turn.
 
@@ -408,6 +433,13 @@ scenarios:
       - id: "user" (domain: user, tags: [personal context and biography])
       - id: "projects" (domain: projects, tags: [work projects, deploy pipelines, and engineering
       systems])
+
+
+      Also rate how well the content actually fits the domain you picked, from 1 (no real match —
+      you only picked it because you had to choose something) to 10 (obviously belongs here). Judge
+      this fit honestly and independently of whether the content is worth saving at all — that was
+      already decided. A low score is a normal, expected answer when none of the available domains
+      are a good match for this content.
 
 
       Choose a type: "entity" for a specific person/place/thing/organization, "concept" for an
@@ -423,7 +455,7 @@ scenarios:
       ai: Got it, that's useful context about the Phoenix project.
 
 
-      Return the domainId, type, a short title, relevant tags, and the page body as markdown.
+      Return the domainId, fitScore, type, a short title, relevant tags, and the page body as markdown.
     fieldChecks:
       - path: domainId
         match: equals
@@ -444,12 +476,13 @@ scenarios:
       type: object
       properties:
         domainId: { type: string }
+        fitScore: { type: integer, minimum: 1, maximum: 10 }
         type: { type: string, enum: [entity, concept, comparison, query, summary] }
         title: { type: string }
         tags: { type: array, items: { type: string } }
         body: { type: string }
         summary: { type: string }
-      required: [domainId, type, title, tags, body]
+      required: [domainId, fitScore, type, title, tags, body]
     input: >
       Extract a wiki page from the novel knowledge in this conversation turn.
 
@@ -458,6 +491,13 @@ scenarios:
       tags/domain best match the content.
       Available domains:
       - id: "image-archive" (domain: Image Archive, tags: [])
+
+
+      Also rate how well the content actually fits the domain you picked, from 1 (no real match —
+      you only picked it because you had to choose something) to 10 (obviously belongs here). Judge
+      this fit honestly and independently of whether the content is worth saving at all — that was
+      already decided. A low score is a normal, expected answer when none of the available domains
+      are a good match for this content.
 
 
       Choose a type: "entity" for a specific person/place/thing/organization, "concept" for an
@@ -474,7 +514,7 @@ scenarios:
       ai: Nice — using stream.pipeline() gives you backpressure and error propagation for free.
 
 
-      Return the domainId, type, a short title, relevant tags, and the page body as markdown.
+      Return the domainId, fitScore, type, a short title, relevant tags, and the page body as markdown.
     fieldChecks:
       - path: domainId
         match: equals
@@ -494,12 +534,13 @@ scenarios:
       type: object
       properties:
         domainId: { type: string }
+        fitScore: { type: integer, minimum: 1, maximum: 10 }
         type: { type: string, enum: [entity, concept, comparison, query, summary] }
         title: { type: string }
         tags: { type: array, items: { type: string } }
         body: { type: string }
         summary: { type: string }
-      required: [domainId, type, title, tags, body]
+      required: [domainId, fitScore, type, title, tags, body]
     input: >
       Extract a wiki page from the novel knowledge in this conversation turn.
 
@@ -508,6 +549,13 @@ scenarios:
       tags/domain best match the content.
       Available domains:
       - id: "user" (domain: user, tags: [personal])
+
+
+      Also rate how well the content actually fits the domain you picked, from 1 (no real match —
+      you only picked it because you had to choose something) to 10 (obviously belongs here). Judge
+      this fit honestly and independently of whether the content is worth saving at all — that was
+      already decided. A low score is a normal, expected answer when none of the available domains
+      are a good match for this content.
 
 
       Choose a type: "entity" for a specific person/place/thing/organization, "concept" for an
@@ -524,11 +572,192 @@ scenarios:
       ai: Sounds like a productive day!
 
 
-      Return the domainId, type, a short title, relevant tags, and the page body as markdown.
+      Return the domainId, fitScore, type, a short title, relevant tags, and the page body as markdown.
     fieldChecks:
       - path: type
         match: oneOf
         value: [entity, concept, comparison, query, summary]
+
+  - id: ext-007-fit-score-high-for-clear-match
+    name: Extract rates a Domain Fit Score in the Write Band for an obvious match
+    purpose: >
+      Baseline positive case for the Domain Fit Score gate (docs/superpowers/specs/
+      2026-10-18-afteragent-domain-fit-gate-design.md) — content that is squarely about the one
+      offered domain should score high (8-10), the Write Band, so it commits immediately.
+    type: structured
+    outputSchema:
+      type: object
+      properties:
+        domainId: { type: string }
+        fitScore: { type: integer, minimum: 1, maximum: 10 }
+        type: { type: string, enum: [entity, concept, comparison, query, summary] }
+        title: { type: string }
+        tags: { type: array, items: { type: string } }
+        body: { type: string }
+        summary: { type: string }
+      required: [domainId, fitScore, type, title, tags, body]
+    input: >
+      Extract a wiki page from the novel knowledge in this conversation turn.
+
+
+      Choose the wiki domain this content belongs in from the list below — pick the one whose
+      tags/domain best match the content.
+      Available domains:
+      - id: "homelab" (domain: homelab, tags: [servers, networking, self-hosted])
+
+
+      Also rate how well the content actually fits the domain you picked, from 1 (no real match —
+      you only picked it because you had to choose something) to 10 (obviously belongs here). Judge
+      this fit honestly and independently of whether the content is worth saving at all — that was
+      already decided. A low score is a normal, expected answer when none of the available domains
+      are a good match for this content.
+
+
+      Choose a type: "entity" for a specific person/place/thing/organization, "concept" for an
+      explanation of an idea, "comparison" for content that contrasts two or more things,
+      "query" for a captured question-and-answer, or "summary" for a higher-level rollup.
+
+
+      Rolling summary of the conversation so far: (none)
+
+
+      Latest turn:
+      human: I set up a new Proxmox cluster with three nodes for my home lab and configured Ceph
+      for shared storage across them.
+      ai: Nice setup — Ceph gives you solid redundancy across those nodes.
+
+
+      Return the domainId, fitScore, type, a short title, relevant tags, and the page body as markdown.
+    fieldChecks:
+      - path: domainId
+        match: equals
+        value: homelab
+      - path: fitScore
+        match: gte
+        value: 8
+
+  - id: ext-008-fit-score-mid-for-plausible-but-uncertain-match
+    name: Extract keeps a Domain Fit Score out of the Write Band for a plausible-but-uncertain match
+    purpose: >
+      A middle case for the Domain Fit Score gate — content that's engineering-flavored and
+      superficially plausible for the offered domain, but isn't actually about that domain's real
+      subject matter (software/backend/CI-CD systems, not physical/undersea infrastructure), should
+      not score a confident Write Band match (8-10). Two earlier attempts at pinning an exact
+      Review Band window (5-7) across 4 independent models missed in opposite directions — tagging
+      the domain "infrastructure" scored 8 on half of them (undersea cables read as
+      "infrastructure" too), and narrowing to purely software-specific tags overcorrected into the
+      Drop Band (2-3) on all of them. Models disagree more on genuinely borderline content than a
+      single narrow window can absorb, so this scenario only asserts the looser, more robust
+      property that actually matters for the gate: this content must never be confidently written
+      without review, regardless of whether a given model lands it in the Review or Drop Band.
+    type: structured
+    outputSchema:
+      type: object
+      properties:
+        domainId: { type: string }
+        fitScore: { type: integer, minimum: 1, maximum: 10 }
+        type: { type: string, enum: [entity, concept, comparison, query, summary] }
+        title: { type: string }
+        tags: { type: array, items: { type: string } }
+        body: { type: string }
+        summary: { type: string }
+      required: [domainId, fitScore, type, title, tags, body]
+    input: >
+      Extract a wiki page from the novel knowledge in this conversation turn.
+
+
+      Choose the wiki domain this content belongs in from the list below — pick the one whose
+      tags/domain best match the content.
+      Available domains:
+      - id: "engineering" (domain: engineering, tags: [software, backend systems, CI/CD])
+
+
+      Also rate how well the content actually fits the domain you picked, from 1 (no real match —
+      you only picked it because you had to choose something) to 10 (obviously belongs here). Judge
+      this fit honestly and independently of whether the content is worth saving at all — that was
+      already decided. A low score is a normal, expected answer when none of the available domains
+      are a good match for this content.
+
+
+      Choose a type: "entity" for a specific person/place/thing/organization, "concept" for an
+      explanation of an idea, "comparison" for content that contrasts two or more things,
+      "query" for a captured question-and-answer, or "summary" for a higher-level rollup.
+
+
+      Rolling summary of the conversation so far: (none)
+
+
+      Latest turn:
+      human: I've been reading about how undersea fiber optic cables get repaired after a ship
+      anchor drags across one — specialized repair ships splice in a new segment and re-lay it.
+      ai: That's a pretty remarkable process given how deep those cables run.
+
+
+      Return the domainId, fitScore, type, a short title, relevant tags, and the page body as markdown.
+    fieldChecks:
+      - path: fitScore
+        match: between
+        value: [1, 7]
+
+  - id: ext-009-fit-score-low-for-poor-match
+    name: Extract rates a Domain Fit Score in the Drop Band when nothing offered actually fits
+    purpose: >
+      Regression scenario for issue #333 — reproduces its shape exactly: a software
+      dependency-audit turn offered only unrelated personal-topic domains as candidates (what
+      actually happened when the hateos-url-manager workspace, unbound to any wiki, ran under Open
+      Scope). The content should score low (1-4), the Drop Band, rather than being filed into
+      whichever unrelated domain the model is forced to pick from.
+    type: structured
+    outputSchema:
+      type: object
+      properties:
+        domainId: { type: string }
+        fitScore: { type: integer, minimum: 1, maximum: 10 }
+        type: { type: string, enum: [entity, concept, comparison, query, summary] }
+        title: { type: string }
+        tags: { type: array, items: { type: string } }
+        body: { type: string }
+        summary: { type: string }
+      required: [domainId, fitScore, type, title, tags, body]
+    input: >
+      Extract a wiki page from the novel knowledge in this conversation turn.
+
+
+      Choose the wiki domain this content belongs in from the list below — pick the one whose
+      tags/domain best match the content.
+      Available domains:
+      - id: "user" (domain: user, tags: [personal context and biography])
+      - id: "writing-worldbuilding" (domain: writing-worldbuilding, tags: [world-building, lore,
+      magic-systems])
+
+
+      Also rate how well the content actually fits the domain you picked, from 1 (no real match —
+      you only picked it because you had to choose something) to 10 (obviously belongs here). Judge
+      this fit honestly and independently of whether the content is worth saving at all — that was
+      already decided. A low score is a normal, expected answer when none of the available domains
+      are a good match for this content.
+
+
+      Choose a type: "entity" for a specific person/place/thing/organization, "concept" for an
+      explanation of an idea, "comparison" for content that contrasts two or more things,
+      "query" for a captured question-and-answer, or "summary" for a higher-level rollup.
+
+
+      Rolling summary of the conversation so far: (none)
+
+
+      Latest turn:
+      human: I ran npm audit on the hateos-url-manager project and found 23 vulnerabilities — one
+      critical in proxy-addr. path-to-regexp is the only runtime dependency and nothing in src/
+      imports it, so I'm recommending we remove it entirely.
+      ai: Good catch — removing an unused dependency is safe here since nothing references it.
+
+
+      Return the domainId, fitScore, type, a short title, relevant tags, and the page body as markdown.
+    fieldChecks:
+      - path: fitScore
+        match: between
+        value: [1, 4]
 
   # ---------------------------------------------------------------------------------------------
   # Summarize scenarios — judged over the JSON-stringified {summary} output. llm-judge
@@ -558,8 +787,8 @@ scenarios:
 
       Return the updated summary.
     rubric: >
-      The summary (returned as a JSON object with a "summary" field) must mention that the user
-      moved to Seattle and works at a fintech startup. It must not be empty or generic filler text.
+      The summary must mention that the user moved to Seattle and works at a fintech startup. It
+      must not be empty or generic filler text.
     minScore: 7
 
   - id: sum-002-rolling-fold-in
@@ -652,9 +881,9 @@ scenarios:
 
       Return the merged page body as markdown.
     rubric: >
-      The merged body (returned as a JSON object with a "body" field) must contain BOTH the
-      "backend engineer" fact from the existing page AND the "fintech company founded in 2015" /
-      "payments platform" facts from the new content. Losing either side is a failure.
+      The merged body must contain BOTH the "backend engineer" fact from the existing page AND the
+      "fintech company founded in 2015" / "payments platform" facts from the new content. Losing
+      either side is a failure.
     minScore: 7
 
   - id: mrg-002-contradiction-resolution

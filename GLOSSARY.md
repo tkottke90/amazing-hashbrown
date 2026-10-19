@@ -77,3 +77,53 @@ _Avoid_: Stat, KPI, system metadata
 **Metric Registry**:
 The in-process lookup from a Metric's id to the function that computes its current value, called directly by the dashboard read handler against the app's own stores — never over HTTP, never from a widget's file.
 _Avoid_: Metrics API, producer registry
+
+# AfterAgent & Wiki Write Scope
+
+The background pipeline that inspects each conversational turn for durable knowledge and files it into the wiki, and the rule set that decides which wiki domain(s) a given turn — chat or AfterAgent — may write to.
+
+## Language
+
+**Write Scope**:
+The set of wiki domains a given turn may write to, resolved fresh on every write (by `resolveWikiWriteScope`) from the originating thread/workspace — never fixed once when an agent is built, since an unbound workspace's exclusions depend on other workspaces' bindings, which can change independently. One of three kinds: Locked Scope, Open Scope, Unresolved Scope.
+_Avoid_: Permission, access level, write policy
+
+**Locked Scope**:
+A Write Scope restricted to exactly one domain: the originating workspace's Bound Wiki. The only domain ever offered to AfterAgent's extraction step, or accepted by a chat write tool, under this scope.
+_Avoid_: Restricted scope, project scope
+
+**Open Scope**:
+A Write Scope covering every wiki domain not Bound to a _different_ workspace — the default for a workspace (or global chat) with no Bound Wiki of its own. Deliberately broad by design, for throwaway/no-commitment workspaces and global contexts; it is not itself a topical-relevance filter.
+_Avoid_: Unrestricted scope, default scope
+
+**Unresolved Scope**:
+A Write Scope returned when the originating thread or workspace can't be determined at all. Denies every write; the fail-closed case.
+_Avoid_: Unknown scope, null scope
+
+**Bound Wiki**:
+The one wiki domain a workspace is tied to via its `wikiId`. Binding is what turns a workspace's Write Scope from Open to Locked; an unbound workspace has no Bound Wiki and stays in Open Scope.
+_Avoid_: Linked wiki, assigned wiki, dedicated wiki
+
+**Domain Fit Score**:
+A 1–10 integer the `extract` step assigns to the one domain it already picked from the candidate list, rating how well the content actually matches that domain — independent of whether the content is worth saving at all (that's `classify`'s job). Only meaningful under Open Scope; under Locked Scope there is exactly one candidate, so nothing to score.
+_Avoid_: Confidence score, relevance score, match score
+
+**Write Band**:
+A Domain Fit Score of 8–10. The content commits immediately, the same way every AfterAgent write does today.
+_Avoid_: High confidence, auto-write
+
+**Review Band**:
+A Domain Fit Score of 5–7. The pipeline makes no registry writes of its own and instead creates a Placement Review Task to let a human decide.
+_Avoid_: Medium confidence, needs review
+
+**Drop Band**:
+A Domain Fit Score of 1–4. Treated exactly like AfterAgent's other no-op cases (an unrecognized domain, an empty candidate list) — nothing is written, nothing is staged, no provenance is kept.
+_Avoid_: Low confidence, discard
+
+**Placement Review Task**:
+A task AfterAgent creates for a Review Band item instead of writing it — self-contained (title, extracted body, tags, the tentatively-matched domain and its Domain Fit Score), `assignedTo: 'agent'`, no trigger. Its own run asks the user where the content should go (or whether to drop it) and performs the actual write itself, through the ordinary wiki write tools — AfterAgent's pipeline never touches the registry for a Review Band item itself.
+_Avoid_: Review queue, triage task, staging item
+
+**Disposition**:
+The `identified` AfterAgent outcome's own record of what actually happened to the knowledge it found: `written` (landed in the Write Band) or `review` (handed to a Placement Review Task). Distinct from the outcome itself — `identified` always means "worth saving," Disposition says where it ended up.
+_Avoid_: Result, status, action

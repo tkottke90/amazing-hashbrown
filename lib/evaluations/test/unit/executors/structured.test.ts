@@ -103,6 +103,78 @@ describe('runStructured', () => {
     });
   });
 
+  describe('gte', () => {
+    it('passes when the field is greater than the threshold', () => {
+      const result = runStructured(makeScenario([{ path: 'fitScore', match: 'gte', value: 8 }]), {
+        fitScore: 9,
+      });
+      assert.equal(result.fieldResults[0].passed, true);
+    });
+
+    it('passes at the exact threshold', () => {
+      const result = runStructured(makeScenario([{ path: 'fitScore', match: 'gte', value: 8 }]), {
+        fitScore: 8,
+      });
+      assert.equal(result.fieldResults[0].passed, true);
+    });
+
+    it('fails when the field is below the threshold', () => {
+      const result = runStructured(makeScenario([{ path: 'fitScore', match: 'gte', value: 8 }]), {
+        fitScore: 7,
+      });
+      assert.equal(result.fieldResults[0].passed, false);
+    });
+
+    it('fails when the field is not a number', () => {
+      const result = runStructured(makeScenario([{ path: 'fitScore', match: 'gte', value: 8 }]), {
+        fitScore: 'high',
+      });
+      assert.equal(result.fieldResults[0].passed, false);
+    });
+  });
+
+  describe('between', () => {
+    it('passes when the field is inside the range', () => {
+      const result = runStructured(
+        makeScenario([{ path: 'fitScore', match: 'between', value: [5, 7] }]),
+        { fitScore: 6 },
+      );
+      assert.equal(result.fieldResults[0].passed, true);
+    });
+
+    it('passes at the lower boundary', () => {
+      const result = runStructured(
+        makeScenario([{ path: 'fitScore', match: 'between', value: [5, 7] }]),
+        { fitScore: 5 },
+      );
+      assert.equal(result.fieldResults[0].passed, true);
+    });
+
+    it('passes at the upper boundary', () => {
+      const result = runStructured(
+        makeScenario([{ path: 'fitScore', match: 'between', value: [5, 7] }]),
+        { fitScore: 7 },
+      );
+      assert.equal(result.fieldResults[0].passed, true);
+    });
+
+    it('fails when the field is below the range', () => {
+      const result = runStructured(
+        makeScenario([{ path: 'fitScore', match: 'between', value: [5, 7] }]),
+        { fitScore: 4 },
+      );
+      assert.equal(result.fieldResults[0].passed, false);
+    });
+
+    it('fails when the field is above the range', () => {
+      const result = runStructured(
+        makeScenario([{ path: 'fitScore', match: 'between', value: [5, 7] }]),
+        { fitScore: 8 },
+      );
+      assert.equal(result.fieldResults[0].passed, false);
+    });
+  });
+
   describe('scoring', () => {
     it('scores the fraction of checks that passed', () => {
       const result = runStructured(

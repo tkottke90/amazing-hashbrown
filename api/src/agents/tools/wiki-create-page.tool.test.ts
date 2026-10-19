@@ -105,6 +105,46 @@ describe('agents/tools/wiki-create-page', () => {
     expect(sseEvents).to.have.length(0);
   });
 
+  describe('sourceText provenance', () => {
+    it('saves a raw-source snapshot and records it on the page when sourceText is given [orchestration]', async () => {
+      const tool = makeWikiCreatePageTool(registry, store, threadStore);
+
+      const result = await tool.invoke(
+        {
+          wikiId: 'test-wiki',
+          title: 'Provenance Test',
+          corpus: { raw: 'Some extracted content.' },
+          section: 'entity',
+          sourceText: 'human: the original conversation turn this came from',
+        },
+        invokeConfig(),
+      );
+
+      expect(result).to.contain('Created page');
+      const wiki = await registry.load('test-wiki');
+      const page = await wiki.readPage('entities/provenance-test.md');
+      expect(page.frontmatter.sources).to.have.length(1);
+    });
+
+    it('writes with no sources when sourceText is omitted, unchanged from before this field existed [orchestration]', async () => {
+      const tool = makeWikiCreatePageTool(registry, store, threadStore);
+
+      await tool.invoke(
+        {
+          wikiId: 'test-wiki',
+          title: 'No Provenance',
+          corpus: { raw: 'Some content with no source.' },
+          section: 'entity',
+        },
+        invokeConfig(),
+      );
+
+      const wiki = await registry.load('test-wiki');
+      const page = await wiki.readPage('entities/no-provenance.md');
+      expect(page.frontmatter.sources ?? []).to.have.length(0);
+    });
+  });
+
   describe('write scope (resolved per call from the thread) [#202]', () => {
     const page = {
       title: 'Stream Backpressure',

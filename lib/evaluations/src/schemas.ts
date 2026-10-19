@@ -144,8 +144,9 @@ const FieldCheckSchema = z
   .object({
     // Dot-path into the parsed structured output object, e.g. "shouldWrite" or "tags".
     path: z.string().min(1),
-    match: z.enum(['equals', 'contains', 'exists', 'oneOf']),
-    // Required for 'equals'/'contains' (comparison value) and 'oneOf' (array of allowed values).
+    match: z.enum(['equals', 'contains', 'exists', 'oneOf', 'gte', 'between']),
+    // Required for 'equals'/'contains' (comparison value), 'oneOf' (array of allowed values),
+    // 'gte' (a number), and 'between' (a [min, max] number tuple, inclusive).
     // Omitted for 'exists'.
     value: z.unknown().optional(),
   })

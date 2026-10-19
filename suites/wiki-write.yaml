@@ -231,6 +231,10 @@ scenarios:
         match: equals
         value: true
 
+  # See suites/after-agent.yaml's ext-009-fit-score-low-for-poor-match for the other half of
+  # issue #333's regression coverage — this scenario covers a live chat turn's own wiki_create_page
+  # call getting rejected for the wrong wikiId; ext-009 covers the AfterAgent background pipeline
+  # never even attempting a write when no candidate domain actually fits the content.
   - id: wwrite-005-wrong-project-wiki-rejected
     name: Agent explains a wiki-write rejection instead of retry-looping or claiming success
     purpose: >

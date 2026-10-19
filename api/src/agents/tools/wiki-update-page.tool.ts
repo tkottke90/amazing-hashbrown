@@ -3,6 +3,7 @@ import matter from 'gray-matter';
 import { z } from 'zod';
 import type { WikiRegistry } from '@tkottke90/llm-wiki';
 import { updateWikiPage } from '../../services/wiki-write.js';
+import { getWikiRegistry } from '../../services/wiki.js';
 import { getActiveSseWriter } from '../active-sse-writer.js';
 import { resolveToolWriteScope, wikiWriteDeniedMessage } from './wiki-write-guard.js';
 import { wikiArchivedMessage } from '../../services/wiki-archive-guard.js';
@@ -86,6 +87,15 @@ const WikiUpdatePageSchema = z.object({
     .boolean()
     .optional()
     .describe('If true, return a diff of what would change without writing anything.'),
+  sourceText: z
+    .string()
+    .optional()
+    .describe(
+      'The original source text this update came from (e.g. a conversation turn), saved as a ' +
+        'raw provenance snapshot alongside the page. Only set this when explicitly instructed ' +
+        'to preserve provenance for content that did not originate from your own direct ' +
+        'reasoning this turn.',
+    ),
 });
 
 // Minimal positional line-by-line diff for the dryRun preview — no new
@@ -117,16 +127,57 @@ export function makeWikiUpdatePageTool(
 ) {
   return tool(
     async (
-      { wikiId, path, content, mode, tags, confidence, contested, contradictions, summary, dryRun },
+      {
+        wikiId,
+        path,
+        content,
+        mode,
+        tags,
+        confidence,
+        contested,
+        contradictions,
+        summary,
+        dryRun,
+        sourceText,
+      },
       config,
     ) => {
+      const effectiveContent = matter(content).content;
+
+      // Best-effort provenance snapshot — see wiki-create-page.tool.ts's
+      // identical comment. A failure here is swallowed and updateWikiPage()
+      // below still reports the real error if any.
+      let sources: string[] | undefined;
+      if (sourceText) {
+        try {
+          const reg = registry ?? (await getWikiRegistry());
+          const wiki = await reg.load(wikiId);
+          const prep = await wiki.ingestPrep({
+            content: effectiveContent,
+            title: path,
+            keywords: tags ?? [],
+          });
+          const threadId = config?.configurable?.thread_id as string | undefined;
+          const rawSource = await wiki.saveRawSource({
+            content: sourceText,
+            sourceUrl: `conversation:${threadId ?? 'unknown'}`,
+            path: prep.suggestedRawPath,
+            sha256: prep.sha256,
+          });
+          sources = [rawSource.path];
+        } catch {
+          // swallow — see comment above
+        }
+      }
+
       const result = await updateWikiPage(
         {
           wikiId,
           path,
-          content: matter(content).content,
+          content: effectiveContent,
           mode,
           tags,
+          sources,
           confidence,
           contested,
           contradictions,

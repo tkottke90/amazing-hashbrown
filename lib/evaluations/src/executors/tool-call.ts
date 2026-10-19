@@ -63,6 +63,18 @@ function checkField(actual: unknown, match: string, expected: unknown): boolean 
       return false;
     case 'oneOf':
       return Array.isArray(expected) && expected.includes(actual);
+    case 'gte':
+      return typeof actual === 'number' && typeof expected === 'number' && actual >= expected;
+    case 'between':
+      return (
+        typeof actual === 'number' &&
+        Array.isArray(expected) &&
+        expected.length === 2 &&
+        typeof expected[0] === 'number' &&
+        typeof expected[1] === 'number' &&
+        actual >= expected[0] &&
+        actual <= expected[1]
+      );
     default:
       return false;
   }

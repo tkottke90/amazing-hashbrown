@@ -21,6 +21,7 @@ import {
   runAfterAgentPipeline,
   invokeStructured,
   getAfterAgentState,
+  fitScoreBand,
   type RunAfterAgentPipelineParams,
 } from './after-agent.js';
 
@@ -168,6 +169,35 @@ describe('agents/after-agent', () => {
       );
 
       expect(setNextSpanNameCalls).to.deep.equal(['after-agent:classify']);
+    });
+  });
+
+  describe('fitScoreBand()', () => {
+    it('returns "write" for the Write Band (8-10)', () => {
+      expect(fitScoreBand(8)).to.equal('write');
+      expect(fitScoreBand(9)).to.equal('write');
+      expect(fitScoreBand(10)).to.equal('write');
+    });
+
+    it('returns "review" for the Review Band (5-7)', () => {
+      expect(fitScoreBand(5)).to.equal('review');
+      expect(fitScoreBand(6)).to.equal('review');
+      expect(fitScoreBand(7)).to.equal('review');
+    });
+
+    it('returns "drop" for the Drop Band (1-4)', () => {
+      expect(fitScoreBand(1)).to.equal('drop');
+      expect(fitScoreBand(4)).to.equal('drop');
+    });
+
+    it('treats 4 and 5 as different bands (the drop/review boundary)', () => {
+      expect(fitScoreBand(4)).to.equal('drop');
+      expect(fitScoreBand(5)).to.equal('review');
+    });
+
+    it('treats 7 and 8 as different bands (the review/write boundary)', () => {
+      expect(fitScoreBand(7)).to.equal('review');
+      expect(fitScoreBand(8)).to.equal('write');
     });
   });
 
@@ -371,6 +401,7 @@ describe('agents/after-agent', () => {
         'after-agent:classify': { shouldWrite: true, reason: 'new preference' },
         'after-agent:extract': {
           domainId: 'user',
+          fitScore: 9,
           type: 'entity',
           title: 'Favorite Drink',
           tags: ['preferences'],
@@ -394,6 +425,7 @@ describe('agents/after-agent', () => {
       const state = getAfterAgentState(threadId);
       expect(state.status).to.equal('done');
       expect((state as { outcome: string }).outcome).to.equal('identified');
+      expect((state as { disposition?: string }).disposition).to.equal('written');
       // The success outcome reaches open clients live, not just the REST list.
       expect(capture.states[capture.states.length - 1]).to.deep.equal(state);
 
@@ -426,6 +458,7 @@ describe('agents/after-agent', () => {
         'after-agent:classify': { shouldWrite: true, reason: 'correction' },
         'after-agent:extract': {
           domainId: 'user',
+          fitScore: 9,
           type: 'entity',
           title: 'Coffee Habit',
           tags: ['coffeehabit'],
@@ -450,6 +483,7 @@ describe('agents/after-agent', () => {
       const state = getAfterAgentState(threadId);
       expect(state.status).to.equal('done');
       expect((state as { outcome: string }).outcome).to.equal('identified');
+      expect((state as { disposition?: string }).disposition).to.equal('written');
 
       const events = drainPendingWikiUpdates(threadId);
       expect(events).to.have.length(1);
@@ -457,6 +491,116 @@ describe('agents/after-agent', () => {
         pageKind: 'updated',
         path: 'entities/coffee-habit.md',
       });
+    });
+  });
+
+  describe('runAfterAgentPipeline() — Domain Fit Score gate under Open Scope (#333)', () => {
+    let dir: string;
+    let registry: WikiRegistry;
+    let store: WorkspaceStore;
+
+    before(async () => {
+      dir = mkdtempSync(join(tmpdir(), 'after-agent-fit-score-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      bootObservability(db);
+      store = new WorkspaceStore(db);
+      registry = await createWikiRegistry({ wikiRoot: join(dir, 'wikiroot') });
+      await registry.create({ id: 'user', domain: 'user', tags: ['personal'] });
+    });
+
+    after(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('Review Band: creates a self-contained Placement Review Task and writes nothing [orchestration]', async () => {
+      const threadId = `fit-review-${crypto.randomUUID()}`;
+      const { llm } = fakeStructuredLlm({
+        'after-agent:summarize': { summary: 'Something plausible but uncertain.' },
+        'after-agent:classify': { shouldWrite: true, reason: 'novel content' },
+        'after-agent:extract': {
+          domainId: 'user',
+          fitScore: 6,
+          type: 'concept',
+          title: 'Undersea Cable Repair',
+          tags: ['infrastructure'],
+          body: 'Repair ships splice in a new segment and re-lay the cable.',
+        },
+      });
+
+      await runInChatThread({
+        threadId,
+        messages: [new HumanMessage('Undersea fiber cables get repaired by specialized ships.')],
+        llm,
+        registry,
+        store,
+      });
+
+      const state = getAfterAgentState(threadId);
+      expect(state.status).to.equal('done');
+      expect((state as { outcome: string }).outcome).to.equal('identified');
+      expect((state as { disposition?: string }).disposition).to.equal('review');
+
+      // No registry interaction at all for a Review Band item — not even a
+      // raw-source snapshot (see ADR-0015).
+      const wiki = await registry.load('user');
+      const existed = await wiki.readPage('concepts/undersea-cable-repair.md').then(
+        () => true,
+        () => false,
+      );
+      expect(existed, 'Review Band must not write anything').to.equal(false);
+      expect(drainPendingWikiUpdates(threadId)).to.have.length(0);
+
+      const tasks = store
+        .listTasks({ workspaceId: null })
+        .filter((t) => t.title === 'Wiki placement: Undersea Cable Repair');
+      expect(tasks).to.have.length(1);
+      expect(tasks[0].assignedTo).to.equal('agent');
+      expect(tasks[0].status).to.equal('ready');
+      expect(tasks[0].description).to.contain('fit score 6/10');
+      expect(tasks[0].description).to.contain('tentatively matched');
+      expect(tasks[0].description).to.contain('Repair ships splice in a new segment');
+      expect(tasks[0].description).to.contain(
+        'Undersea fiber cables get repaired by specialized ships.',
+      );
+    });
+
+    it('Drop Band: reaches no-op the same way an unknown domain does, writing nothing [orchestration]', async () => {
+      const threadId = `fit-drop-${crypto.randomUUID()}`;
+      const { llm } = fakeStructuredLlm({
+        'after-agent:summarize': { summary: 'Unrelated software note.' },
+        'after-agent:classify': { shouldWrite: true, reason: 'novel content' },
+        'after-agent:extract': {
+          domainId: 'user',
+          fitScore: 3,
+          type: 'concept',
+          title: 'Dependency Audit',
+          tags: ['npm'],
+          body: 'Should never be written — fit is too low.',
+        },
+      });
+
+      await runInChatThread({
+        threadId,
+        messages: [new HumanMessage('Ran npm audit and found 23 vulnerabilities.')],
+        llm,
+        registry,
+        store,
+      });
+
+      expect((getAfterAgentState(threadId) as { outcome: string }).outcome).to.equal('no-op');
+      expect(drainPendingWikiUpdates(threadId)).to.have.length(0);
+      expect(
+        store
+          .listTasks({ workspaceId: null })
+          .filter((t) => t.title === 'Wiki placement: Dependency Audit'),
+      ).to.have.length(0);
+
+      const wiki = await registry.load('user');
+      const existed = await wiki.readPage('concepts/dependency-audit.md').then(
+        () => true,
+        () => false,
+      );
+      expect(existed, 'Drop Band must not write anything').to.equal(false);
     });
   });
 
@@ -503,6 +647,7 @@ describe('agents/after-agent', () => {
         'after-agent:classify': { shouldWrite: true, reason: 'project fact' },
         'after-agent:extract': {
           domainId: 'image-archive',
+          fitScore: 9,
           type: 'concept',
           title: 'Upload Streaming',
           tags: ['nodejs'],
@@ -530,7 +675,43 @@ describe('agents/after-agent', () => {
         await registry.load('image-archive')
       ).readPage('concepts/upload-streaming.md');
       expect(page.content).to.contain('stream.pipeline()');
-      expect((getAfterAgentState(threadId) as { outcome: string }).outcome).to.equal('identified');
+      const state = getAfterAgentState(threadId);
+      expect((state as { outcome: string }).outcome).to.equal('identified');
+      expect((state as { disposition?: string }).disposition).to.equal('written');
+    });
+
+    it('still writes when fit score is low, since Locked Scope has no ambiguity to adjudicate [orchestration]', async () => {
+      const threadId = boundWorkspaceThread('image-archive');
+      const { llm } = fakeStructuredLlm({
+        'after-agent:summarize': { summary: 'Uploads use NodeJS streams.' },
+        'after-agent:classify': { shouldWrite: true, reason: 'project fact' },
+        'after-agent:extract': {
+          domainId: 'image-archive',
+          fitScore: 2,
+          type: 'concept',
+          title: 'Low Fit But Bound',
+          tags: ['nodejs'],
+          body: 'Uploads use stream.pipeline() even though the tag match is weak.',
+        },
+      });
+
+      await runAfterAgentPipeline({
+        threadId,
+        messages: nodeTurn,
+        llm,
+        registry,
+        store,
+        threadStore: threads,
+      });
+
+      const state = getAfterAgentState(threadId);
+      expect((state as { outcome: string }).outcome).to.equal('identified');
+      expect((state as { disposition?: string }).disposition).to.equal('written');
+
+      const page = await (
+        await registry.load('image-archive')
+      ).readPage('concepts/low-fit-but-bound.md');
+      expect(page.content).to.contain('stream.pipeline()');
     });
 
     it('writes nothing when extract picks a domain outside the scope [orchestration]', async () => {
@@ -543,6 +724,7 @@ describe('agents/after-agent', () => {
         'after-agent:classify': { shouldWrite: true, reason: 'project fact' },
         'after-agent:extract': {
           domainId: 'video-streaming',
+          fitScore: 9,
           type: 'concept',
           title: 'Leaked Streaming Note',
           tags: ['nodejs'],
@@ -643,6 +825,7 @@ describe('agents/after-agent', () => {
         'after-agent:classify': { shouldWrite: true, reason: 'new info' },
         'after-agent:extract': {
           domainId: 'lint-errors',
+          fitScore: 9,
           type: 'entity',
           title: 'Broken Page',
           tags: ['test'],
@@ -692,6 +875,7 @@ describe('agents/after-agent', () => {
         'after-agent:classify': { shouldWrite: true, reason: 'new info' },
         'after-agent:extract': {
           domainId: 'lint-warn-only',
+          fitScore: 9,
           type: 'entity',
           title: 'Brief Note',
           tags: ['test'],
@@ -738,6 +922,7 @@ describe('agents/after-agent', () => {
         'after-agent:classify': { shouldWrite: true, reason: 'new info' },
         'after-agent:extract': {
           domainId: 'lint-throws',
+          fitScore: 9,
           type: 'entity',
           title: 'Some Page',
           tags: ['test'],
