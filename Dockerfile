@@ -9,6 +9,7 @@ COPY package.json package-lock.json ./
 COPY api/package.json ./api/package.json
 COPY ui/package.json ./ui/package.json
 COPY e2e/package.json ./e2e/package.json
+COPY lib/amazing-hashbrown-widgets/package.json ./lib/amazing-hashbrown-widgets/package.json
 COPY lib/evaluations/package.json ./lib/evaluations/package.json
 COPY lib/inference-adapter/package.json ./lib/inference-adapter/package.json
 COPY lib/llm-common-types/package.json ./lib/llm-common-types/package.json
@@ -77,6 +78,8 @@ COPY --from=deps --chown=appuser:appuser /app ./
 COPY --chown=appuser:appuser api/dist ./api/dist
 COPY --chown=appuser:appuser ui/dist ./api/public
 
+COPY --chown=appuser:appuser lib/amazing-hashbrown-widgets/package.json ./lib/amazing-hashbrown-widgets/package.json
+COPY --chown=appuser:appuser lib/amazing-hashbrown-widgets/dist ./lib/amazing-hashbrown-widgets/dist
 COPY --chown=appuser:appuser lib/evaluations/package.json ./lib/evaluations/package.json
 COPY --chown=appuser:appuser lib/evaluations/dist ./lib/evaluations/dist
 COPY --chown=appuser:appuser lib/evaluations/templates ./lib/evaluations/templates
