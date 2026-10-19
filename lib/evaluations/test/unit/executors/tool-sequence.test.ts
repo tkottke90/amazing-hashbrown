@@ -161,5 +161,21 @@ describe('runToolSequence', () => {
       );
       assert.equal(result.fieldResults[0].passed, true);
     });
+
+    it('gte: passes when the arg is greater than or equal to the threshold', () => {
+      const result = runToolSequence(
+        makeScenario('t', [{ path: 'count', match: 'gte', value: 8 }]),
+        [{ name: 't', args: { count: 9 } }],
+      );
+      assert.equal(result.fieldResults[0].passed, true);
+    });
+
+    it('between: passes when the arg is inside the range', () => {
+      const result = runToolSequence(
+        makeScenario('t', [{ path: 'count', match: 'between', value: [5, 7] }]),
+        [{ name: 't', args: { count: 6 } }],
+      );
+      assert.equal(result.fieldResults[0].passed, true);
+    });
   });
 });

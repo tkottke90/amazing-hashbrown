@@ -108,6 +108,11 @@ export const AfterAgentStateSchema = z.discriminatedUnion('status', [
     status: z.literal('done'),
     outcome: z.enum(['identified', 'no-op', 'error']),
     finishedAt: z.string(),
+    // Only meaningful when outcome is 'identified': whether the knowledge
+    // was written immediately (Write Band) or handed to a Placement Review
+    // Task for a human decision (Review Band) — see GLOSSARY.md's
+    // "AfterAgent & Wiki Write Scope" section.
+    disposition: z.enum(['written', 'review']).optional(),
   }),
 ]);
 export type AfterAgentState = z.infer<typeof AfterAgentStateSchema>;

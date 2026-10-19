@@ -3,6 +3,7 @@ import matter from 'gray-matter';
 import { z } from 'zod';
 import type { WikiRegistry } from '@tkottke90/llm-wiki';
 import { createWikiPage } from '../../services/wiki-write.js';
+import { getWikiRegistry } from '../../services/wiki.js';
 import { getActiveSseWriter } from '../active-sse-writer.js';
 import { getToolContent } from '../../services/tool-content-store.js';
 import { resolveToolWriteScope, wikiWriteDeniedMessage } from './wiki-write-guard.js';
@@ -50,6 +51,15 @@ const WikiCreatePageSchema = z.object({
       'Skip duplicate detection and force creation. Only use after reading the blocking page ' +
         'with wiki_read_page and confirming it covers a genuinely different topic.',
     ),
+  sourceText: z
+    .string()
+    .optional()
+    .describe(
+      'The original source text this page content came from (e.g. a conversation turn), saved ' +
+        'as a raw provenance snapshot alongside the page. Only set this when explicitly ' +
+        'instructed to preserve provenance for content that did not originate from your own ' +
+        'direct reasoning this turn.',
+    ),
 });
 
 // Test-only escape hatch, same pattern as wiki-write.ts's `registry`/`store`
@@ -74,6 +84,7 @@ export function makeWikiCreatePageTool(
         contradictions,
         dryRun,
         force,
+        sourceText,
       },
       config,
     ) => {
@@ -92,6 +103,29 @@ export function makeWikiCreatePageTool(
         body = matter(stored).content;
       }
 
+      // Best-effort provenance snapshot — createWikiPage() below still runs
+      // its own authoritative wikiId/registry checks and reports the real
+      // error if any of this fails, so a failure here is swallowed rather
+      // than surfaced twice.
+      let sources: string[] | undefined;
+      if (sourceText) {
+        try {
+          const reg = registry ?? (await getWikiRegistry());
+          const wiki = await reg.load(wikiId);
+          const prep = await wiki.ingestPrep({ content: body, title, keywords: tags ?? [] });
+          const threadId = config?.configurable?.thread_id as string | undefined;
+          const rawSource = await wiki.saveRawSource({
+            content: sourceText,
+            sourceUrl: `conversation:${threadId ?? 'unknown'}`,
+            path: prep.suggestedRawPath,
+            sha256: prep.sha256,
+          });
+          sources = [rawSource.path];
+        } catch {
+          // swallow — see comment above
+        }
+      }
+
       const result = await createWikiPage(
         {
           wikiId,
@@ -99,6 +133,7 @@ export function makeWikiCreatePageTool(
           content: body,
           section,
           tags,
+          sources,
           confidence,
           contested,
           contradictions,
