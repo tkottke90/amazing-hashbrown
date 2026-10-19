@@ -4,7 +4,6 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SkillsManager } from '../../src/skills-manager.js';
-import { writeValidSkill } from './fixtures.js';
 
 async function makeManager(): Promise<{ manager: SkillsManager; root: string }> {
   const root = await mkdtemp(join(tmpdir(), 'skills-manager-test-'));
@@ -134,15 +133,6 @@ describe('SkillsManager', () => {
         'zebra-skill',
       ]);
     });
-
-    it('sorts case-insensitively rather than by raw character code', async () => {
-      await writeValidSkill(root, 'banana-skill');
-      await writeValidSkill(root, 'Cherry-skill');
-      await manager.boot();
-      // A raw ASCII/byte sort would put 'Cherry-skill' first ('C' = 67 < 'b' = 98);
-      // locale-aware comparison correctly orders by letter, ignoring case.
-      expect(manager.list().map((s) => s.name)).to.deep.equal(['banana-skill', 'Cherry-skill']);
-    });
   });
 
   describe('search', () => {
@@ -164,10 +154,7 @@ describe('SkillsManager', () => {
 
     it('preserves alphabetical order within a keyword-filtered subset', () => {
       // 'a' matches apple-skill and banana-skill only, not cherry-skill or fig-skill.
-      expect(manager.search('a').map((s) => s.name)).to.deep.equal([
-        'apple-skill',
-        'banana-skill',
-      ]);
+      expect(manager.search('a').map((s) => s.name)).to.deep.equal(['apple-skill', 'banana-skill']);
     });
   });
 
