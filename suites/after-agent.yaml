@@ -639,10 +639,14 @@ scenarios:
   - id: ext-008-fit-score-mid-for-plausible-but-uncertain-match
     name: Extract rates a Domain Fit Score in the Review Band for a plausible-but-uncertain match
     purpose: >
-      The middle case for the Domain Fit Score gate — content that shares a tag with the offered
-      domain (infrastructure) but isn't actually about that domain's subject matter should land in
-      the Review Band (5-7), sending it to a Placement Review Task rather than writing or dropping
-      it outright.
+      The middle case for the Domain Fit Score gate — content that's engineering-flavored and
+      superficially plausible for the offered domain, but isn't actually about that domain's real
+      subject matter (software/backend/CI-CD systems, not physical/undersea infrastructure), should
+      land in the Review Band (5-7), sending it to a Placement Review Task rather than writing or
+      dropping it outright. An earlier version of this fixture tagged the domain with the broad word
+      "infrastructure", which real models split roughly 50/50 on scoring 8 (Write Band) vs. 5-7,
+      since undersea cables are also "infrastructure" in the broad sense — narrowed to
+      software-specific tags to remove that false-positive overlap.
     type: structured
     outputSchema:
       type: object
@@ -662,7 +666,7 @@ scenarios:
       Choose the wiki domain this content belongs in from the list below — pick the one whose
       tags/domain best match the content.
       Available domains:
-      - id: "engineering" (domain: engineering, tags: [software, infrastructure, deployment])
+      - id: "engineering" (domain: engineering, tags: [software, backend systems, CI/CD])
 
 
       Also rate how well the content actually fits the domain you picked, from 1 (no real match —
@@ -780,8 +784,8 @@ scenarios:
 
       Return the updated summary.
     rubric: >
-      The summary (returned as a JSON object with a "summary" field) must mention that the user
-      moved to Seattle and works at a fintech startup. It must not be empty or generic filler text.
+      The summary must mention that the user moved to Seattle and works at a fintech startup. It
+      must not be empty or generic filler text.
     minScore: 7
 
   - id: sum-002-rolling-fold-in
@@ -874,9 +878,9 @@ scenarios:
 
       Return the merged page body as markdown.
     rubric: >
-      The merged body (returned as a JSON object with a "body" field) must contain BOTH the
-      "backend engineer" fact from the existing page AND the "fintech company founded in 2015" /
-      "payments platform" facts from the new content. Losing either side is a failure.
+      The merged body must contain BOTH the "backend engineer" fact from the existing page AND the
+      "fintech company founded in 2015" / "payments platform" facts from the new content. Losing
+      either side is a failure.
     minScore: 7
 
   - id: mrg-002-contradiction-resolution
