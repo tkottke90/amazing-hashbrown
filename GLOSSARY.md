@@ -9,8 +9,24 @@ One self-contained unit of dashboard content, persisted as its own file and disc
 _Avoid_: Card, tile, block
 
 **Dashboard**:
-A named collection of Widgets, stored as one subfolder on disk. Only a single `default` Dashboard exists today; multiple Dashboards are a planned extension (#316), not yet reachable from the UI.
+A named collection of Widgets, stored as one subfolder on disk. Users can create, switch between, rename, and delete Dashboards; each keeps its own Widgets and Dashboard Metadata independent of every other Dashboard.
 _Avoid_: Board, page
+
+**Dashboard Id**:
+A Dashboard's permanent identifier, assigned once at creation and never changed — it names the Dashboard's on-disk subfolder and is unaffected by renaming. Generated as a nanoid for new Dashboards; the original Dashboard keeps its pre-existing id, `default` (see ADR-0017).
+_Avoid_: Slug, key, dashboard slug
+
+**Dashboard Name**:
+A Dashboard's mutable, user-facing display label, editable at any time. Not required to be unique — a Dashboard's identity is carried entirely by its Dashboard Id, never by Name.
+_Avoid_: Title, label
+
+**Dashboard Metadata**:
+A Dashboard's own persisted file, holding its Name, Description, and Density — the per-Dashboard analogue of Widget Frontmatter, but describing the Dashboard itself rather than one of its Widgets. See ADR-0018.
+_Avoid_: Dashboard config, dashboard settings (the UI panel that edits it, not the stored file)
+
+**Density**:
+A Dashboard Metadata field, `compact` or `roomy`, controlling that Dashboard's grid row height/spacing. Defaults to `compact`.
+_Avoid_: Spacing, grid size
 
 **Widget Frontmatter**:
 The YAML metadata block at the top of a widget's file: the fields every widget shares (`title`, `subtitle`, `type`, `order`), plus whatever scalar fields that widget's type needs (e.g. Big Number's `value`/`unit`, Line Graph's `color`, Pie Graph's `colors`).
