@@ -10,7 +10,7 @@ Stop AfterAgent from committing a wiki write when none of the domains it's allow
 
 ## Background
 
-Issue #333 reported AfterAgent writes landing in unrelated wiki domains from a workspace with no Bound Wiki. The write-scope guardrail from #79/#202 was confirmed working correctly — every domain offered to `extract` was already filtered through `checkWikiWrite`. The actual gap: once `classify` says a turn is worth saving, the pipeline is committed to writing *somewhere*, and `extract`'s prompt had no way to say "none of these candidates are a good match." Under Open Scope, "these candidates" can be every unclaimed domain in the registry, topically unrelated or not — so a weak match became a near-arbitrary one.
+Issue #333 reported AfterAgent writes landing in unrelated wiki domains from a workspace with no Bound Wiki. The write-scope guardrail from #79/#202 was confirmed working correctly — every domain offered to `extract` was already filtered through `checkWikiWrite`. The actual gap: once `classify` says a turn is worth saving, the pipeline is committed to writing _somewhere_, and `extract`'s prompt had no way to say "none of these candidates are a good match." Under Open Scope, "these candidates" can be every unclaimed domain in the registry, topically unrelated or not — so a weak match became a near-arbitrary one.
 
 This design adds a Domain Fit Score to `extract`'s output and three bands of behavior based on it. See `GLOSSARY.md`'s "AfterAgent & Wiki Write Scope" section for Write Scope / Locked Scope / Open Scope / Bound Wiki and for Domain Fit Score / Write Band / Review Band / Drop Band / Placement Review Task / Disposition — this document uses those terms as defined there rather than redefining them.
 
@@ -35,8 +35,8 @@ const ExtractOutputSchema = z.object({
     .max(10)
     .describe(
       'How well this content actually matches domainId, from 1 (no real match) to 10 ' +
-      '(obviously belongs here). Judge this independently of whether the content is worth ' +
-      'saving at all — that was already decided.',
+        '(obviously belongs here). Judge this independently of whether the content is worth ' +
+        'saving at all — that was already decided.',
     ),
   type: z.enum(['entity', 'concept', 'comparison', 'query', 'summary']),
   title: z.string(),
@@ -111,13 +111,13 @@ Same bucket the pipeline already uses for "classify said no" / "unknown domainId
 
 ## Error handling
 
-| Case | Behavior |
-| --- | --- |
-| `extract` returns `fitScore` outside 1–10 | Schema validation already covers this (same posture as `domainId`/`type` validation today) |
-| Locked Scope, any `fitScore` | Always Write Band — gate doesn't apply |
-| Review Band, `store.createTasks` throws | Logged, `setAfterAgentDone(threadId, 'no-op')` — same "never throw back into the hook" posture as every other failure branch in this pipeline |
-| Drop Band | `no-op`, identical to today's other no-op branches |
-| Placement Review Task's own run | An ordinary task-agent turn — existing task failure/retry handling applies unchanged, no new behavior |
+| Case                                      | Behavior                                                                                                                                      |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `extract` returns `fitScore` outside 1–10 | Schema validation already covers this (same posture as `domainId`/`type` validation today)                                                    |
+| Locked Scope, any `fitScore`              | Always Write Band — gate doesn't apply                                                                                                        |
+| Review Band, `store.createTasks` throws   | Logged, `setAfterAgentDone(threadId, 'no-op')` — same "never throw back into the hook" posture as every other failure branch in this pipeline |
+| Drop Band                                 | `no-op`, identical to today's other no-op branches                                                                                            |
+| Placement Review Task's own run           | An ordinary task-agent turn — existing task failure/retry handling applies unchanged, no new behavior                                         |
 
 ## Testing
 

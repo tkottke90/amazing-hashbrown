@@ -93,7 +93,7 @@ A Write Scope restricted to exactly one domain: the originating workspace's Boun
 _Avoid_: Restricted scope, project scope
 
 **Open Scope**:
-A Write Scope covering every wiki domain not Bound to a *different* workspace — the default for a workspace (or global chat) with no Bound Wiki of its own. Deliberately broad by design, for throwaway/no-commitment workspaces and global contexts; it is not itself a topical-relevance filter.
+A Write Scope covering every wiki domain not Bound to a _different_ workspace — the default for a workspace (or global chat) with no Bound Wiki of its own. Deliberately broad by design, for throwaway/no-commitment workspaces and global contexts; it is not itself a topical-relevance filter.
 _Avoid_: Unrestricted scope, default scope
 
 **Unresolved Scope**:

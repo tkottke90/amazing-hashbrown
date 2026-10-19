@@ -227,7 +227,7 @@ function buildExtractPrompt(turnText: string, summary: string, domains: WikiEntr
     `Available domains:\n${domainList}`,
     '',
     'Also rate how well the content actually fits the domain you picked, from 1 (no real match —',
-    "you only picked it because you had to choose something) to 10 (obviously belongs here). Judge",
+    'you only picked it because you had to choose something) to 10 (obviously belongs here). Judge',
     'this fit honestly and independently of whether the content is worth saving at all — that was',
     'already decided. A low score is a normal, expected answer when none of the available domains',
     'are a good match for this content.',
@@ -347,7 +347,7 @@ function createPlacementReviewTask(
     'domain (use wiki_locate/wiki_orient to find one), or not at all. If the human picks a domain,',
     'call wiki_create_page (or wiki_update_page, if it matches an existing page) with this body,',
     'passing the original conversation turn text above as sourceText so the written page keeps',
-    "its provenance. If the human says not to save it, complete this task without writing anything.",
+    'its provenance. If the human says not to save it, complete this task without writing anything.',
   ].join('\n');
 
   const task = store.createTask({
