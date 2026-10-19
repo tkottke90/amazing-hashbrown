@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -p tsconfig.json && vite build",
     "preview": "vite preview",
-    "test": "jest"
+    "test": "jest --coverage"
   },
   "dependencies": {
     "@tkottke90/amazing-hashbrown-widgets": "*",
