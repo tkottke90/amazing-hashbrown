@@ -155,6 +155,16 @@ describe('SkillsManager.createChild', () => {
       expect(child.search('global-only').map((s) => s.name)).to.deep.equal(['global-only']);
     });
 
+    it('returns the merged parent+child list in alphabetical order [unit]', async () => {
+      const child = await bootChild();
+      expect(child.list().map((s) => s.name)).to.deep.equal([
+        'create-project',
+        'global-only',
+        'repo-only',
+        'shared',
+      ]);
+    });
+
     it('leaves the parent listing untouched [unit]', async () => {
       await bootChild();
       expect(parent.list().map((s) => s.source)).to.deep.equal(['global', 'global', 'global']);

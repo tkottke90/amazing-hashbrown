@@ -122,6 +122,42 @@ describe('SkillsManager', () => {
     });
   });
 
+  describe('list', () => {
+    it('returns skills sorted alphabetically by name, not creation order', async () => {
+      await manager.create({ name: 'zebra-skill', description: 'x', body: 'y' });
+      await manager.create({ name: 'apple-skill', description: 'x', body: 'y' });
+      await manager.create({ name: 'mango-skill', description: 'x', body: 'y' });
+      expect(manager.list().map((s) => s.name)).to.deep.equal([
+        'apple-skill',
+        'mango-skill',
+        'zebra-skill',
+      ]);
+    });
+  });
+
+  describe('search', () => {
+    beforeEach(async () => {
+      await manager.create({ name: 'apple-skill', description: 'x', body: 'y' });
+      await manager.create({ name: 'banana-skill', description: 'x', body: 'y' });
+      await manager.create({ name: 'cherry-skill', description: 'x', body: 'y' });
+      await manager.create({ name: 'fig-skill', description: 'x', body: 'y' });
+    });
+
+    it('returns all enabled skills sorted alphabetically when no keyword is given', () => {
+      expect(manager.search().map((s) => s.name)).to.deep.equal([
+        'apple-skill',
+        'banana-skill',
+        'cherry-skill',
+        'fig-skill',
+      ]);
+    });
+
+    it('preserves alphabetical order within a keyword-filtered subset', () => {
+      // 'a' matches apple-skill and banana-skill only, not cherry-skill or fig-skill.
+      expect(manager.search('a').map((s) => s.name)).to.deep.equal(['apple-skill', 'banana-skill']);
+    });
+  });
+
   describe('file management (scripts / references)', () => {
     beforeEach(async () => {
       await manager.create({ name: 'file-skill', description: 'x', body: 'y' });
