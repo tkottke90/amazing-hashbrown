@@ -1,8 +1,10 @@
 import { z } from 'zod';
+import path from 'node:path';
 import * as widgetsLib from '@tkottke90/amazing-hashbrown-widgets';
 import { WidgetNotFoundError, parseCsvBody } from '@tkottke90/amazing-hashbrown-widgets';
 import { WIDGET_SIZE_MIN, WIDGET_SIZE_MAX } from '@tkottke90/amazing-hashbrown-widgets/types';
 import type {
+  Dashboard,
   DashboardWidget,
   WidgetContentInput,
   WidgetLoadResult,
@@ -47,6 +49,10 @@ export interface WidgetStoreDeps {
   deleteWidget: typeof widgetsLib.deleteWidget;
   reorderWidget: typeof widgetsLib.reorderWidget;
   peekWidgetFrontmatter: typeof widgetsLib.peekWidgetFrontmatter;
+  listDashboards: typeof widgetsLib.listDashboards;
+  createDashboard: typeof widgetsLib.createDashboard;
+  updateDashboardMetadata: typeof widgetsLib.updateDashboardMetadata;
+  deleteDashboard: typeof widgetsLib.deleteDashboard;
 }
 
 const defaultStore: WidgetStoreDeps = widgetsLib;
@@ -150,6 +156,18 @@ const WidgetRawSchema = z.object({
 
 const ReorderWidgetSchema = z.object({
   targetWidgetId: z.string().min(1),
+});
+
+// ---- Dashboard Metadata input (see GLOSSARY.md, ADR-0018) ------------------------
+
+const DashboardCreateInputSchema = z.object({
+  name: z.string().min(1),
+});
+
+const DashboardUpdateInputSchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().optional(),
+  density: z.enum(['compact', 'roomy']).optional(),
 });
 
 // ---- Content-only input (D4) ------------------------------------------------------
@@ -496,4 +514,75 @@ export async function deleteWidgetHandler(
     if (err instanceof WidgetNotFoundError) return notFound(err.message);
     throw err;
   }
+}
+
+// ---- Dashboard-level handlers (see GLOSSARY.md, ADR-0016/0017/0018) --------------
+
+export interface DashboardListEntry extends Dashboard {
+  /** Derived, never persisted — the Settings panel's read-only folder display. */
+  path: string;
+}
+
+function withPath(dashboardRoot: string, dashboard: Dashboard): DashboardListEntry {
+  return { ...dashboard, path: path.join(dashboardRoot, dashboard.id) };
+}
+
+export async function listDashboardsHandler(
+  dashboardRoot: string,
+  store: WidgetStoreDeps = defaultStore,
+): Promise<HandlerResult<DashboardListEntry[]>> {
+  const dashboards = await store.listDashboards(dashboardRoot);
+  return ok(dashboards.map((d) => withPath(dashboardRoot, d)));
+}
+
+export async function createDashboardHandler(
+  dashboardRoot: string,
+  body: unknown,
+  store: WidgetStoreDeps = defaultStore,
+): Promise<HandlerResult<DashboardListEntry>> {
+  const parsed = DashboardCreateInputSchema.safeParse(body);
+  if (!parsed.success) {
+    return badRequest(parsed.error.issues.map((i) => i.message).join('; '));
+  }
+  const dashboard = await store.createDashboard(dashboardRoot, parsed.data.name);
+  return ok(withPath(dashboardRoot, dashboard));
+}
+
+export async function updateDashboardHandler(
+  dashboardRoot: string,
+  dashboardId: string,
+  body: unknown,
+  store: WidgetStoreDeps = defaultStore,
+): Promise<HandlerResult<DashboardListEntry>> {
+  const parsed = DashboardUpdateInputSchema.safeParse(body);
+  if (!parsed.success) {
+    return badRequest(parsed.error.issues.map((i) => i.message).join('; '));
+  }
+  const existing = await store.listDashboards(dashboardRoot);
+  if (!existing.some((d) => d.id === dashboardId)) {
+    return notFound(`Dashboard "${dashboardId}" not found.`);
+  }
+  const dashboard = await store.updateDashboardMetadata(dashboardRoot, dashboardId, parsed.data);
+  return ok(withPath(dashboardRoot, dashboard));
+}
+
+/**
+ * Delete-guard: refuses with 400 if this is the last remaining Dashboard.
+ * The UI hides its delete button in this case (D11), but the API must
+ * never rely on the client having done so.
+ */
+export async function deleteDashboardHandler(
+  dashboardRoot: string,
+  dashboardId: string,
+  store: WidgetStoreDeps = defaultStore,
+): Promise<HandlerResult<{ deleted: true }>> {
+  const existing = await store.listDashboards(dashboardRoot);
+  if (!existing.some((d) => d.id === dashboardId)) {
+    return notFound(`Dashboard "${dashboardId}" not found.`);
+  }
+  if (existing.length <= 1) {
+    return badRequest('Cannot delete the only remaining dashboard.');
+  }
+  await store.deleteDashboard(dashboardRoot, dashboardId);
+  return ok({ deleted: true });
 }

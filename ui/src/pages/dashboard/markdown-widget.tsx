@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from 'lucide-preact';
 import { Markdown } from '@/components/markdown';
 import { Button } from '@/components/ui/button';
 import { showToast } from '@/lib/toast';
-import { deleteWidget, DEFAULT_DASHBOARD_ID } from '@/services/dashboard-api';
+import { deleteWidget } from '@/services/dashboard-api';
 import { WidgetCard, type DragHandleProps } from './widget-card';
 import { WidgetHeader } from './widget-header';
 import { WidgetContent } from './widget-content';
@@ -13,6 +13,8 @@ import type { MarkdownWidget as MarkdownWidgetData } from '@tkottke90/amazing-ha
 
 interface MarkdownWidgetProps {
   widget: MarkdownWidgetData;
+  dashboardId: string;
+  density: 'compact' | 'roomy';
   onChanged: () => void;
   editMode?: boolean;
   dragHandleProps?: DragHandleProps;
@@ -28,6 +30,8 @@ interface MarkdownWidgetProps {
 // widgets are editable this slice.
 export function MarkdownWidget({
   widget,
+  dashboardId,
+  density,
   onChanged,
   editMode,
   dragHandleProps,
@@ -40,7 +44,7 @@ export function MarkdownWidget({
   async function handleDelete() {
     if (!confirm(`Remove widget "${widget.title}"? This cannot be undone.`)) return;
     try {
-      await deleteWidget(DEFAULT_DASHBOARD_ID, widget.id);
+      await deleteWidget(dashboardId, widget.id);
       onChanged();
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Failed to remove widget');
@@ -48,7 +52,15 @@ export function MarkdownWidget({
   }
 
   return (
-    <WidgetCard editMode={editMode} w={w} h={h} minW={minW} minH={minH} onResize={onResize}>
+    <WidgetCard
+      editMode={editMode}
+      w={w}
+      h={h}
+      minW={minW}
+      minH={minH}
+      density={density}
+      onResize={onResize}
+    >
       <WidgetHeader
         title={widget.title}
         subtitle={widget.subtitle}
@@ -61,6 +73,7 @@ export function MarkdownWidget({
       <WidgetAction>
         <WidgetDrawer
           mode="edit"
+          dashboardId={dashboardId}
           target={{ status: 'ok', widget }}
           onSaved={onChanged}
           trigger={

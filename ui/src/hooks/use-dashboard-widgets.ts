@@ -100,6 +100,10 @@ export function useDashboardWidgets(dashboardId: string = DEFAULT_DASHBOARD_ID) 
   }
 
   useEffect(() => {
+    // Reset to loading only when the dashboardId itself changes (switching
+    // dashboards) — not on every refresh() call (e.g. after a widget save),
+    // which should patch the grid in place without a loading flash.
+    loading.value = true;
     void refresh();
   }, [dashboardId]);
 

@@ -63,7 +63,15 @@ describe('DashboardGrid', () => {
   it('spans each widget by its own w/h at desktop viewport width [unit]', () => {
     mockMatchMedia(true);
     const results = [makeResult('a', 0, 6, 3), makeResult('b', 1, 3, 2)];
-    render(<DashboardGrid results={results} onChanged={() => {}} editMode={false} />);
+    render(
+      <DashboardGrid
+        results={results}
+        dashboardId="default"
+        density="compact"
+        onChanged={() => {}}
+        editMode={false}
+      />,
+    );
 
     const cards = screen.getAllByTestId('widget-card');
     expect(cards[0]!.parentElement).toHaveStyle({ gridColumn: 'span 6', gridRow: 'span 3' });
@@ -73,11 +81,32 @@ describe('DashboardGrid', () => {
   it('renders a 12-column fixed track grid at desktop viewport width [unit]', () => {
     mockMatchMedia(true);
     render(
-      <DashboardGrid results={[makeResult('a', 0, 3, 2)]} onChanged={() => {}} editMode={false} />,
+      <DashboardGrid
+        results={[makeResult('a', 0, 3, 2)]}
+        dashboardId="default"
+        density="compact"
+        onChanged={() => {}}
+        editMode={false}
+      />,
     );
     expect(screen.getByTestId('dashboard-grid')).toHaveStyle({
       gridTemplateColumns: 'repeat(12, 1fr)',
+      gridAutoRows: '88px',
     });
+  });
+
+  it("uses Roomy's taller row height when the dashboard's density is roomy [unit]", () => {
+    mockMatchMedia(true);
+    render(
+      <DashboardGrid
+        results={[makeResult('a', 0, 3, 2)]}
+        dashboardId="default"
+        density="roomy"
+        onChanged={() => {}}
+        editMode={false}
+      />,
+    );
+    expect(screen.getByTestId('dashboard-grid')).toHaveStyle({ gridAutoRows: '120px' });
   });
 
   it('collapses to a single-column stack below the desktop breakpoint, ignoring w/h [unit]', () => {
@@ -85,6 +114,8 @@ describe('DashboardGrid', () => {
     render(
       <DashboardGrid
         results={[makeResult('a', 0, 6, 3), makeResult('b', 1, 3, 2)]}
+        dashboardId="default"
+        density="compact"
         onChanged={() => {}}
         editMode={false}
       />,
@@ -97,7 +128,15 @@ describe('DashboardGrid', () => {
   it('renders ok widgets sorted by order, independent of array position [unit]', () => {
     mockMatchMedia(false);
     const results = [makeResult('b', 1, 3, 2), makeResult('a', 0, 3, 2)];
-    render(<DashboardGrid results={results} onChanged={() => {}} editMode={false} />);
+    render(
+      <DashboardGrid
+        results={results}
+        dashboardId="default"
+        density="compact"
+        onChanged={() => {}}
+        editMode={false}
+      />,
+    );
     const titles = screen
       .getAllByTestId('widget-card')
       .map((el) => el.querySelector('h2')?.textContent);
@@ -107,7 +146,13 @@ describe('DashboardGrid', () => {
   it('renders no Ghost Cells outside Edit Mode [unit]', () => {
     mockMatchMedia(true);
     render(
-      <DashboardGrid results={[makeResult('a', 0, 3, 2)]} onChanged={() => {}} editMode={false} />,
+      <DashboardGrid
+        results={[makeResult('a', 0, 3, 2)]}
+        dashboardId="default"
+        density="compact"
+        onChanged={() => {}}
+        editMode={false}
+      />,
     );
     expect(screen.queryAllByTestId('ghost-cell')).toHaveLength(0);
   });
@@ -117,7 +162,13 @@ describe('DashboardGrid', () => {
     // A single 3x2 widget: cells (1,1)-(2,3) are occupied, so no Ghost Cell
     // should ever declare that exact row/col start.
     render(
-      <DashboardGrid results={[makeResult('a', 0, 3, 2)]} onChanged={() => {}} editMode={true} />,
+      <DashboardGrid
+        results={[makeResult('a', 0, 3, 2)]}
+        dashboardId="default"
+        density="compact"
+        onChanged={() => {}}
+        editMode={true}
+      />,
     );
     const ghosts = screen.getAllByTestId('ghost-cell');
     expect(ghosts.length).toBeGreaterThan(0);
@@ -136,7 +187,13 @@ describe('DashboardGrid', () => {
   it('floors Ghost Cell rows at 5 for a near-empty dashboard in Edit Mode [unit]', () => {
     mockMatchMedia(true);
     render(
-      <DashboardGrid results={[makeResult('a', 0, 3, 2)]} onChanged={() => {}} editMode={true} />,
+      <DashboardGrid
+        results={[makeResult('a', 0, 3, 2)]}
+        dashboardId="default"
+        density="compact"
+        onChanged={() => {}}
+        editMode={true}
+      />,
     );
     const ghosts = screen.getAllByTestId('ghost-cell');
     const maxRow = Math.max(...ghosts.map((g) => Number(g.style.gridRow.split(' ')[0])));
@@ -152,7 +209,13 @@ describe('DashboardGrid', () => {
     // CodeEditor immediately, same as dashboard-widget-renderer.test.tsx.
     render(
       <ThemeProvider>
-        <DashboardGrid results={results} onChanged={() => {}} editMode={false} />
+        <DashboardGrid
+          results={results}
+          dashboardId="default"
+          density="compact"
+          onChanged={() => {}}
+          editMode={false}
+        />
       </ThemeProvider>,
     );
     const card = screen.getByTestId('widget-error-card');

@@ -1,7 +1,7 @@
 import { Trash2 } from 'lucide-preact';
 import { Button } from '@/components/ui/button';
 import { showToast } from '@/lib/toast';
-import { deleteWidget, DEFAULT_DASHBOARD_ID } from '@/services/dashboard-api';
+import { deleteWidget } from '@/services/dashboard-api';
 import { WidgetCard, type DragHandleProps } from './widget-card';
 import { WidgetHeader } from './widget-header';
 import { WidgetAction } from './widget-action';
@@ -9,6 +9,8 @@ import type { SpacerWidget as SpacerWidgetData } from '@tkottke90/amazing-hashbr
 
 interface SpacerWidgetProps {
   widget: SpacerWidgetData;
+  dashboardId: string;
+  density: 'compact' | 'roomy';
   onChanged: () => void;
   editMode?: boolean;
   dragHandleProps?: DragHandleProps;
@@ -29,6 +31,8 @@ interface SpacerWidgetProps {
 // deletes through it, rather than a one-off affordance.
 export function SpacerWidget({
   widget,
+  dashboardId,
+  density,
   onChanged,
   editMode,
   dragHandleProps,
@@ -43,7 +47,7 @@ export function SpacerWidget({
   async function handleDelete() {
     if (!confirm(`Remove widget "${widget.title}"? This cannot be undone.`)) return;
     try {
-      await deleteWidget(DEFAULT_DASHBOARD_ID, widget.id);
+      await deleteWidget(dashboardId, widget.id);
       onChanged();
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Failed to remove widget');
@@ -51,7 +55,15 @@ export function SpacerWidget({
   }
 
   return (
-    <WidgetCard editMode={editMode} w={w} h={h} minW={minW} minH={minH} onResize={onResize}>
+    <WidgetCard
+      editMode={editMode}
+      w={w}
+      h={h}
+      minW={minW}
+      minH={minH}
+      density={density}
+      onResize={onResize}
+    >
       <WidgetHeader title={widget.title} editMode={editMode} dragHandleProps={dragHandleProps} />
       <WidgetAction>
         <Button

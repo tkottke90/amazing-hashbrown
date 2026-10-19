@@ -7,11 +7,13 @@
  */
 
 import { promises as fs } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import * as frontmatter from './internal/frontmatter.js';
 import { slugify, withCollisionSuffix } from './internal/slug.js';
 import { WIDGET_SIZE_MIN } from './internal/widget-field-schemas.js';
 import type {
+  Dashboard,
   DashboardWidget,
   MarkdownWidget,
   WidgetContentInput,
@@ -433,6 +435,166 @@ export async function deleteWidget(root: string, dashboardId: string, id: string
   } catch {
     throw new WidgetNotFoundError(`Widget "${id}" not found`);
   }
+}
+
+// --- Dashboard Metadata (see GLOSSARY.md, ADR-0018) ---------------------
+//
+// A Dashboard's own persisted file, holding Name/Description/Density plus
+// an internal `createdAt` sort key — the per-Dashboard analogue of Widget
+// Frontmatter, but plain JSON (no Markdown body, so no gray-matter).
+
+interface DashboardMetadataFile {
+  name: string;
+  description: string;
+  density: 'compact' | 'roomy';
+  createdAt: string;
+}
+
+function dashboardMetadataPath(root: string, dashboardId: string): string {
+  return path.join(dashboardDir(root, dashboardId), 'dashboard.json');
+}
+
+// `createdAt` exists purely so listDashboards() can sort in creation order
+// (no reliable cross-platform filesystem "creation time" to sort by
+// instead). Plain `Date.now()` isn't precise enough — two dashboards
+// created within the same millisecond would tie and fall back to an
+// effectively arbitrary id-alphabetical sort. This monotonic counter
+// guarantees every call within this process returns a strictly later
+// timestamp than the last, however fast successive calls happen.
+let lastCreatedAtMs = 0;
+function nextCreatedAt(): string {
+  const now = Date.now();
+  lastCreatedAtMs = now > lastCreatedAtMs ? now : lastCreatedAtMs + 1;
+  return new Date(lastCreatedAtMs).toISOString();
+}
+
+async function readDashboardMetadataFile(
+  root: string,
+  dashboardId: string,
+): Promise<DashboardMetadataFile | null> {
+  try {
+    const raw = await fs.readFile(dashboardMetadataPath(root, dashboardId), 'utf8');
+    return JSON.parse(raw) as DashboardMetadataFile;
+  } catch {
+    return null;
+  }
+}
+
+async function writeDashboardMetadataFile(
+  root: string,
+  dashboardId: string,
+  metadata: DashboardMetadataFile,
+): Promise<void> {
+  await fs.mkdir(dashboardDir(root, dashboardId), { recursive: true });
+  await writeFileAtomic(
+    dashboardMetadataPath(root, dashboardId),
+    JSON.stringify(metadata, null, 2),
+  );
+}
+
+function toDashboard(id: string, metadata: DashboardMetadataFile): Dashboard {
+  return {
+    id,
+    name: metadata.name,
+    description: metadata.description,
+    density: metadata.density,
+    createdAt: metadata.createdAt,
+  };
+}
+
+/**
+ * Every Dashboard folder under `root`. A folder with no dashboard.json yet
+ * (only possible pre-migration, for `default`) reads with sane defaults —
+ * name derived from the folder id — the same backward-compatible
+ * read-time-default pattern Widget Size uses (ADR-0009). Sorted by
+ * `createdAt` ascending (oldest/first-created first); a dashboard with no
+ * `createdAt` (shouldn't occur post-migration) sorts last, tiebroken by id.
+ */
+export async function listDashboards(root: string): Promise<Dashboard[]> {
+  let entries: string[];
+  try {
+    const dirents = await fs.readdir(root, { withFileTypes: true });
+    entries = dirents.filter((e) => e.isDirectory()).map((e) => e.name);
+  } catch {
+    return [];
+  }
+
+  const dashboards = await Promise.all(
+    entries.map(async (id): Promise<Dashboard> => {
+      const metadata = await readDashboardMetadataFile(root, id);
+      return toDashboard(
+        id,
+        metadata ?? { name: id, description: '', density: 'compact', createdAt: '' },
+      );
+    }),
+  );
+
+  return dashboards.sort((a, b) => {
+    if (a.createdAt && b.createdAt) return a.createdAt.localeCompare(b.createdAt);
+    if (a.createdAt) return -1;
+    if (b.createdAt) return 1;
+    return a.id.localeCompare(b.id);
+  });
+}
+
+export async function getDashboardMetadata(
+  root: string,
+  dashboardId: string,
+): Promise<Dashboard | null> {
+  const metadata = await readDashboardMetadataFile(root, dashboardId);
+  if (!metadata) return null;
+  return toDashboard(dashboardId, metadata);
+}
+
+/** Creates a new, empty Dashboard folder + dashboard.json. No widgets seeded. */
+export async function createDashboard(root: string, name: string): Promise<Dashboard> {
+  const id = randomUUID();
+  const metadata: DashboardMetadataFile = {
+    name,
+    description: '',
+    density: 'compact',
+    createdAt: nextCreatedAt(),
+  };
+  await writeDashboardMetadataFile(root, id, metadata);
+  return toDashboard(id, metadata);
+}
+
+/** Merge-writes name/description/density. Preserves `createdAt` from the existing file. */
+export async function updateDashboardMetadata(
+  root: string,
+  dashboardId: string,
+  patch: Partial<Pick<Dashboard, 'name' | 'description' | 'density'>>,
+): Promise<Dashboard> {
+  const existing = await readDashboardMetadataFile(root, dashboardId);
+  const merged: DashboardMetadataFile = {
+    name: patch.name ?? existing?.name ?? dashboardId,
+    description: patch.description ?? existing?.description ?? '',
+    density: patch.density ?? existing?.density ?? 'compact',
+    createdAt: existing?.createdAt ?? nextCreatedAt(),
+  };
+  await writeDashboardMetadataFile(root, dashboardId, merged);
+  return toDashboard(dashboardId, merged);
+}
+
+export async function deleteDashboard(root: string, dashboardId: string): Promise<void> {
+  await fs.rm(dashboardDir(root, dashboardId), { recursive: true, force: true });
+}
+
+/**
+ * Boot-time migration (ADR-0017): if `default`'s folder has no
+ * dashboard.json yet, write one with name "Default". Idempotent — a no-op
+ * once the file exists, so a user who already renamed "Default" is never
+ * overwritten by a later boot.
+ */
+export async function migrateDefaultDashboardMetadata(root: string): Promise<void> {
+  const existing = await readDashboardMetadataFile(root, 'default');
+  if (existing) return;
+  await writeDashboardMetadataFile(root, 'default', {
+    name: 'Default',
+    description: '',
+    density: 'compact',
+    createdAt: nextCreatedAt(),
+  });
 }
 
 const SEED_WIDGETS: Extract<WidgetContentInput, { type: 'markdown' }>[] = [

@@ -50,19 +50,38 @@ describe('MarkdownWidget', () => {
   });
 
   it("passes the widget's title and subtitle to WidgetCard [unit]", () => {
-    render(<MarkdownWidget widget={widget()} onChanged={jest.fn()} />);
+    render(
+      <MarkdownWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget()}
+        onChanged={jest.fn()}
+      />,
+    );
     expect(screen.getByText('My Title')).toBeInTheDocument();
     expect(screen.getByText('My Subtitle')).toBeInTheDocument();
   });
 
   it('passes content through to Markdown [unit]', () => {
-    render(<MarkdownWidget widget={widget({ content: '# hi' })} onChanged={jest.fn()} />);
+    render(
+      <MarkdownWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget({ content: '# hi' })}
+        onChanged={jest.fn()}
+      />,
+    );
     expect(screen.getByText('# hi')).toBeInTheDocument();
   });
 
   it('omits subtitle markup when absent [unit]', () => {
     const { container } = render(
-      <MarkdownWidget widget={widget({ subtitle: undefined })} onChanged={jest.fn()} />,
+      <MarkdownWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget({ subtitle: undefined })}
+        onChanged={jest.fn()}
+      />,
     );
     expect(container.querySelector('p')).toBeNull();
   });
@@ -70,7 +89,14 @@ describe('MarkdownWidget', () => {
   it('delete asks for confirmation, then deletes and calls onChanged [unit]', async () => {
     mockDelete.mockResolvedValue(undefined);
     const onChanged = jest.fn();
-    render(<MarkdownWidget widget={widget()} onChanged={onChanged} />);
+    render(
+      <MarkdownWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget()}
+        onChanged={onChanged}
+      />,
+    );
 
     fireEvent.click(screen.getByTestId('widget-delete-button'));
 
@@ -84,7 +110,14 @@ describe('MarkdownWidget', () => {
   it('delete does nothing when confirmation is declined [unit]', () => {
     global.confirm = jest.fn(() => false);
     const onChanged = jest.fn();
-    render(<MarkdownWidget widget={widget()} onChanged={onChanged} />);
+    render(
+      <MarkdownWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget()}
+        onChanged={onChanged}
+      />,
+    );
 
     fireEvent.click(screen.getByTestId('widget-delete-button'));
 
@@ -94,7 +127,14 @@ describe('MarkdownWidget', () => {
 
   it('shows a toast when delete fails [unit]', async () => {
     mockDelete.mockRejectedValue(new Error('server error'));
-    render(<MarkdownWidget widget={widget()} onChanged={jest.fn()} />);
+    render(
+      <MarkdownWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget()}
+        onChanged={jest.fn()}
+      />,
+    );
 
     fireEvent.click(screen.getByTestId('widget-delete-button'));
 
@@ -104,13 +144,27 @@ describe('MarkdownWidget', () => {
   });
 
   it('renders an edit button that opens the widget drawer form [unit]', () => {
-    render(<MarkdownWidget widget={widget()} onChanged={jest.fn()} />);
+    render(
+      <MarkdownWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget()}
+        onChanged={jest.fn()}
+      />,
+    );
     expect(screen.getByTestId('widget-edit-button')).toBeInTheDocument();
     expect(screen.getByTestId('widget-drawer-form')).toBeInTheDocument();
   });
 
   it('renders content in the scrollable region and buttons in the pinned action row [unit]', () => {
-    render(<MarkdownWidget widget={widget()} onChanged={jest.fn()} />);
+    render(
+      <MarkdownWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget()}
+        onChanged={jest.fn()}
+      />,
+    );
     expect(screen.getByTestId('widget-content')).toContainElement(screen.getByText('# hi'));
     expect(screen.getByTestId('widget-action')).toContainElement(
       screen.getByTestId('widget-delete-button'),

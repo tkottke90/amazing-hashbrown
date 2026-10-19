@@ -17,6 +17,8 @@ interface WidgetCardProps {
   h?: number;
   minW?: number;
   minH?: number;
+  /** Density (see GLOSSARY.md) — defaults to 'compact' for callers that don't pass one. */
+  density?: 'compact' | 'roomy';
   onResize?: (w: number, h: number) => void;
 }
 
@@ -33,6 +35,7 @@ export function WidgetCard({
   h,
   minW,
   minH,
+  density = 'compact',
   onResize,
 }: WidgetCardProps) {
   const resizable = editMode && w !== undefined && h !== undefined && onResize !== undefined;
@@ -41,6 +44,7 @@ export function WidgetCard({
     h: h ?? 0,
     minW: minW ?? 1,
     minH: minH ?? 1,
+    density,
     onResize: onResize ?? (() => {}),
   });
 

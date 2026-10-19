@@ -1,7 +1,7 @@
 import type { DashboardWidget, WidgetLoadResult } from '@tkottke90/amazing-hashbrown-widgets/types';
 import { WIDGET_SIZE_MIN } from '@tkottke90/amazing-hashbrown-widgets/types';
 import { showToast } from '@/lib/toast';
-import { resizeWidget, DEFAULT_DASHBOARD_ID } from '@/services/dashboard-api';
+import { resizeWidget } from '@/services/dashboard-api';
 import { patchDashboardWidget } from '@/hooks/use-dashboard-widgets';
 import { BigNumberWidget } from './big-number-widget';
 import { LineGraphWidget } from './line-graph-widget';
@@ -17,6 +17,8 @@ function assertNever(widget: never): never {
 }
 
 interface RenderWidgetOptions {
+  dashboardId: string;
+  density: 'compact' | 'roomy';
   onChanged: () => void;
   editMode: boolean;
   dragHandleProps?: DragHandleProps;
@@ -29,6 +31,8 @@ function renderWidget(widget: DashboardWidget, options: RenderWidgetOptions) {
   // on a genuinely unhandled type before ever reaching `assertNever` below.
   const { w, h } = widget;
   const shared = {
+    dashboardId: options.dashboardId,
+    density: options.density,
     editMode: options.editMode,
     dragHandleProps: options.dragHandleProps,
     onResize: options.onResize,
@@ -117,6 +121,8 @@ function renderWidget(widget: DashboardWidget, options: RenderWidgetOptions) {
 
 interface WidgetRendererProps {
   result: WidgetLoadResult;
+  dashboardId: string;
+  density: 'compact' | 'roomy';
   onChanged: () => void;
   editMode?: boolean;
   dragHandleProps?: DragHandleProps;
@@ -124,23 +130,32 @@ interface WidgetRendererProps {
 
 export function WidgetRenderer({
   result,
+  dashboardId,
+  density,
   onChanged,
   editMode = false,
   dragHandleProps,
 }: WidgetRendererProps) {
   if (result.status === 'error') {
-    return <WidgetErrorCard result={result} onChanged={onChanged} />;
+    return <WidgetErrorCard result={result} dashboardId={dashboardId} onChanged={onChanged} />;
   }
 
   async function onResize(w: number, h: number) {
     if (result.status !== 'ok') return;
     try {
-      const updated = await resizeWidget(DEFAULT_DASHBOARD_ID, result.widget, w, h);
-      patchDashboardWidget(DEFAULT_DASHBOARD_ID, updated);
+      const updated = await resizeWidget(dashboardId, result.widget, w, h);
+      patchDashboardWidget(dashboardId, updated);
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Failed to resize widget');
     }
   }
 
-  return renderWidget(result.widget, { onChanged, editMode, dragHandleProps, onResize });
+  return renderWidget(result.widget, {
+    dashboardId,
+    density,
+    onChanged,
+    editMode,
+    dragHandleProps,
+    onResize,
+  });
 }

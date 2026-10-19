@@ -9,9 +9,56 @@ import {
   updateWidgetContentHandler,
   updateWidgetRawHandler,
   deleteWidgetHandler,
+  listDashboardsHandler,
+  createDashboardHandler,
+  updateDashboardHandler,
+  deleteDashboardHandler,
 } from './dashboards.handlers.js';
 
 export const dashboardsRouter = Router();
+
+dashboardsRouter.get('/', async (_req: Request, res: Response) => {
+  const result = await listDashboardsHandler(env.dashboardRoot);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(result.data);
+});
+
+dashboardsRouter.post('/', async (req: Request, res: Response) => {
+  const result = await createDashboardHandler(env.dashboardRoot, req.body);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.status(201).json(result.data);
+});
+
+dashboardsRouter.patch('/:dashboardId', async (req: Request, res: Response) => {
+  const result = await updateDashboardHandler(
+    env.dashboardRoot,
+    req.params['dashboardId'] as string,
+    req.body,
+  );
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(result.data);
+});
+
+dashboardsRouter.delete('/:dashboardId', async (req: Request, res: Response) => {
+  const result = await deleteDashboardHandler(
+    env.dashboardRoot,
+    req.params['dashboardId'] as string,
+  );
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.status(204).end();
+});
 
 dashboardsRouter.get('/:dashboardId/widgets', async (req: Request, res: Response) => {
   const result = await listWidgetsHandler(env.dashboardRoot, req.params['dashboardId'] as string);

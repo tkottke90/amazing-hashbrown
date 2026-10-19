@@ -53,7 +53,14 @@ describe('PieGraphWidget', () => {
   });
 
   it('renders one svg path per CSV Body row [unit]', () => {
-    renderWidget(<PieGraphWidget widget={widget()} onChanged={jest.fn()} />);
+    renderWidget(
+      <PieGraphWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget()}
+        onChanged={jest.fn()}
+      />,
+    );
     const chart = screen.getByTestId('pie-graph-widget');
     expect(chart).toBeInTheDocument();
     // Scoped to the chart wrapper, not the whole card — the edit/delete
@@ -63,7 +70,12 @@ describe('PieGraphWidget', () => {
 
   it('falls back to the default palette per label index when no override is set [unit]', () => {
     renderWidget(
-      <PieGraphWidget widget={widget({ data: 'label,value\nA,1\nB,1' })} onChanged={jest.fn()} />,
+      <PieGraphWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget({ data: 'label,value\nA,1\nB,1' })}
+        onChanged={jest.fn()}
+      />,
     );
     const paths = screen.getByTestId('pie-graph-widget').querySelectorAll('svg path');
     expect(paths[0]?.getAttribute('fill')).toBe('#6366f1');
@@ -73,6 +85,8 @@ describe('PieGraphWidget', () => {
   it('applies a Color Override positionally and cycles when shorter than the label count [unit]', () => {
     renderWidget(
       <PieGraphWidget
+        dashboardId="default"
+        density="compact"
         widget={widget({ data: 'label,value\nA,1\nB,1\nC,1', colors: ['#111111', '#222222'] })}
         onChanged={jest.fn()}
       />,
@@ -86,7 +100,14 @@ describe('PieGraphWidget', () => {
   it('delete asks for confirmation, then deletes and calls onChanged [unit]', async () => {
     mockDelete.mockResolvedValue(undefined);
     const onChanged = jest.fn();
-    renderWidget(<PieGraphWidget widget={widget()} onChanged={onChanged} />);
+    renderWidget(
+      <PieGraphWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget()}
+        onChanged={onChanged}
+      />,
+    );
 
     fireEvent.click(screen.getByTestId('widget-delete-button'));
 
@@ -98,13 +119,27 @@ describe('PieGraphWidget', () => {
   });
 
   it('renders an edit button that opens the widget drawer form [unit]', () => {
-    renderWidget(<PieGraphWidget widget={widget()} onChanged={jest.fn()} />);
+    renderWidget(
+      <PieGraphWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget()}
+        onChanged={jest.fn()}
+      />,
+    );
     expect(screen.getByTestId('widget-edit-button')).toBeInTheDocument();
     expect(screen.getByTestId('widget-drawer-form')).toBeInTheDocument();
   });
 
   it('renders content in the scrollable region and buttons in the pinned action row [unit]', () => {
-    renderWidget(<PieGraphWidget widget={widget()} onChanged={jest.fn()} />);
+    renderWidget(
+      <PieGraphWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget()}
+        onChanged={jest.fn()}
+      />,
+    );
     expect(screen.getByTestId('widget-content')).toContainElement(
       screen.getByTestId('pie-graph-widget'),
     );

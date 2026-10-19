@@ -129,10 +129,15 @@ export type DashboardWidget =
  */
 export type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
-/** A dashboard — currently always the single hardcoded `default` instance. */
+/** Dashboard Metadata (see GLOSSARY.md) — persisted per-folder in dashboard.json. */
 export interface Dashboard {
+  /** Permanent once created — see ADR-0016. Names the on-disk subfolder. */
   id: string;
   name: string;
+  description?: string;
+  density: 'compact' | 'roomy';
+  /** ISO 8601, set once at creation/migration — used only to sort listDashboards(); never user-editable. */
+  createdAt: string;
 }
 
 /**
