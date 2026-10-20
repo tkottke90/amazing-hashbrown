@@ -1,12 +1,17 @@
-import { describe, it } from 'mocha';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, it, after } from 'mocha';
 import { expect } from 'chai';
 import { createAgent } from 'langchain';
 import { AIMessage, HumanMessage, ToolMessage, type BaseMessage } from '@langchain/core/messages';
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { ChatResult } from '@langchain/core/outputs';
-import { tool, type ToolRuntime } from '@langchain/core/tools';
+import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
+import { SkillsManager } from '@tkottke90/skills-manager';
 import { createSkillScopedToolsMiddleware } from './skill-scoped-tools.middleware.js';
+import { createSkillExpansionMiddleware } from './skill-expansion.middleware.js';
 
 function fakeTool(name: string) {
   return { name } as unknown as { name: string };
@@ -171,17 +176,38 @@ describe('agents/skill-scoped-tools.middleware', () => {
   }
 
   describe('orchestration — real createAgent graph [orchestration]', () => {
+    let dir: string;
+
+    after(() => {
+      if (dir) rmSync(dir, { recursive: true, force: true });
+    });
+
     it('propagates activeSkill into the real tool handler via toolCall.args', async () => {
       // Proves the actual propagation mechanism through a real LangGraph
       // ToolNode, not just that wrapToolCall calls handler() with the
       // object we built (that part a fake-handler unit test above already
-      // proves, and isn't the risky part). An earlier version of this
-      // middleware mutated request.runtime instead of request.toolCall.args
-      // — that version passed a unit test with a fake handler but FAILED
-      // this exact orchestration test in real CI (ToolNode builds its own
-      // runtime fresh, ignoring whatever wrapToolCall returns for that
-      // field) — which is exactly why this test exists as a real-graph
-      // check rather than a mock.
+      // proves, and isn't the risky part). Two earlier versions of this
+      // middleware FAILED this exact orchestration test in real CI:
+      // mutating request.runtime (ToolNode builds its own runtime fresh,
+      // ignoring whatever wrapToolCall returns for that field) and seeding
+      // activeSkill via a custom top-level agent.invoke() field (createAgent
+      // has no precedent anywhere in this codebase for that, and it turns
+      // out not to reach node state at all — createAgent's invoke input
+      // schema doesn't carry arbitrary extra fields through). Driving
+      // activeSkill via the real skill-expansion middleware and a real
+      // slash command — the only way it's ever actually set in production
+      // — is what finally proved the mechanism, which is exactly why this
+      // test exists as a real-graph, real-production-pipeline check rather
+      // than a mock or a hand-seeded state shortcut.
+      dir = mkdtempSync(join(tmpdir(), 'skill-scoped-orchestration-test-'));
+      const manager = new SkillsManager(dir);
+      await manager.boot();
+      await manager.create({
+        name: 'probe-skill',
+        description: 'A dummy skill for this test.',
+        body: 'Call probe_tool.',
+      });
+
       const probeTool = tool(
         async ({ activeSkill }: { activeSkill?: string | null }) =>
           JSON.stringify({ seen: activeSkill ?? null }),
@@ -195,19 +221,20 @@ describe('agents/skill-scoped-tools.middleware', () => {
       const agent = createAgent({
         model: new ScriptedChatModel({}),
         tools: [probeTool],
-        middleware: [createSkillScopedToolsMiddleware()] as const,
+        middleware: [
+          createSkillExpansionMiddleware(async () => manager),
+          createSkillScopedToolsMiddleware(),
+        ] as const,
       });
 
       const final = await agent.invoke({
-        messages: [new HumanMessage('go')],
-        activeSkill: 'some-skill',
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any);
+        messages: [new HumanMessage('/probe-skill')],
+      });
 
       const toolMessage = final.messages.find(
         (m: BaseMessage) => m.getType() === 'tool',
       ) as ToolMessage;
-      expect(JSON.parse(String(toolMessage.content))).to.deep.equal({ seen: 'some-skill' });
+      expect(JSON.parse(String(toolMessage.content))).to.deep.equal({ seen: 'probe-skill' });
     });
   });
 });
