@@ -1,5 +1,6 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
+import * as widgetsLib from '@tkottke90/amazing-hashbrown-widgets';
 import { env } from '../../config/env.js';
 import {
   updateWidgetContentHandler,
@@ -11,7 +12,9 @@ const UpdateWidgetContentSchema = z.object({
     .string()
     .optional()
     .describe(
-      "The dashboard the widget belongs to. Defaults to 'default' — the only dashboard that exists today.",
+      'The dashboard the widget belongs to. If omitted and exactly one dashboard exists, that ' +
+        'dashboard is used automatically. Once more than one dashboard exists, this is required — ' +
+        "get it from the target widget's Dashboard Widget Target Snippet.",
     ),
   widgetId: z.string().describe("The target widget's id, as shown on the dashboard."),
   content: z
@@ -36,15 +39,42 @@ const UpdateWidgetContentSchema = z.object({
 // optionally injected (defaulting to the production root/store) so this
 // tool is directly testable against a real temp-dir-backed store, matching
 // makeCreateWorkspaceTool's injection pattern.
+// An omitted dashboardId is resolved against the real dashboard list (D2,
+// docs/superpowers/specs/2026-10-20-dashboard-widget-targeting-design.md)
+// — not hardcoded to the literal 'default' — and is a validation error once
+// more than one Dashboard exists (no discovery tool exists, ADR-0019).
 export function makeUpdateWidgetContentTool(deps?: {
   dashboardRoot?: string;
   store?: WidgetStoreDeps;
 }) {
   return tool(
     async ({ dashboardId, widgetId, content }) => {
+      let resolvedDashboardId = dashboardId;
+
+      if (!resolvedDashboardId) {
+        const store = deps?.store ?? widgetsLib;
+        const dashboards = await store.listDashboards(deps?.dashboardRoot ?? env.dashboardRoot);
+
+        if (dashboards.length === 0) {
+          return (
+            'No dashboards exist yet, so dashboardId cannot be resolved automatically. ' +
+            "Create a dashboard first, or ask the user to copy the target widget's Dashboard " +
+            'Widget Target Snippet and paste it, or supply dashboardId directly.'
+          );
+        }
+        if (dashboards.length > 1) {
+          return (
+            'dashboardId is required once more than one dashboard exists — it cannot be ' +
+            "resolved automatically. Ask the user to copy the target widget's Dashboard " +
+            'Widget Target Snippet and paste it, or supply dashboardId directly.'
+          );
+        }
+        resolvedDashboardId = dashboards[0]!.id;
+      }
+
       const result = await updateWidgetContentHandler(
         deps?.dashboardRoot ?? env.dashboardRoot,
-        dashboardId ?? 'default',
+        resolvedDashboardId,
         widgetId,
         content,
         'agent',

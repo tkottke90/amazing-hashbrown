@@ -151,4 +151,18 @@ describe('BigNumberWidget', () => {
       screen.getByTestId('widget-delete-button'),
     );
   });
+
+  it('renders the copy-target button inside the action row [unit]', () => {
+    render(
+      <BigNumberWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget()}
+        onChanged={jest.fn()}
+      />,
+    );
+    expect(screen.getByTestId('widget-action')).toContainElement(
+      screen.getByTestId('widget-copy-target-button'),
+    );
+  });
 });
