@@ -28,6 +28,7 @@ function sourceLabel(tool: ToolSettingItem): string {
     case 'built-in':
     case 'wiki':
     case 'skill-gated':
+    case 'skill-scoped':
     default:
       return 'Built-in';
   }

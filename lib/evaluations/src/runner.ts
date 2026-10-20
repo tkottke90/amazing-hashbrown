@@ -54,17 +54,17 @@ import type { EvaluationsStore } from './store.js';
 // docs/superpowers/specs/2026-08-27-skill-gated-tools-hardening-design.md.
 // Verified safe against the real hook bodies: beforeAgent only ever reads
 // state.messages, and wrapModelCall only ever reads request.state.
-// activeGatedSkill/request.tools and forwards whatever the handler returns
+// activeSkill/request.tools and forwards whatever the handler returns
 // untouched — neither touches anything outside the shape described here.
 export interface SkillExpansionMiddlewareLike {
   beforeAgent: (state: {
     messages: BaseMessage[];
-  }) => Promise<{ messages: BaseMessage[]; activeGatedSkill?: string | null } | undefined>;
+  }) => Promise<{ messages: BaseMessage[]; activeSkill?: string | null } | undefined>;
 }
 
 export interface SkillGatedToolsMiddlewareLike {
   wrapModelCall: (
-    request: { tools: BindToolsInput[]; state: { activeGatedSkill: string | null } },
+    request: { tools: BindToolsInput[]; state: { activeSkill: string | null } },
     handler: (request: { tools: BindToolsInput[] }) => Promise<unknown>,
   ) => Promise<unknown>;
 }
@@ -504,12 +504,12 @@ export function withSystemPrompt(
   return [new SystemMessage(systemPrompt), ...messages];
 }
 
-// Resolves activeGatedSkill for a gatedSkill scenario, always deferring to
+// Resolves activeSkill for a gatedSkill scenario, always deferring to
 // the real skillExpansionMiddleware first. If the scenario's last human
 // message is itself a slash command the middleware recognizes ("fresh
 // invocation" scenarios, e.g. cwp-001), the middleware's own expansion wins
 // — the model sees the live default-skills.ts body instead of hand-typed
-// scenario text, and activeGatedSkill is confirmed from that real
+// scenario text, and activeSkill is confirmed from that real
 // expansion rather than trusted blindly from the YAML field. If the
 // middleware returns undefined (plain continuation text — "continuation"
 // scenarios, e.g. cwp-003, where the invocation happened in a turn the
@@ -524,12 +524,12 @@ export async function resolveGatedSkillState(
   messages: BaseMessage[],
   gatedSkill: string,
   middleware?: SkillExpansionMiddlewareLike,
-): Promise<{ messages: BaseMessage[]; activeGatedSkill: string | null }> {
+): Promise<{ messages: BaseMessage[]; activeSkill: string | null }> {
   const result = middleware ? await middleware.beforeAgent({ messages }) : undefined;
   if (result) {
-    return { messages: result.messages, activeGatedSkill: result.activeGatedSkill ?? null };
+    return { messages: result.messages, activeSkill: result.activeSkill ?? null };
   }
-  return { messages, activeGatedSkill: gatedSkill };
+  return { messages, activeSkill: gatedSkill };
 }
 
 // Runs the real skillGatedToolsMiddleware.wrapModelCall against a synthetic
@@ -540,11 +540,11 @@ export async function resolveGatedSkillState(
 // skill-gated-tools.middleware.test.ts.
 export async function resolveGatedTools(
   tools: BindToolsInput[],
-  activeGatedSkill: string | null,
+  activeSkill: string | null,
   middleware: SkillGatedToolsMiddlewareLike,
 ): Promise<BindToolsInput[]> {
   let filtered = tools;
-  await middleware.wrapModelCall({ tools, state: { activeGatedSkill } }, async (request) => {
+  await middleware.wrapModelCall({ tools, state: { activeSkill } }, async (request) => {
     filtered = request.tools;
     return undefined;
   });
@@ -967,7 +967,7 @@ export async function executeScenario(
         modelInput = resolved.messages;
         toolsForCall = await resolveGatedTools(
           scenarioTools,
-          resolved.activeGatedSkill,
+          resolved.activeSkill,
           config.skillGatedToolsMiddleware,
         );
       }
@@ -1119,7 +1119,7 @@ export async function executeScenario(
         gatedMessages = resolved.messages;
         toolsForCall = await resolveGatedTools(
           scenarioTools,
-          resolved.activeGatedSkill,
+          resolved.activeSkill,
           config.skillGatedToolsMiddleware,
         );
       }

@@ -10,10 +10,10 @@ function fakeTool(name: string) {
 const ALWAYS_ON = [fakeTool('ask_user'), fakeTool('wiki_search')];
 const GATED = [fakeTool('create_workspace'), fakeTool('create_project')];
 
-function fakeRequest(activeGatedSkill: string | null) {
+function fakeRequest(activeSkill: string | null) {
   return {
     tools: [...ALWAYS_ON, ...GATED],
-    state: { activeGatedSkill },
+    state: { activeSkill },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any;
 }
@@ -56,7 +56,7 @@ describe('agents/skill-gated-tools.middleware', () => {
     ]);
   });
 
-  it('does not expose a gated tool for an unregistered activeGatedSkill value', async () => {
+  it('does not expose a gated tool for an unregistered activeSkill value', async () => {
     const middleware = createSkillGatedToolsMiddleware(registrations);
     let seenTools: { name: string }[] = [];
     const handler = async (req: { tools: { name: string }[] }) => {
@@ -77,10 +77,10 @@ describe('agents/skill-gated-tools.middleware', () => {
   describe('propose_file_merge (resolve-file-conflict registration)', () => {
     const tools = [...ALWAYS_ON, ...GATED, fakeTool('propose_file_merge')];
 
-    function requestWith(activeGatedSkill: string | null) {
+    function requestWith(activeSkill: string | null) {
       return {
         tools,
-        state: { activeGatedSkill },
+        state: { activeSkill },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any;
     }
@@ -131,10 +131,10 @@ describe('agents/skill-gated-tools.middleware', () => {
     ];
     const tools = [...ALWAYS_ON, ...GATED, ...CREATE_SKILL_TOOL_NAMES.map(fakeTool)];
 
-    function requestWith(activeGatedSkill: string | null) {
+    function requestWith(activeSkill: string | null) {
       return {
         tools,
-        state: { activeGatedSkill },
+        state: { activeSkill },
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any;
     }

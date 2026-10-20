@@ -97,14 +97,28 @@ const newSkill = await skills.create({
 ### Step 7 — Run a script (optional)
 
 ```typescript
-// JS script — runs in a sandboxed Node VM
-const result = await skills.runScript('pdf-processing', 'extract.js', { filePath: '/tmp/doc.pdf' });
+// JS script — runs as a real, killable spawned `node` process. `context` is
+// JSON-serialized and delivered via the SKILL_SCRIPT_CONTEXT env var, which
+// the script reads and parses itself — not injected as live object
+// properties the way an in-process sandbox would.
+const { stdout, exitCode } = await skills.runScript('pdf-processing', 'extract.js', {
+  context: { filePath: '/tmp/doc.pdf' },
+});
 
 // Python script — resolves .venv → uv → python3
 const { stdout, exitCode } = await skills.runPythonScript('pdf-processing', 'extract.py', [
   '--input',
   '/tmp/doc.pdf',
 ]);
+
+// Shell script — same uniform { stdout, stderr, exitCode } result shape
+const { stdout, exitCode } = await skills.runShellScript('pdf-processing', 'extract.sh', [
+  '/tmp/doc.pdf',
+]);
+
+// All three accept an optional timeoutMs (runScript/runShellScript as a
+// trailing options field or arg; runPythonScript as a trailing arg) that
+// SIGKILLs the process if it's still running once the timeout elapses.
 ```
 
 ---

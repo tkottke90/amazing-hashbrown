@@ -55,6 +55,13 @@ function buildResponse(): ThreadToolsResponse {
         alwaysOn: false,
         selected: false,
       }),
+      tool({
+        toolId: 'read_skill_reference',
+        name: 'Read Skill Reference',
+        category: 'skill-scoped',
+        alwaysOn: false,
+        selected: false,
+      }),
       tool({ toolId: 'web_fetch', name: 'Web Fetch', category: 'built-in', selected: true }),
       tool({ toolId: 'shell_exec', name: 'Shell Exec', category: 'built-in', selected: false }),
       tool({
@@ -94,6 +101,7 @@ describe('ThreadToolsDrawer', () => {
 
     expect(screen.getByText('Always on')).toBeInTheDocument();
     expect(screen.getByText('Gated by skill')).toBeInTheDocument();
+    expect(screen.getByText('Active skill tool')).toBeInTheDocument();
 
     const webFetchRow = screen.getByText('Web Fetch').closest('li')!;
     expect(webFetchRow.querySelector('button')).toHaveTextContent('Remove');

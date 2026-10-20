@@ -44,6 +44,7 @@ import { createSkillExpansionMiddleware } from './skill-expansion.middleware.js'
 import { attachmentAwarenessMiddleware } from './attachment-awareness.middleware.js';
 import { binaryContentFetchMiddleware } from './binary-content-fetch.middleware.js';
 import { createSkillGatedToolsMiddleware } from './skill-gated-tools.middleware.js';
+import { skillScopedToolsMiddleware } from './skill-scoped-tools.middleware.js';
 import { toolSyntaxMiddleware } from './middleware/tool-syntax.middleware.js';
 import { GATED_SKILL_REGISTRATIONS } from './gated-skill-registrations.js';
 import { toolAccessMiddleware } from './tool-access.middleware.js';
@@ -72,6 +73,8 @@ import { makeCreateSkillArtifactTool } from './tools/create-skill-artifact.tool.
 import { makeUpdateSkillArtifactTool } from './tools/update-skill-artifact.tool.js';
 import { makeDeleteSkillArtifactTool } from './tools/delete-skill-artifact.tool.js';
 import { makeTestSkillArtifactTool } from './tools/test-skill-artifact.tool.js';
+import { makeReadSkillReferenceTool } from './tools/read-skill-reference.tool.js';
+import { makeRunSkillScriptTool } from './tools/run-skill-script.tool.js';
 import { getWorkspaceStore, type Task } from '../services/workspace-store.js';
 import { skillsManager } from '../services/skills-manager.js';
 import { resolveWorkspaceSkills, type SkillReader } from '../services/workspace-skills.js';
@@ -374,6 +377,19 @@ function buildCreateSkillTools() {
   ];
 }
 
+// Skill-Scoped Tools (read_skill_reference, run_skill_script) — visible
+// whenever ANY skill is Active (skillScopedToolsMiddleware), not gated to
+// one specific skill the way buildCreateSkillTools() above is. Spread into
+// buildChatAgent and buildWorkspaceChatAgent only, not buildTaskAgent: an
+// automated task run never goes through slash-command invocation, so
+// activeSkill can never be non-null there, and not buildSubAgentAgent's
+// candidate pool, which already omits every skill-gating middleware for the
+// same reason (see its own comment below). Built fresh per agent
+// construction, same TDZ/circular-import reasoning as buildGatedTools().
+function buildSkillScopedTools() {
+  return [makeReadSkillReferenceTool(), makeRunSkillScriptTool()];
+}
+
 // Workspace/task-scoped-only tools — bound wherever workspace or task
 // context exists (buildWorkspaceChatAgent, buildTaskAgent) but never in
 // buildChatAgent (plain chat has no workspaceId to create tasks against)
@@ -472,6 +488,7 @@ async function buildChatAgent(provider?: string, model?: string) {
       ...buildSkillTools(globalSkills),
       ...buildGatedTools(),
       ...buildCreateSkillTools(),
+      ...buildSkillScopedTools(),
       ...buildWikiWriteTools(),
       ...mcpTools,
     ],
@@ -485,11 +502,12 @@ async function buildChatAgent(provider?: string, model?: string) {
         loopGuard: env.agent?.loopGuard,
         escalationMode: 'interrupt',
       }),
-      createSkillExpansionMiddleware(GATED_SKILL_REGISTRATIONS, globalSkills),
+      createSkillExpansionMiddleware(globalSkills),
       attachmentAwarenessMiddleware,
       binaryContentFetchMiddleware,
       toolSyntaxMiddleware,
       skillGatedToolsMiddleware,
+      skillScopedToolsMiddleware,
       toolAccessMiddleware,
       ambientContextMiddleware,
       createContextWindowMiddleware(env.chat?.contextWindow),
@@ -610,6 +628,7 @@ async function buildWorkspaceChatAgent(
       ...buildTaskVisibilityTools(),
       ...buildGatedTools(),
       ...buildCreateSkillTools(),
+      ...buildSkillScopedTools(),
       ...buildFileConflictTools(),
       ...buildWikiWriteTools(),
       ...mcpTools,
@@ -624,11 +643,12 @@ async function buildWorkspaceChatAgent(
         loopGuard: env.agent?.loopGuard,
         escalationMode: 'interrupt',
       }),
-      createSkillExpansionMiddleware(GATED_SKILL_REGISTRATIONS, skills),
+      createSkillExpansionMiddleware(skills),
       attachmentAwarenessMiddleware,
       binaryContentFetchMiddleware,
       toolSyntaxMiddleware,
       skillGatedToolsMiddleware,
+      skillScopedToolsMiddleware,
       toolAccessMiddleware,
       ambientContextMiddleware,
       createContextWindowMiddleware(env.chat?.contextWindow),
@@ -781,17 +801,21 @@ export async function buildTaskAgent(
         escalationMode: 'interrupt',
         taskId: task.id,
       }),
-      createSkillExpansionMiddleware(GATED_SKILL_REGISTRATIONS, skills),
+      createSkillExpansionMiddleware(skills),
       // Harmless no-op here (an automated task run never carries a chat
       // attachmentId, so pendingImageFetch never gets set either), but
       // buildTaskAgent's declared return type pins `agent` to the exact
       // ChatAgent structural type derived from buildChatAgent's middleware
       // tuple — this keeps that tuple shape matching rather than loosening
       // the type. Both attachment middlewares ride along for this reason.
+      // skillScopedToolsMiddleware rides along the same way: its two tools
+      // are never bound in this builder's tools array (see
+      // buildSkillScopedTools()'s own comment), so its filter is inert here.
       attachmentAwarenessMiddleware,
       binaryContentFetchMiddleware,
       toolSyntaxMiddleware,
       skillGatedToolsMiddleware,
+      skillScopedToolsMiddleware,
       toolAccessMiddleware,
       ambientContextMiddleware,
       createContextWindowMiddleware(env.chat?.contextWindow),

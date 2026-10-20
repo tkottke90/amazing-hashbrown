@@ -41,7 +41,7 @@ describe('agents/tools/create-workspace', () => {
     for (const wsDir of workspaceDirs) rmSync(wsDir, { recursive: true, force: true });
   });
 
-  it('creates a workspace, emits resource_created, and clears activeGatedSkill', async () => {
+  it('creates a workspace, emits resource_created, and clears activeSkill', async () => {
     const tool = makeCreateWorkspaceTool(store, registry);
 
     const result = (await tool.invoke(
@@ -68,7 +68,7 @@ describe('agents/tools/create-workspace', () => {
       workspaceId: created.id,
     });
 
-    expect(result.update.activeGatedSkill).to.equal(null);
+    expect(result.update.activeSkill).to.equal(null);
   });
 
   it('relays a 409 verbatim without emitting an SSE event, on a duplicate name', async () => {

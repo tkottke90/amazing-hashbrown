@@ -44,8 +44,8 @@ describe('agents/tools/test-skill-artifact', () => {
     expect(payload.exitCode).to.equal(0);
   });
 
-  it('runs a JS script and reports only its return value, not a stdout/stderr/exitCode triple [unit]', async () => {
-    await global.writeFile('target-skill', 'scripts', 'hello.js', '42');
+  it('runs a JS script and now reports real stdout/exitCode too [unit]', async () => {
+    await global.writeFile('target-skill', 'scripts', 'hello.js', 'console.log("hi from js")');
     const tool = makeTestSkillArtifactTool({ globalManager: global, store });
 
     const result = (await tool.invoke(
@@ -54,16 +54,30 @@ describe('agents/tools/test-skill-artifact', () => {
     )) as unknown as string;
     const payload = JSON.parse(result);
 
-    expect(payload.result).to.equal(42);
-    expect(payload.stdout).to.equal(undefined);
+    expect(payload.stdout).to.include('hi from js');
+    expect(payload.exitCode).to.equal(0);
   });
 
-  it('reports an unsupported extension as a plain string, not a throw [unit]', async () => {
-    await global.writeFile('target-skill', 'scripts', 'hello.sh', 'echo hi');
+  it('runs a shell script and reports real stdout/stderr/exitCode [unit]', async () => {
+    await global.writeFile('target-skill', 'scripts', 'hello.sh', 'echo "hi from shell"');
     const tool = makeTestSkillArtifactTool({ globalManager: global, store });
 
     const result = (await tool.invoke(
       { skill: 'target-skill', name: 'hello.sh' },
+      invokeConfig(),
+    )) as unknown as string;
+    const payload = JSON.parse(result);
+
+    expect(payload.stdout).to.include('hi from shell');
+    expect(payload.exitCode).to.equal(0);
+  });
+
+  it('reports an unsupported extension as a plain string, not a throw [unit]', async () => {
+    await global.writeFile('target-skill', 'scripts', 'hello.rb', 'puts "hi"');
+    const tool = makeTestSkillArtifactTool({ globalManager: global, store });
+
+    const result = (await tool.invoke(
+      { skill: 'target-skill', name: 'hello.rb' },
       invokeConfig(),
     )) as unknown as string;
 

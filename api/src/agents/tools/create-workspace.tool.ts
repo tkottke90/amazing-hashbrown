@@ -111,7 +111,7 @@ export function makeCreateWorkspaceTool(store?: WorkspaceStore, registry?: WikiR
 
       return new Command({
         update: {
-          activeGatedSkill: null,
+          activeSkill: null,
           messages: [
             new ToolMessage({
               content: `Created workspace "${workspace.name}" at ${workspace.location}.`,

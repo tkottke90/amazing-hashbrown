@@ -64,7 +64,7 @@ describe('agents/tools/create-project', () => {
       workspaceId: created.id,
     });
 
-    expect(result.update.activeGatedSkill).to.equal(null);
+    expect(result.update.activeSkill).to.equal(null);
   });
 
   it('relays a 409 verbatim without emitting an SSE event, on a duplicate name', async () => {

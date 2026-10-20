@@ -42,7 +42,7 @@ function fakeRequest(opts: {
   traceId?: string;
   threadId?: string;
   system?: SystemMessage;
-  activeGatedSkill?: string | null;
+  activeSkill?: string | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 }): any {
   return {
@@ -54,7 +54,7 @@ function fakeRequest(opts: {
       },
     },
     systemMessage: opts.system ?? new SystemMessage('effective prompt'),
-    state: { activeGatedSkill: opts.activeGatedSkill ?? null, requestedToolIds: [] },
+    state: { activeSkill: opts.activeSkill ?? null, requestedToolIds: [] },
   };
 }
 
@@ -163,7 +163,7 @@ describe('agents/model-input-snapshot.middleware', () => {
       rmSync(dir, { recursive: true, force: true });
     });
 
-    async function runChain(activeGatedSkill: string | null, toolNames: string[]) {
+    async function runChain(activeSkill: string | null, toolNames: string[]) {
       const { calls, store } = fakeStore();
       const gated: AnyMiddleware = createSkillGatedToolsMiddleware(GATED_SKILL_REGISTRATIONS);
       const access: AnyMiddleware = createToolAccessMiddleware(() => toolsConfig);
@@ -173,7 +173,7 @@ describe('agents/model-input-snapshot.middleware', () => {
         toolNames,
         threadId: 't1',
         traceId: 'trace-1',
-        activeGatedSkill,
+        activeSkill,
       });
       await gated.wrapModelCall(request, (r1: unknown) =>
         access.wrapModelCall(r1, (r2: unknown) => snapshot.wrapModelCall(r2, async () => ({}))),

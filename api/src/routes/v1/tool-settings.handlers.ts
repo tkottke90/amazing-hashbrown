@@ -180,8 +180,8 @@ export function patchToolSettingHandler(
 ): HandlerResult<ToolSettingItem> {
   const existing = findResolved(toolId);
   if (!existing) return notFound(`Tool "${toolId}" not found`);
-  if (existing.category === 'skill-gated') {
-    return badRequest(`Tool "${toolId}" is read-only (skill-gated)`);
+  if (existing.category === 'skill-gated' || existing.category === 'skill-scoped') {
+    return badRequest(`Tool "${toolId}" is read-only (${existing.category})`);
   }
 
   const parsed = PatchToolSettingSchema.safeParse(body);

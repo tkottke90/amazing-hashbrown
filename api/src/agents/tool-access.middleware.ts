@@ -4,6 +4,7 @@ import {
   resolveEffectiveToolIds,
   ALWAYS_ON_TOOL_IDS,
   SKILL_GATED_TOOL_IDS,
+  SKILL_SCOPED_TOOL_IDS,
 } from './tool-access.js';
 import { getToolInstructions } from './tool-config.js';
 import { filterHarnessSections } from './system-prompt.js';
@@ -28,7 +29,7 @@ import { logger, serializeError } from '../config/logger.js';
 // Skill-gated tools (create_workspace, create_project) are explicitly
 // EXEMPT from the enabled/effective-set check below (see SKILL_GATED_TOOL_IDS),
 // not merely "happen to pass it" — their actual turn-scoped availability
-// remains entirely governed by skillGatedToolsMiddleware/activeGatedSkill,
+// remains entirely governed by skillGatedToolsMiddleware/activeSkill,
 // which runs earlier in the middleware array and has already removed an
 // inactive one from request.tools by the time this middleware sees it. A
 // thread's tool_tools snapshot never contains a skill-gated id (the drawer
@@ -108,7 +109,9 @@ export function createToolAccessMiddleware(
         const name = tool.name as string;
         // Exempt, not merely "always included" — see SKILL_GATED_TOOL_IDS's
         // own doc comment for why this can't just be folded into enabledIds.
-        if (SKILL_GATED_TOOL_IDS.has(name)) return true;
+        // SKILL_SCOPED_TOOL_IDS gets the identical exemption for the same
+        // reason (see its own doc comment in tool-access.ts).
+        if (SKILL_GATED_TOOL_IDS.has(name) || SKILL_SCOPED_TOOL_IDS.has(name)) return true;
         return displayIdByMatchKey.has(name);
       });
 

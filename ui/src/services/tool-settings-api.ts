@@ -5,7 +5,7 @@ import { request } from '@/utils/fetch.utils';
 // same rationale as mcp-servers-api.ts's McpServerConfig mirror).
 //
 // design: docs/superpowers/specs/2026-09-13-tool-settings-redesign-design.md §6/§7
-export type ToolCategory = 'built-in' | 'wiki' | 'skill-gated' | 'mcp';
+export type ToolCategory = 'built-in' | 'wiki' | 'skill-gated' | 'skill-scoped' | 'mcp';
 export type ToolStatus = 'connected' | 'unreachable';
 
 export interface ToolDefaultInclude {

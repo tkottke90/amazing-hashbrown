@@ -295,6 +295,16 @@ export const ArtifactGcSchema = z.object({
 
 export type ArtifactGcConfig = z.infer<typeof ArtifactGcSchema>;
 
+// Governs every skill script execution path uniformly — the new runtime
+// invocation (run_skill_script) and the existing test_skill_artifact
+// authoring dry-run alike (ADR-0021: one setting, one behavior for "how
+// long can a skill script run" rather than two different timeout concepts).
+export const SkillsConfigSchema = z.object({
+  scriptTimeoutMs: z.number().int().positive().default(300_000), // 5 minutes
+});
+
+export type SkillsConfig = z.infer<typeof SkillsConfigSchema>;
+
 export const WebFetchConfigSchema = z.object({
   timeoutMs: z.number().default(10000),
   respectRobotsTxt: z.boolean().default(true),
@@ -385,6 +395,7 @@ const AppConfigSchema = z.object({
   embeddings: EmbeddingsSchema.optional(),
   agent: AgentSchema.optional(),
   artifactGc: ArtifactGcSchema.optional(),
+  skills: SkillsConfigSchema.optional(),
   costs: z.record(z.string(), CostEntrySchema).default({}),
   tools: ToolsConfigSchema,
   workspaces: WorkspacesSchema.optional(),
@@ -577,6 +588,14 @@ export const env = {
       return (configManager as any).getSection('artifactGc', ArtifactGcSchema) as ArtifactGcConfig;
     } catch {
       return ArtifactGcSchema.parse({});
+    }
+  },
+  get skills(): SkillsConfig {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (configManager as any).getSection('skills', SkillsConfigSchema) as SkillsConfig;
+    } catch {
+      return SkillsConfigSchema.parse({});
     }
   },
   get costs(): Record<string, CostEntry> {

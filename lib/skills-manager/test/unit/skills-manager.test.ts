@@ -239,4 +239,62 @@ describe('SkillsManager', () => {
       expect(loaded).to.deep.equal(suite);
     });
   });
+
+  // The actual spawn/timeout/context-serialization logic is covered in
+  // internal/runner.test.ts (mocking child_process.spawn directly) — these
+  // just confirm SkillsManager delegates with the right path and args.
+  describe('runScript/runPythonScript/runShellScript', () => {
+    beforeEach(async () => {
+      await manager.create({ name: 'script-skill', description: 'x', body: 'y' });
+    });
+
+    it('runScript runs a real .js script and returns a uniform ScriptResult', async () => {
+      await manager.writeFile(
+        'script-skill',
+        'scripts',
+        'hello.js',
+        'console.log(process.argv.slice(2).join(","))',
+      );
+      const result = await manager.runScript('script-skill', 'hello.js', { args: ['a', 'b'] });
+      expect(result.stdout.trim()).to.equal('a,b');
+      expect(result.exitCode).to.equal(0);
+    });
+
+    it('runScript delivers context via SKILL_SCRIPT_CONTEXT as JSON', async () => {
+      await manager.writeFile(
+        'script-skill',
+        'scripts',
+        'ctx.js',
+        'console.log(JSON.parse(process.env.SKILL_SCRIPT_CONTEXT).filePath)',
+      );
+      const result = await manager.runScript('script-skill', 'ctx.js', {
+        context: { filePath: '/tmp/doc.pdf' },
+      });
+      expect(result.stdout.trim()).to.equal('/tmp/doc.pdf');
+    });
+
+    it('runPythonScript passes args through to the real interpreter', async () => {
+      await manager.writeFile(
+        'script-skill',
+        'scripts',
+        'hello.py',
+        'import sys\nprint(",".join(sys.argv[1:]))',
+      );
+      const result = await manager.runPythonScript('script-skill', 'hello.py', ['x', 'y']);
+      expect(result.stdout.trim()).to.equal('x,y');
+      expect(result.exitCode).to.equal(0);
+    });
+
+    it('runShellScript runs a real shell script and returns a uniform ScriptResult', async () => {
+      await manager.writeFile('script-skill', 'scripts', 'hello.sh', 'echo "$1"');
+      const result = await manager.runShellScript('script-skill', 'hello.sh', ['hi']);
+      expect(result.stdout.trim()).to.equal('hi');
+      expect(result.exitCode).to.equal(0);
+    });
+
+    it('reports a non-zero exit for a script file that does not exist', async () => {
+      const result = await manager.runShellScript('script-skill', 'missing.sh');
+      expect(result.exitCode).to.not.equal(0);
+    });
+  });
 });

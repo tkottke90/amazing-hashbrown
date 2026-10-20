@@ -21,16 +21,49 @@ const ERROR_RESULT = (message: string): ShellCommandResult => ({
   exitCode: 1,
 });
 
-function spawnCommand(command: string, config: ShellExecutorConfig): Promise<ShellCommandResult> {
+// timeoutMs, when set, force-kills the process (SIGKILL — no graceful
+// shutdown grace period, since a skill script has no cleanup contract to
+// honor) rather than just abandoning the wait: a Promise.race-style timeout
+// that stops waiting but leaves the child running would not actually bound
+// anything (see docs/adr/0021-one-timeout-governs-all-skill-script-execution.md).
+function spawnCommand(
+  command: string,
+  config: ShellExecutorConfig,
+  timeoutMs?: number,
+): Promise<ShellCommandResult> {
   return new Promise((resolve) => {
     const proc = spawn(command, {
       shell: true,
       cwd: config.workingDirectory,
       env: { ...defaultShellEnv(), ...config.env },
+      // Leader of its own process group, so a timeout can SIGKILL the
+      // whole group (see below) — shell: true already means `command` runs
+      // under a `sh -c` wrapper, which forks the real work as a child;
+      // SIGKILLing only that wrapper would orphan it.
+      detached: true,
     });
 
     const stdoutChunks: string[] = [];
     const stderrChunks: string[] = [];
+    let timedOut = false;
+
+    const timer =
+      timeoutMs !== undefined
+        ? setTimeout(() => {
+            timedOut = true;
+            // An orphaned child of the `sh -c` wrapper would otherwise keep
+            // running past the timeout and keep the stdout/stderr pipes
+            // open, so 'close' below (which waits for stdio to finish)
+            // would never fire. Killing the negative pid signals the whole
+            // process group instead of just the wrapper.
+            try {
+              if (proc.pid) process.kill(-proc.pid, 'SIGKILL');
+              else proc.kill('SIGKILL');
+            } catch {
+              proc.kill('SIGKILL');
+            }
+          }, timeoutMs)
+        : undefined;
 
     proc.stdout?.setEncoding('utf8');
     proc.stderr?.setEncoding('utf8');
@@ -39,14 +72,19 @@ function spawnCommand(command: string, config: ShellExecutorConfig): Promise<She
     proc.stderr?.on('data', (chunk: string) => stderrChunks.push(chunk));
 
     proc.on('close', (code: number | null) => {
+      if (timer) clearTimeout(timer);
+      const stderr = timedOut
+        ? `${stderrChunks.join('')}\n[killed after exceeding ${timeoutMs}ms timeout]`
+        : stderrChunks.join('');
       resolve({
         stdout: stdoutChunks.join(''),
-        stderr: stderrChunks.join(''),
-        exitCode: code ?? 1,
+        stderr,
+        exitCode: timedOut ? 1 : (code ?? 1),
       });
     });
 
     proc.on('error', (err: Error) => {
+      if (timer) clearTimeout(timer);
       resolve(ERROR_RESULT(`Process error: ${err.message}`));
     });
   });
@@ -69,10 +107,15 @@ export class ShellExecutor {
     this.autoApprove = opts.autoApprove ?? false;
   }
 
-  async execute(command: string, reason?: string): Promise<ShellCommandResult> {
+  async execute(
+    command: string,
+    reason?: string,
+    opts?: { timeoutMs?: number },
+  ): Promise<ShellCommandResult> {
+    const timeoutMs = opts?.timeoutMs;
     if (this.trustAll) {
       await this.audit({ command, outcome: 'allowed', source: 'trust', trustAll: true });
-      const result = await spawnCommand(command, this.config);
+      const result = await spawnCommand(command, this.config, timeoutMs);
       await this.audit({
         command,
         outcome: result.exitCode === 0 ? 'allowed' : 'error',
@@ -92,7 +135,7 @@ export class ShellExecutor {
 
     if (policyOutcome === 'allowed') {
       await this.audit({ command, outcome: 'allowed', source: 'policy', trustAll: false });
-      const result = await spawnCommand(command, this.config);
+      const result = await spawnCommand(command, this.config, timeoutMs);
       await this.audit({
         command,
         outcome: result.exitCode === 0 ? 'allowed' : 'error',
@@ -111,7 +154,7 @@ export class ShellExecutor {
 
     if (sessionMatch) {
       await this.audit({ command, outcome: 'allowed', source: 'session-memory', trustAll: false });
-      const result = await spawnCommand(command, this.config);
+      const result = await spawnCommand(command, this.config, timeoutMs);
       await this.audit({
         command,
         outcome: result.exitCode === 0 ? 'allowed' : 'error',
@@ -128,7 +171,7 @@ export class ShellExecutor {
     // the denylist (unlike trustAll, which skips policy entirely).
     if (this.autoApprove) {
       await this.audit({ command, outcome: 'allowed', source: 'auto', trustAll: false });
-      const result = await spawnCommand(command, this.config);
+      const result = await spawnCommand(command, this.config, timeoutMs);
       await this.audit({
         command,
         outcome: result.exitCode === 0 ? 'allowed' : 'error',
@@ -154,7 +197,7 @@ export class ShellExecutor {
     }
 
     await this.audit({ command, outcome: 'approved', source: 'user', trustAll: false });
-    const result = await spawnCommand(command, this.config);
+    const result = await spawnCommand(command, this.config, timeoutMs);
     await this.audit({
       command,
       outcome: result.exitCode === 0 ? 'approved' : 'error',

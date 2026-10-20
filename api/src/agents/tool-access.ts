@@ -17,7 +17,7 @@ export const ALWAYS_ON_TOOL_IDS = new Set(
 
 // Skill-gated tools are exempt from tool-access filtering entirely — their
 // actual per-turn availability is governed solely by
-// skillGatedToolsMiddleware/activeGatedSkill (turn-scoped: present only
+// skillGatedToolsMiddleware/activeSkill (turn-scoped: present only
 // when the matching slash command was just typed), which already runs
 // earlier in the middleware chain and has already removed an inactive
 // gated tool from request.tools by the time tool-access.middleware.ts sees
@@ -29,6 +29,17 @@ export const ALWAYS_ON_TOOL_IDS = new Set(
 // enforcement-side counterpart.
 export const SKILL_GATED_TOOL_IDS = new Set(
   TOOL_CATALOG.filter((entry) => entry.category === 'skill-gated').map((entry) => entry.toolId),
+);
+
+// Same exemption rationale as SKILL_GATED_TOOL_IDS above, for Skill-Scoped
+// Tools (read_skill_reference, run_skill_script): their real per-turn
+// availability is governed solely by skillScopedToolsMiddleware/activeSkill
+// (visible whenever ANY skill is active, not one specific registered one),
+// which already runs earlier in the middleware chain. A thread's
+// thread_tools snapshot never includes a skill-scoped id either (the drawer
+// shows them read-only, same as skill-gated).
+export const SKILL_SCOPED_TOOL_IDS = new Set(
+  TOOL_CATALOG.filter((entry) => entry.category === 'skill-scoped').map((entry) => entry.toolId),
 );
 
 export interface EffectiveToolIds {

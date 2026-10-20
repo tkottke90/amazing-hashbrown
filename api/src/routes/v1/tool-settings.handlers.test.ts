@@ -125,6 +125,12 @@ describe('routes/v1/tool-settings.handlers', () => {
       if (!result.ok) expect(result.status).to.equal(400);
     });
 
+    it('400s on a skill-scoped tool', () => {
+      const result = patchToolSettingHandler('read_skill_reference', { enabled: false }, configDir);
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+    });
+
     it('400s on enabled/defaultInclude for an alwaysOn tool', () => {
       const result = patchToolSettingHandler('wiki_search', { enabled: false }, configDir);
       expect(result.ok).to.equal(false);

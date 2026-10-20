@@ -39,6 +39,8 @@ import { makeCreateSkillArtifactTool } from '../api/src/agents/tools/create-skil
 import { makeUpdateSkillArtifactTool } from '../api/src/agents/tools/update-skill-artifact.tool.js';
 import { makeDeleteSkillArtifactTool } from '../api/src/agents/tools/delete-skill-artifact.tool.js';
 import { makeTestSkillArtifactTool } from '../api/src/agents/tools/test-skill-artifact.tool.js';
+import { makeReadSkillReferenceTool } from '../api/src/agents/tools/read-skill-reference.tool.js';
+import { makeRunSkillScriptTool } from '../api/src/agents/tools/run-skill-script.tool.js';
 import { buildWikiIngestionSystemPrompt } from '../api/src/agents/wiki-ingestion-system-prompt.js';
 import { buildTaskContextBlock } from '../api/src/agents/task-context.js';
 import { buildWorkspaceContextBlock } from '../api/src/agents/chat-agent.js';
@@ -152,6 +154,8 @@ export const evalTools = [
   makeUpdateSkillArtifactTool(),
   makeDeleteSkillArtifactTool(),
   makeTestSkillArtifactTool(),
+  makeReadSkillReferenceTool(),
+  makeRunSkillScriptTool(),
   // Workspace-scoped in production (buildWorkspaceScopedTools() in
   // chat-agent.ts) — bound in buildWorkspaceChatAgent/buildTaskAgent, never
   // buildChatAgent, unlike every other tool in this list which mirrors

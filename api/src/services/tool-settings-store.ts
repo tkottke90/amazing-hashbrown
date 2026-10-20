@@ -6,7 +6,7 @@ import type { CatalogEntry } from '../agents/tool-catalog.js';
 // Types
 // ---------------------------------------------------------------------------
 
-export type ToolSettingCategory = 'built-in' | 'wiki' | 'skill-gated' | 'mcp';
+export type ToolSettingCategory = 'built-in' | 'wiki' | 'skill-gated' | 'skill-scoped' | 'mcp';
 export type McpToolStatus = 'connected' | 'unreachable';
 
 // Pure identity/discovery cache — enabled/defaultInclude/description-override/

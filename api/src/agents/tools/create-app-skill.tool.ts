@@ -38,7 +38,7 @@ function mapCreateError(err: unknown): string {
 // create-skill skill is active (see gated-skill-registrations.ts). Returns
 // a plain string on both success and failure, never a Command — see
 // chat-agent.ts's buildCreateSkillTools() comment on why these tools never
-// close the activeGatedSkill gate themselves.
+// close the activeSkill gate themselves.
 export function makeCreateAppSkillTool(manager?: SkillsManager) {
   return tool(
     async (input) => {
