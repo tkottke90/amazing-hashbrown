@@ -19,6 +19,8 @@ import {
   listThreadsHandler,
   getThreadHandler,
   renameThreadHandler,
+  archiveThreadHandler,
+  unarchiveThreadHandler,
   deleteThreadHandler,
   forkThreadHandler,
   getAfterAgentStatusHandler,
@@ -310,6 +312,42 @@ describe('routes/v1/threads.handlers', () => {
     });
   });
 
+  describe('archiveThreadHandler / unarchiveThreadHandler', () => {
+    let store: ThreadStore;
+    let dir: string;
+
+    before(() => ({ store, dir } = makeStore()));
+    after(() => {
+      store.close();
+      rmSync(dir, { recursive: true });
+    });
+
+    it('returns 404 archiving an unknown thread', () => {
+      const result = archiveThreadHandler(store, 'no-such-thread');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
+    });
+
+    it('archives on success', () => {
+      store.upsertThreadOnFirstMessage('t1', 'Hello');
+      const result = archiveThreadHandler(store, 't1');
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data.archivedAt).to.not.equal(null);
+    });
+
+    it('returns 404 unarchiving an unknown thread', () => {
+      const result = unarchiveThreadHandler(store, 'no-such-thread');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
+    });
+
+    it('unarchives on success', () => {
+      const result = unarchiveThreadHandler(store, 't1');
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data.archivedAt).to.equal(null);
+    });
+  });
+
   describe('deleteThreadHandler', () => {
     let store: ThreadStore;
     let dir: string;
@@ -360,6 +398,13 @@ describe('routes/v1/threads.handlers', () => {
     it('refuses to fork an automated run thread, which is a read-only record [unit]', async () => {
       store.upsertThreadOnFirstMessage('run-thread', 'Run #1', 'task');
       const result = await forkThreadHandler(store, checkpointer, 'run-thread', 1);
+      expect(result).to.deep.include({ ok: false, status: 409 });
+    });
+
+    it('refuses to fork an archived thread, which is a read-only record [unit]', async () => {
+      store.upsertThreadOnFirstMessage('archived-thread', 'Archived chat');
+      store.archiveThread('archived-thread');
+      const result = await forkThreadHandler(store, checkpointer, 'archived-thread', 1);
       expect(result).to.deep.include({ ok: false, status: 409 });
     });
 

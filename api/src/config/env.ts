@@ -291,6 +291,12 @@ export const ChatSchema = z.object({
   contextWindow: ContextWindowSchema.optional(),
   conversationSearch: ConversationSearchSchema.optional(),
   workspaceSummary: WorkspaceSummarySchema.optional(),
+  // How many days since a chat thread's updatedAt before it's excluded from
+  // the sidebar's own thread list (the Sidebar Retention Window — see
+  // GLOSSARY.md). 0 disables this. Deliberately defaults to a non-zero
+  // value, unlike this app's usual opt-in-by-default config convention —
+  // see ADR-0030.
+  sidebarRetentionDays: z.number().int().min(0).default(7),
 });
 
 export const EmbeddingsSchema = z.object({

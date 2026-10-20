@@ -34,6 +34,7 @@ function makeThread(id: string, title: string, type: ThreadSummary['type']): Thr
     },
     provider: null,
     model: null,
+    archivedAt: null,
   };
 }
 
@@ -42,6 +43,10 @@ const MOCK_THREADS: ThreadSummary[] = [
   makeThread('wiki-1', 'Wiki ingestion', 'wiki'),
   makeThread('ws-chat-1', 'Workspace chat', 'workspace-chat'),
   makeThread('task-1', 'Weekly audit run', 'task'),
+  {
+    ...makeThread('archived-chat-1', 'Old project planning', 'chat'),
+    archivedAt: '2026-10-01T00:00:00.000Z',
+  },
 ];
 
 const originalFetch = global.fetch;
@@ -67,16 +72,17 @@ describe('ThreadsView', () => {
   it('renders a row for every thread type returned by the API [unit]', async () => {
     renderThreadsView();
 
-    await waitFor(() => expect(screen.getAllByTestId('thread-row')).toHaveLength(4));
+    await waitFor(() => expect(screen.getAllByTestId('thread-row')).toHaveLength(5));
     expect(screen.getByText('A chat conversation')).toBeInTheDocument();
     expect(screen.getByText('Wiki ingestion')).toBeInTheDocument();
     expect(screen.getByText('Workspace chat')).toBeInTheDocument();
     expect(screen.getByText('Weekly audit run')).toBeInTheDocument();
+    expect(screen.getByText('Old project planning')).toBeInTheDocument();
   });
 
   it('narrows the list when a filter tab is clicked [unit]', async () => {
     renderThreadsView();
-    await waitFor(() => expect(screen.getAllByTestId('thread-row')).toHaveLength(4));
+    await waitFor(() => expect(screen.getAllByTestId('thread-row')).toHaveLength(5));
 
     fireEvent.click(screen.getByRole('button', { name: 'Wiki' }));
 
@@ -86,7 +92,7 @@ describe('ThreadsView', () => {
 
   it('filters rows by title substring when searching [unit]', async () => {
     renderThreadsView();
-    await waitFor(() => expect(screen.getAllByTestId('thread-row')).toHaveLength(4));
+    await waitFor(() => expect(screen.getAllByTestId('thread-row')).toHaveLength(5));
 
     fireEvent.input(screen.getByPlaceholderText('Search'), { target: { value: 'audit' } });
 
@@ -96,7 +102,7 @@ describe('ThreadsView', () => {
 
   it('shows an empty state when no threads match the filter [unit]', async () => {
     renderThreadsView();
-    await waitFor(() => expect(screen.getAllByTestId('thread-row')).toHaveLength(4));
+    await waitFor(() => expect(screen.getAllByTestId('thread-row')).toHaveLength(5));
 
     fireEvent.input(screen.getByPlaceholderText('Search'), { target: { value: 'no such thread' } });
 
@@ -107,7 +113,7 @@ describe('ThreadsView', () => {
   it("each row's report button opens that thread's report URL [unit]", async () => {
     const openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
     renderThreadsView();
-    await waitFor(() => expect(screen.getAllByTestId('thread-row')).toHaveLength(4));
+    await waitFor(() => expect(screen.getAllByTestId('thread-row')).toHaveLength(5));
 
     const row = screen
       .getByText('Weekly audit run')
@@ -116,5 +122,68 @@ describe('ThreadsView', () => {
 
     expect(openSpy).toHaveBeenCalledWith('/api/v1/threads/task-1/report', '_blank');
     openSpy.mockRestore();
+  });
+
+  it('the Archived filter tab narrows the list to only archived threads [unit]', async () => {
+    renderThreadsView();
+    await waitFor(() => expect(screen.getAllByTestId('thread-row')).toHaveLength(5));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Archived' }));
+
+    expect(screen.getAllByTestId('thread-row')).toHaveLength(1);
+    expect(screen.getByText('Old project planning')).toBeInTheDocument();
+  });
+
+  it('shows an Archived badge on an archived row even when the "All" tab is active [unit]', async () => {
+    renderThreadsView();
+    await waitFor(() => expect(screen.getAllByTestId('thread-row')).toHaveLength(5));
+
+    const row = screen
+      .getByText('Old project planning')
+      .closest('[data-testid="thread-row"]') as HTMLElement;
+    expect(within(row).getByText('Archived')).toBeInTheDocument();
+  });
+
+  it('the Actions column only offers Archive/Unarchive for chat-type rows [unit]', async () => {
+    renderThreadsView();
+    await waitFor(() => expect(screen.getAllByTestId('thread-row')).toHaveLength(5));
+
+    const chatRow = screen
+      .getByText('A chat conversation')
+      .closest('[data-testid="thread-row"]') as HTMLElement;
+    expect(within(chatRow).getByRole('button', { name: 'Archive' })).toBeInTheDocument();
+
+    const wikiRow = screen
+      .getByText('Wiki ingestion')
+      .closest('[data-testid="thread-row"]') as HTMLElement;
+    expect(within(wikiRow).queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument();
+    expect(within(wikiRow).queryByRole('button', { name: 'Unarchive' })).not.toBeInTheDocument();
+  });
+
+  it('Archive posts to the archive endpoint; Unarchive posts to the unarchive endpoint [unit]', async () => {
+    renderThreadsView();
+    await waitFor(() => expect(screen.getAllByTestId('thread-row')).toHaveLength(5));
+
+    const chatRow = screen
+      .getByText('A chat conversation')
+      .closest('[data-testid="thread-row"]') as HTMLElement;
+    fireEvent.click(within(chatRow).getByRole('button', { name: 'Archive' }));
+    await waitFor(() =>
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/v1/threads/chat-1/archive',
+        expect.objectContaining({ method: 'POST' }),
+      ),
+    );
+
+    const archivedRow = screen
+      .getByText('Old project planning')
+      .closest('[data-testid="thread-row"]') as HTMLElement;
+    fireEvent.click(within(archivedRow).getByRole('button', { name: 'Unarchive' }));
+    await waitFor(() =>
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/v1/threads/archived-chat-1/unarchive',
+        expect.objectContaining({ method: 'POST' }),
+      ),
+    );
   });
 });

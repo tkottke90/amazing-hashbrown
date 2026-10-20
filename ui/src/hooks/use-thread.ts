@@ -90,6 +90,12 @@ export interface ThreadSummary {
   links: { self: string; afterAgentStatus: string };
   provider: string | null;
   model: string | null;
+  // Non-null = this thread is archived (hidden from the sidebar, read-only).
+  // See GLOSSARY.md "Archived Thread". The sidebar's own fetch already
+  // excludes archived threads server-side, so this is mainly relevant on
+  // the /threads management page (fetchAllThreads/allThreads below), which
+  // always shows every thread regardless of archive state.
+  archivedAt: string | null;
 }
 
 // 'task' is one automated task run's own thread — opened read-only (see
@@ -225,6 +231,13 @@ export interface ThreadInstance {
   // exist yet. taskRun is only set on a 'task' (automated run) thread.
   threadType: Signal<ThreadType | null>;
   taskRun: Signal<TaskRunInfo | null>;
+  // Filled by hydrate() the same way threadType is. Non-null means this is
+  // an Archived Thread (GLOSSARY.md) — ChatRoot routes it to
+  // ArchivedThreadView instead of ThreadView. title exists so that view can
+  // render a header without depending on the sidebar's `threads` list,
+  // which archived threads are deliberately excluded from.
+  archivedAt: Signal<string | null>;
+  title: Signal<string | null>;
   // True while a turn this tab is not streaming holds the thread — a timed
   // wake-up or sub-agent notification turn, or this tab's own turn after
   // its live stream dropped. Seeded from the server's `activeTurn` on
@@ -291,6 +304,8 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
   const waitingProviderName = signal<string | null>(null);
   const threadType = signal<ThreadType | null>(null);
   const taskRun = signal<TaskRunInfo | null>(null);
+  const archivedAt = signal<string | null>(null);
+  const title = signal<string | null>(null);
   const backgroundTurnActive = signal(false);
 
   let _currentAssistantId: string | null = null;
@@ -335,12 +350,16 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
         type?: ThreadType;
         taskRun?: TaskRunInfo;
         activeTurn?: boolean;
+        title?: string;
+        archivedAt?: string | null;
       };
       const hydrated = data.messages.map(reviveMessage);
       batch(() => {
         messages.value = hydrated;
         threadType.value = data.type ?? null;
         taskRun.value = data.taskRun ?? null;
+        archivedAt.value = data.archivedAt ?? null;
+        title.value = data.title ?? null;
         // A turn this tab is streaming itself is not a background turn.
         backgroundTurnActive.value = !isStreaming.value && (data.activeTurn ?? false);
         summaryPath.value = data.summaryPath ?? null;
@@ -867,6 +886,8 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
     waitingProviderName,
     threadType,
     taskRun,
+    archivedAt,
+    title,
     backgroundTurnActive,
     markBackgroundTurn,
     setThreadModel,
@@ -957,6 +978,33 @@ export async function deleteThread(id: string): Promise<void> {
   if (activeThreadId.value === id) {
     newThread();
   }
+}
+
+// Archive leaves the thread's data intact (unlike deleteThread above) but
+// hides it from the sidebar's own fetch and makes it read-only server-side.
+// Reuses deleteThread's exact "redirect away if this was the active thread"
+// handling, since the thread you were just looking at is no longer part of
+// the live sidebar experience either way. Refreshes both thread lists —
+// Archive is reachable from the sidebar (refreshThreadList's list) AND the
+// /threads page (allThreads, fetchAllThreads's list), and either surface
+// needs to see the result regardless of which one triggered it.
+export async function archiveThread(id: string): Promise<void> {
+  await fetch(`/api/v1/threads/${id}/archive`, { method: 'POST' });
+  await Promise.all([refreshThreadList(), fetchAllThreads()]);
+  if (activeThreadId.value === id) {
+    newThread();
+  }
+}
+
+// No redirect-away logic here — Unarchive is only ever reachable from the
+// /threads management page, never while the thread is "open" in the
+// sidebar sense (an archived thread can't be the active thread). Still
+// refreshes both lists, same reasoning as archiveThread above — an
+// unarchived thread needs to reappear in the sidebar's list too, if it's
+// not also stale past the Sidebar Retention Window.
+export async function unarchiveThread(id: string): Promise<void> {
+  await fetch(`/api/v1/threads/${id}/unarchive`, { method: 'POST' });
+  await Promise.all([refreshThreadList(), fetchAllThreads()]);
 }
 
 export async function forkThread(id: string, atSeq: number): Promise<string> {

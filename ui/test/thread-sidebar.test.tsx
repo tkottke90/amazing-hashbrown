@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/preact';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/preact';
 
 import { ThreadSidebar, clampThreads } from '@/components/thread-sidebar';
 import { threads, type ThreadSummary } from '@/hooks/use-thread';
@@ -19,6 +19,7 @@ function makeThread(id: string): ThreadSummary {
     },
     provider: null,
     model: null,
+    archivedAt: null,
   };
 }
 
@@ -92,6 +93,48 @@ describe('ThreadSidebar mobile thread clamping', () => {
     const { container } = render(<ThreadSidebar />);
 
     expect(container.querySelectorAll('[data-slot="thread-row"]')).toHaveLength(5);
+  });
+});
+
+// jsdom has no `onpointerdown` IDL property, so Preact falls back to
+// registering pointer listeners under the un-lowercased event name — needed
+// to actually open Radix's pointerdown-driven menus in jsdom. Mirrors
+// dropdown-menu-portal.test.tsx's own helper.
+function firePointerDown(element: Element) {
+  fireEvent(element, new MouseEvent('PointerDown', { bubbles: true, cancelable: true, button: 0 }));
+}
+
+describe('ThreadRow dropdown — Archive', () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    cleanup();
+    threads.value = [];
+    global.fetch = originalFetch;
+    jest.restoreAllMocks();
+  });
+
+  it('archives a thread with one click, no confirmation step [unit]', async () => {
+    const thread = makeThread('t-1');
+    threads.value = [thread];
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ ...thread, archivedAt: '2026-10-20T00:00:00.000Z' }),
+    }) as unknown as typeof fetch;
+
+    render(<ThreadSidebar />);
+
+    firePointerDown(screen.getByRole('button', { name: `Options for ${thread.title}` }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Archive' }));
+
+    await waitFor(() =>
+      expect(global.fetch).toHaveBeenCalledWith(
+        `/api/v1/threads/${thread.id}/archive`,
+        expect.objectContaining({ method: 'POST' }),
+      ),
+    );
+    // No "Archive this thread?" confirmation text anywhere — unlike Delete.
+    expect(screen.queryByText(/archive this thread/i)).not.toBeInTheDocument();
   });
 });
 

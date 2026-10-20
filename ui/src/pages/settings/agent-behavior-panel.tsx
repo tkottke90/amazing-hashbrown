@@ -10,7 +10,7 @@ import { FormLayout } from '@/components/form-layout';
 
 interface AgentBehaviorSettings {
   afterAgent: { enabled: boolean };
-  chat: { showErrorMessages: boolean; codeBlockWrap: boolean };
+  chat: { showErrorMessages: boolean; codeBlockWrap: boolean; sidebarRetentionDays: number };
   observability: { enabled: boolean; spanOutputPreviewChars: number };
 }
 
@@ -87,6 +87,29 @@ export function AgentBehaviorPanel() {
                   id="chat-codeBlockWrap"
                   checked={form.value.chat?.codeBlockWrap ?? false}
                   onCheckedChange={(v) => setField('chat.codeBlockWrap', v)}
+                />
+              </div>
+
+              <div class="space-y-1.5">
+                <Label htmlFor="chat-sidebarRetentionDays">
+                  Hide inactive threads from sidebar after (days)
+                </Label>
+                <p class="text-xs text-muted-foreground">
+                  0 disables this — threads never leave the sidebar due to inactivity. Hidden
+                  threads aren't deleted — they stay available on the Threads page, and continuing
+                  one brings it back to the sidebar.
+                </p>
+                <Input
+                  id="chat-sidebarRetentionDays"
+                  type="number"
+                  min={0}
+                  value={String(form.value.chat?.sidebarRetentionDays ?? 7)}
+                  onInput={(e) =>
+                    setField(
+                      'chat.sidebarRetentionDays',
+                      Number((e.target as HTMLInputElement).value),
+                    )
+                  }
                 />
               </div>
               <FieldError errors={fieldErrors.value['chat']} />

@@ -24,7 +24,7 @@ const mockFetch = api.fetchSettingsSection as jest.MockedFunction<typeof api.fet
 
 const DEFAULT_DATA = {
   afterAgent: { enabled: true },
-  chat: { showErrorMessages: false, codeBlockWrap: false },
+  chat: { showErrorMessages: false, codeBlockWrap: false, sidebarRetentionDays: 7 },
   observability: { enabled: true, spanOutputPreviewChars: 500 },
 };
 
@@ -99,5 +99,54 @@ describe('AgentBehaviorPanel', () => {
     fireEvent.click(toggle);
 
     await waitFor(() => expect(toggle).toBeChecked());
+  });
+
+  it('renders the sidebar retention field with the fetched value', async () => {
+    mockFetch.mockResolvedValue({
+      ...DEFAULT_DATA,
+      chat: { showErrorMessages: false, codeBlockWrap: false, sidebarRetentionDays: 14 },
+    });
+
+    render(<AgentBehaviorPanel />);
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Hide inactive threads from sidebar after (days)')).toHaveValue(
+        14,
+      ),
+    );
+  });
+
+  it('editing the sidebar retention field updates the form value', async () => {
+    render(<AgentBehaviorPanel />);
+
+    const input = await waitFor(() =>
+      screen.getByLabelText('Hide inactive threads from sidebar after (days)'),
+    );
+    fireEvent.input(input, { target: { value: '30' } });
+
+    await waitFor(() => expect(input).toHaveValue(30));
+  });
+
+  it('saving includes sidebarRetentionDays in the PATCH payload', async () => {
+    const mockPatch = api.patchSettingsSection as jest.MockedFunction<
+      typeof api.patchSettingsSection
+    >;
+    mockPatch.mockResolvedValue(DEFAULT_DATA);
+    render(<AgentBehaviorPanel />);
+
+    const input = await waitFor(() =>
+      screen.getByLabelText('Hide inactive threads from sidebar after (days)'),
+    );
+    fireEvent.input(input, { target: { value: '30' } });
+    fireEvent.click(await screen.findByText('Save changes'));
+
+    await waitFor(() =>
+      expect(mockPatch).toHaveBeenCalledWith(
+        'agent-behavior',
+        expect.objectContaining({
+          chat: expect.objectContaining({ sidebarRetentionDays: 30 }),
+        }),
+      ),
+    );
   });
 });

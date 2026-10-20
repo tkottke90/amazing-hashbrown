@@ -124,7 +124,7 @@ function withAfterAgentInfo(thread: ThreadSummary): ThreadSummaryResponse {
 
 export function listThreadsHandler(
   store: ThreadStore,
-  filter?: { type: ThreadType },
+  filter?: { type?: ThreadType; excludeArchived?: boolean; updatedAfter?: string },
 ): ThreadSummaryResponse[] {
   return store.listThreads(filter).map(withAfterAgentInfo);
 }
@@ -172,6 +172,21 @@ export function renameThreadHandler(
   return ok(renamed);
 }
 
+export function archiveThreadHandler(store: ThreadStore, id: string): HandlerResult<ThreadSummary> {
+  const archived = store.archiveThread(id);
+  if (!archived) return notFound(`Thread "${id}" not found`);
+  return ok(archived);
+}
+
+export function unarchiveThreadHandler(
+  store: ThreadStore,
+  id: string,
+): HandlerResult<ThreadSummary> {
+  const unarchived = store.unarchiveThread(id);
+  if (!unarchived) return notFound(`Thread "${id}" not found`);
+  return ok(unarchived);
+}
+
 export async function deleteThreadHandler(
   store: ThreadStore,
   checkpointer: SqliteSaver,
@@ -198,6 +213,7 @@ export async function forkThreadHandler(
   // A run thread is a read-only record of one automated task run — forking
   // it would hand the user a chat seeded with a task agent's checkpoint.
   if (source.type === 'task') return conflict('Automated run threads are read-only');
+  if (source.archivedAt) return conflict('Archived threads are read-only');
 
   const checkpointId = store.resolveForkCheckpointId(id, atSeq);
   if (!checkpointId) {

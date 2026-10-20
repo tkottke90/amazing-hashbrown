@@ -26,6 +26,10 @@ export interface ThreadSummary {
   // for this thread, even if that snapshot is empty. See
   // docs/superpowers/specs/2026-09-12-tool-management-ui-design.md §3.
   toolsCustomizedAt: string | null;
+  // Non-null = this thread was archived at the given timestamp: hidden from
+  // the sidebar and read-only (chat/retry/fork/hitl-answer all reject with
+  // 409). NULL = active. See GLOSSARY.md "Archived Thread".
+  archivedAt: string | null;
 }
 
 export interface ThreadMessageRecord {
@@ -81,6 +85,7 @@ interface RawThreadRow {
   provider: string | null;
   model: string | null;
   tools_customized_at: string | null;
+  archived_at: string | null;
 }
 
 interface RawMessageRow {
@@ -114,6 +119,7 @@ function mapThreadRow(row: RawThreadRow): ThreadSummary {
     provider: row.provider,
     model: row.model,
     toolsCustomizedAt: row.tools_customized_at,
+    archivedAt: row.archived_at,
   };
 }
 
@@ -153,6 +159,10 @@ function mapMessageRow(row: RawMessageRow): ThreadMessageRecord {
 // 34=threads (thread_wakeups table for timed agent wake-ups — issue #191,
 // read/written by wakeup-store.ts; created here so its FK to threads and
 // ON DELETE CASCADE live beside the threads table itself).
+// 35=api-key-store.ts. 36/38/40/41/42=WorkspaceStore. 37/39=evaluations
+// (lib/evaluations/src/store.ts).
+// 43=threads (archived_at column — thread archiving, see
+// docs/superpowers/specs/2026-10-20-thread-archiving-sidebar-retention-design.md).
 // Check every store's MIGRATIONS array before adding a new one here — a
 // colliding version silently no-ops instead of erroring (BaseStore.runMigrations
 // skips any version already recorded).
@@ -262,6 +272,14 @@ const MIGRATIONS: DbMigration[] = [
         ON thread_wakeups(thread_id) WHERE status = 'pending';
     `,
   },
+  {
+    version: 43,
+    // Nullable, no backfill — NULL means not archived. Archiving is a
+    // field, not a type change, so the column lives on every thread type
+    // even though the Archive/Unarchive actions are only ever exposed for
+    // 'chat' threads (see the design doc's D1).
+    sql: `ALTER TABLE threads ADD COLUMN archived_at TEXT`,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -298,20 +316,39 @@ export class ThreadStore extends BaseStore {
       .run(new Date().toISOString(), threadId);
   }
 
-  listThreads(filter?: { type: ThreadType }): ThreadSummary[] {
-    const rows = (
-      filter
-        ? this.db
-            .prepare(`SELECT * FROM threads WHERE type = ? ORDER BY updated_at DESC`)
-            .all(filter.type)
-        : this.db.prepare(`SELECT * FROM threads ORDER BY updated_at DESC`).all()
-    ) as RawThreadRow[];
+  // `excludeArchived`/`updatedAfter` are only ever passed by the sidebar's
+  // own (type-less) thread fetch — see threads.route.ts's GET '/' and the
+  // design doc's D13. Every other caller (an explicit `?type=X`, or
+  // `?type=all`) omits them and keeps today's fully unfiltered behavior.
+  listThreads(filter?: {
+    type?: ThreadType;
+    excludeArchived?: boolean;
+    updatedAfter?: string;
+  }): ThreadSummary[] {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    if (filter?.type) {
+      clauses.push('type = ?');
+      params.push(filter.type);
+    }
+    if (filter?.excludeArchived) {
+      clauses.push('archived_at IS NULL');
+    }
+    if (filter?.updatedAfter) {
+      clauses.push('updated_at >= ?');
+      params.push(filter.updatedAfter);
+    }
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+    const rows = this.db
+      .prepare(`SELECT * FROM threads ${where} ORDER BY updated_at DESC`)
+      .all(...params) as RawThreadRow[];
     return rows.map(mapThreadRow);
   }
 
   getThreadMeta(id: string): ThreadSummary | null {
     const row = this.db.prepare(`SELECT * FROM threads WHERE id = ?`).get(id) as
-      RawThreadRow | undefined;
+      | RawThreadRow
+      | undefined;
     return row ? mapThreadRow(row) : null;
   }
 
@@ -615,6 +652,28 @@ export class ThreadStore extends BaseStore {
   // ToolSettingsStore.resetThreadTools, which clears the thread_tools rows.
   resetThreadToolsCustomization(threadId: string): void {
     this.db.prepare(`UPDATE threads SET tools_customized_at = NULL WHERE id = ?`).run(threadId);
+  }
+
+  // Archiving/unarchiving is not conversation activity (same reasoning as
+  // markThreadToolsCustomized above) — neither bumps updated_at. One
+  // consequence worth knowing: unarchiving a thread that's also older than
+  // the Sidebar Retention Window won't make it reappear in the sidebar on
+  // its own — Archive and the Retention Window are deliberately independent
+  // mechanisms (see the design doc), not one subsuming the other. Only
+  // actually continuing the thread (which does bump updated_at, via
+  // updateThreadModel above) brings it back.
+  archiveThread(id: string): ThreadSummary | null {
+    const result = this.db
+      .prepare(`UPDATE threads SET archived_at = ? WHERE id = ?`)
+      .run(new Date().toISOString(), id);
+    if (result.changes === 0) return null;
+    return this.getThreadMeta(id);
+  }
+
+  unarchiveThread(id: string): ThreadSummary | null {
+    const result = this.db.prepare(`UPDATE threads SET archived_at = NULL WHERE id = ?`).run(id);
+    if (result.changes === 0) return null;
+    return this.getThreadMeta(id);
   }
 }
 

@@ -1,22 +1,29 @@
 import { useEffect } from 'preact/hooks';
 import { useSignal, useComputed } from '@preact/signals';
-import { FolderOpen, Search } from 'lucide-preact';
+import { FolderOpen, Search, Archive, ArchiveRestore } from 'lucide-preact';
 
 import { Layout } from '@/components/layout';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { CardBadge } from '@/components/card-badge';
 import { ThreadReportButton } from '@/components/thread-report-button';
 import {
   allThreads,
   fetchAllThreads,
+  archiveThread,
+  unarchiveThread,
   type ThreadSummary,
   type ThreadType,
 } from '@/hooks/use-thread';
 import { useTitle } from '@/hooks/use-title';
 import { cn, formatRelativeTime } from '@/lib/utils';
 
-type FilterTab = 'all' | ThreadType;
+// 'archived' is a status filter on top of type, not a ThreadType — an
+// archived thread keeps its original type, it just also carries a
+// non-null archivedAt (see GLOSSARY.md "Archived Thread").
+type FilterTab = 'all' | ThreadType | 'archived';
 
-const FILTER_TABS: FilterTab[] = ['all', 'chat', 'wiki', 'workspace-chat', 'task'];
+const FILTER_TABS: FilterTab[] = ['all', 'chat', 'wiki', 'workspace-chat', 'task', 'archived'];
 
 const TYPE_LABEL: Record<FilterTab, string> = {
   all: 'All',
@@ -24,10 +31,12 @@ const TYPE_LABEL: Record<FilterTab, string> = {
   wiki: 'Wiki',
   'workspace-chat': 'Workspace',
   task: 'Task run',
+  archived: 'Archived',
 };
 
 function matchesFilter(thread: ThreadSummary, filter: FilterTab, query: string): boolean {
   if (query && !thread.title.toLowerCase().includes(query)) return false;
+  if (filter === 'archived') return thread.archivedAt != null;
   if (filter !== 'all' && thread.type !== filter) return false;
   return true;
 }
@@ -119,7 +128,7 @@ export function ThreadsView(_props: { path?: string }) {
                     class="px-4 py-2.5 text-left font-medium text-muted-foreground"
                     style="width:0.6fr"
                   >
-                    Report
+                    Actions
                   </th>
                 </tr>
               </thead>
@@ -148,12 +157,47 @@ export function ThreadsView(_props: { path?: string }) {
                       <a href={`/chat/${t.id}`} class="font-medium hover:underline">
                         {t.title}
                       </a>
+                      {/* Shown regardless of the active filter tab, so
+                          switching back to "All" still distinguishes
+                          archived rows at a glance. */}
+                      {t.archivedAt != null && (
+                        <CardBadge variant="violet" className="ml-2">
+                          Archived
+                        </CardBadge>
+                      )}
                     </td>
                     <td class="px-4 py-3 text-xs text-muted-foreground">
                       {formatRelativeTime(t.updatedAt)}
                     </td>
                     <td class="px-4 py-3">
-                      <ThreadReportButton threadId={t.id} />
+                      <div class="flex items-center gap-1">
+                        <ThreadReportButton threadId={t.id} />
+                        {/* Archive/Unarchive is scoped to chat threads only
+                            (design doc D1) — wiki/workspace-chat/task rows
+                            keep just the Report button. */}
+                        {t.type === 'chat' &&
+                          (t.archivedAt != null ? (
+                            <Button
+                              variant="ghost"
+                              size="xs"
+                              title="Unarchive"
+                              onClick={() => void unarchiveThread(t.id)}
+                            >
+                              <ArchiveRestore class="size-3.5" />
+                              Unarchive
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="xs"
+                              title="Archive"
+                              onClick={() => void archiveThread(t.id)}
+                            >
+                              <Archive class="size-3.5" />
+                              Archive
+                            </Button>
+                          ))}
+                      </div>
                     </td>
                   </tr>
                 ))}
