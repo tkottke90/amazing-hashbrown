@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # gh release upload
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Detect dry run
+        id: detect
+        run: bin/release.sh detect-dry-run "${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup npmrc
+        run: |
+          touch ~/.npmrc
+          echo "registry=https://${NPM_DOMAIN}/" >> ~/.npmrc
+          echo "save-exact=true" >> ~/.npmrc
+          echo "//${NPM_DOMAIN}/:_authToken=${NPM_TOKEN}" >> ~/.npmrc
+        env:
+          NPM_DOMAIN: ${{ vars.NPM_DOMAIN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build app + Docker image (amd64 only)
+        run: bin/release.sh docker-build-release
+        env:
+          SKIP_ARM64_BUILD: 'true'
+
+      - name: Resolve Zot registry host
+        id: zot
+        if: steps.detect.outputs.is_dry_run != 'true'
+        # vars.ZOT_URL is a full URL (https://docker.artifacts.tdkottke.com);
+        # docker login/tag/push need a bare host[:port], not a URL.
+        run: echo "host=${ZOT_URL#*://}" >> "$GITHUB_OUTPUT"
+        env:
+          ZOT_URL: ${{ vars.ZOT_URL }}
+
+      - name: Docker login to Zot
+        if: steps.detect.outputs.is_dry_run != 'true'
+        run: docker login "${{ steps.zot.outputs.host }}" -u "${{ secrets.ZOT_USERNAME }}" -p "${{ secrets.ZOT_TOKEN }}"
+
+      - name: Tag and save release image
+        if: steps.detect.outputs.is_dry_run != 'true'
+        run: |
+          bin/release.sh docker-tag-version amazing-hashbrown:latest \
+            "${{ steps.zot.outputs.host }}/amazing-hashbrown:${{ github.ref_name }}"
+          bin/release.sh docker-save \
+            "${{ steps.zot.outputs.host }}/amazing-hashbrown:${{ github.ref_name }}" \
+            /tmp/amazing-hashbrown.tar
+
+      - name: Upload image tar to GitHub Release
+        if: steps.detect.outputs.is_dry_run != 'true'
+        run: bin/release.sh release-upload-asset "${{ github.ref_name }}" /tmp/amazing-hashbrown.tar
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Push versioned + latest tags to Zot
+        if: steps.detect.outputs.is_dry_run != 'true'
+        run: bin/release.sh registry-publish "${{ steps.zot.outputs.host }}/amazing-hashbrown" "${{ github.ref_name }}"

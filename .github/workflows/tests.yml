@@ -18,10 +18,11 @@ jobs:
       - name: Setup npmrc
         run: |
           touch ~/.npmrc
-          echo "registry=https://npm.artifacts.tdkottke.com/" >> ~/.npmrc
+          echo "registry=https://${NPM_DOMAIN}/" >> ~/.npmrc
           echo "save-exact=true" >> ~/.npmrc
-          echo "//npm.artifacts.tdkottke.com/:_authToken=${NPM_TOKEN}" >> ~/.npmrc
+          echo "//${NPM_DOMAIN}/:_authToken=${NPM_TOKEN}" >> ~/.npmrc
         env:
+          NPM_DOMAIN: ${{ vars.NPM_DOMAIN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Install Dependencies
@@ -63,8 +64,9 @@ jobs:
           cache: npm
 
       - name: Setup npmrc
-        run: echo "//npm.artifacts.tdkottke.com/:_authToken=${NPM_TOKEN}" >> ~/.npmrc
+        run: echo "//${NPM_DOMAIN}/:_authToken=${NPM_TOKEN}" >> ~/.npmrc
         env:
+          NPM_DOMAIN: ${{ vars.NPM_DOMAIN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Install Dependencies

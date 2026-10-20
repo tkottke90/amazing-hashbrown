@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Mechanical steps for the /release skill. Each phase is one deterministic
+# Mechanical steps shared by the /release skill (local) and
+# .github/workflows/release.yml (CI). Each phase is one deterministic
 # unit of work so a failure always lands on a clearly-named step instead of
 # partway through a wall of inline commands. The changelog itself is NOT
 # written here — that needs judgment, so `changelog-range` only gathers the
 # raw material and the skill (Claude) drafts the prose.
 set -euo pipefail
-cd "$(dirname "$0")/../../../.."
+cd "$(dirname "$0")/.."
 
-REGISTRY_HOST="docker.artifacts.tdkottke.com"
 APP_IMAGE="amazing-hashbrown:latest"
 
 run() {
@@ -17,6 +17,13 @@ run() {
     echo "==> $*"
     "$@"
   fi
+}
+
+# Single source of truth for the dry-run/test tag suffix. Anchored at the
+# end with a required trailing digit run so it can never match a real
+# prerelease tag like v1.2.0-alpha, v1.2.0-beta.2, or v1.2.0-rc.1.
+is_dry_run_tag() {
+  [[ "$1" =~ -(dry-run|test)-[0-9]+$ ]]
 }
 
 phase="${1:-}"
@@ -32,14 +39,6 @@ preflight)
   fi
   if ! gh auth status >/dev/null 2>&1; then
     echo "FAIL: gh CLI is not authenticated — run 'gh auth login'" >&2
-    fail=1
-  fi
-  if ! docker info >/dev/null 2>&1; then
-    echo "FAIL: docker daemon is not running" >&2
-    fail=1
-  fi
-  if ! grep -q "\"$REGISTRY_HOST\"" "$HOME/.docker/config.json" 2>/dev/null; then
-    echo "FAIL: not logged into $REGISTRY_HOST — run 'docker login $REGISTRY_HOST'" >&2
     fail=1
   fi
   branch=$(git rev-parse --abbrev-ref HEAD)
@@ -63,20 +62,20 @@ pkg-info)
   ;;
 
 build-guard)
-  run npm run build:app
-  echo "OK: build guard passed (npm run build:app succeeded, image: $APP_IMAGE)"
+  run npm run build
+  echo "OK: build guard passed (npm run build succeeded)"
   ;;
 
 bump-version)
   bump="${1:?usage: bump-version <major|minor|patch|x.y.z> [--dry-run]}"
   dry="${2:-}"
   if [ "$dry" = "--dry-run" ]; then
-    node -e '
+    new_version=$(node -e '
       const fs = require("fs");
       const bump = process.argv[1];
       const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
       if (/^\d+\.\d+\.\d+/.test(bump)) {
-        console.log(`NEW_VERSION=${bump.replace(/^v/, "")}`);
+        console.log(bump.replace(/^v/, ""));
         process.exit(0);
       }
       const [maj, min, pat] = pkg.version.split(".").map(Number);
@@ -89,13 +88,25 @@ bump-version)
         console.error(`unknown bump type: ${bump}`);
         process.exit(1);
       }
-      console.log(`NEW_VERSION=${table[bump]}`);
-    ' "$bump"
-    echo "NEW_TAG=(skipped in dry-run — no git tag created)"
+      console.log(table[bump]);
+    ' "$bump")
+    new_tag="v${new_version}-dry-run-$(date +%s)"
+    git tag "$new_tag"
+    echo "NEW_TAG=$new_tag"
+    echo "NEW_VERSION=$new_version"
   else
     new_tag=$(npm version "$bump")
     echo "NEW_TAG=$new_tag"
     echo "NEW_VERSION=${new_tag#v}"
+  fi
+  ;;
+
+detect-dry-run)
+  tag="${1:?usage: detect-dry-run <tag>}"
+  if is_dry_run_tag "$tag"; then
+    echo "is_dry_run=true"
+  else
+    echo "is_dry_run=false"
   fi
   ;;
 
@@ -126,7 +137,9 @@ docker-save)
   ;;
 
 changelog-range)
-  # new_ref is either a real tag (real run) or "HEAD" (dry run, tag doesn't exist yet)
+  # new_ref is the tag to diff up to — always a real tag now, dry runs
+  # included (bump-version --dry-run creates a real, suffixed tag; see
+  # is_dry_run_tag).
   new_ref="${1:?usage: changelog-range <new-tag-or-HEAD>}"
   prev_tag=$(git tag --list --sort=-v:refname | grep -v -x "$new_ref" | head -1 || true)
   if [ -z "$prev_tag" ]; then
@@ -140,29 +153,47 @@ changelog-range)
   fi
   ;;
 
+release-upload-asset)
+  tag="${1:?usage: release-upload-asset <tag> <tarfile>}"
+  tarfile="${2:?usage: release-upload-asset <tag> <tarfile>}"
+  attempts=6
+  delay=5
+  for i in $(seq 1 "$attempts"); do
+    if gh release upload "$tag" "$tarfile" --clobber; then
+      echo "OK: uploaded $tarfile to release $tag"
+      exit 0
+    fi
+    echo "release $tag not found yet (attempt $i/$attempts), retrying in ${delay}s..." >&2
+    sleep "$delay"
+  done
+  echo "FAIL: no release found for tag $tag after $attempts attempts" >&2
+  exit 1
+  ;;
+
+registry-publish)
+  image_base="${1:?usage: registry-publish <image-base> <tag>}"
+  tag="${2:?usage: registry-publish <image-base> <tag>}"
+  run docker tag "${image_base}:${tag}" "${image_base}:latest"
+  run docker push "${image_base}:${tag}"
+  run docker push "${image_base}:latest"
+  ;;
+
 publish)
-  tag="${1:?usage: publish <tag> <registry-image-base> <version> <tarfile> <changelog-file> [--dry-run]}"
-  registry_image="${2:?}"
-  version="${3:?}"
-  tarfile="${4:?}"
-  changelog_file="${5:?}"
-  dry="${6:-}"
-  export DRY_RUN="false"
-  if [ "$dry" = "--dry-run" ]; then
-    export DRY_RUN="true"
-  fi
+  tag="${1:?usage: publish <tag> <changelog-file>}"
+  changelog_file="${2:?usage: publish <tag> <changelog-file>}"
   branch=$(git rev-parse --abbrev-ref HEAD)
 
   run git push origin "$branch"
   run git push origin "$tag"
-  run gh release create "$tag" "$tarfile" --title "$tag" --notes-file "$changelog_file"
-  run docker tag "${registry_image}:v${version}" "${registry_image}:latest"
-  run docker push "${registry_image}:v${version}"
-  run docker push "${registry_image}:latest"
+  if is_dry_run_tag "$tag"; then
+    echo "SKIP: dry-run tag $tag — not creating a GitHub Release"
+  else
+    run gh release create "$tag" --title "$tag" --notes-file "$changelog_file"
+  fi
   ;;
 
 *)
-  echo "usage: release.sh <preflight|pkg-info|build-guard|bump-version|docker-build-release|docker-tag-version|docker-save|changelog-range|publish> [args...]" >&2
+  echo "usage: release.sh <preflight|pkg-info|build-guard|bump-version|detect-dry-run|docker-build-release|docker-tag-version|docker-save|changelog-range|release-upload-asset|registry-publish|publish> [args...]" >&2
   exit 1
   ;;
 
