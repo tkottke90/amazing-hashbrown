@@ -168,7 +168,7 @@ describe('agents/skill-scoped-tools.middleware', () => {
         this._callIndex === 1
           ? new AIMessage({
               content: '',
-              tool_calls: [{ id: 'call_1', name: 'probe_tool', args: {} }],
+              tool_calls: [{ id: 'call_1', name: 'read_skill_reference', args: { name: 'x.md' } }],
             })
           : new AIMessage({ content: 'done' });
       return { generations: [{ message: msg, text: '' }] };
@@ -186,35 +186,40 @@ describe('agents/skill-scoped-tools.middleware', () => {
       // Proves the actual propagation mechanism through a real LangGraph
       // ToolNode, not just that wrapToolCall calls handler() with the
       // object we built (that part a fake-handler unit test above already
-      // proves, and isn't the risky part). Two earlier versions of this
-      // middleware FAILED this exact orchestration test in real CI:
-      // mutating request.runtime (ToolNode builds its own runtime fresh,
-      // ignoring whatever wrapToolCall returns for that field) and seeding
-      // activeSkill via a custom top-level agent.invoke() field (createAgent
-      // has no precedent anywhere in this codebase for that, and it turns
-      // out not to reach node state at all — createAgent's invoke input
-      // schema doesn't carry arbitrary extra fields through). Driving
-      // activeSkill via the real skill-expansion middleware and a real
-      // slash command — the only way it's ever actually set in production
-      // — is what finally proved the mechanism, which is exactly why this
-      // test exists as a real-graph, real-production-pipeline check rather
-      // than a mock or a hand-seeded state shortcut.
+      // proves, and isn't the risky part). This went through three failed
+      // real-CI attempts before landing on the actual bug, each worth
+      // recording so nobody "fixes" this back to a broken shape:
+      //   1. Mutating request.runtime inside wrapToolCall — ToolNode
+      //      builds its own runtime fresh, ignoring whatever wrapToolCall
+      //      returns for that field.
+      //   2. Seeding activeSkill via a custom top-level agent.invoke()
+      //      field — createAgent's invoke input schema doesn't carry an
+      //      arbitrary extra field into node state; nothing in this
+      //      codebase does that anywhere.
+      //   3. A probe tool named "probe_tool" — SKILL_SCOPED_TOOL_NAMES only
+      //      matches 'read_skill_reference'/'run_skill_script' by name, so
+      //      wrapToolCall's early-return passed it straight through
+      //      unchanged on every run, never exercising the injection at all.
+      //      The fix below reuses one of the two real tool names.
+      // Verified against langchain@1.5.16's actual source
+      // (dist/agents/nodes/ToolNode.js, dist/agents/utils.js) that
+      // toolCall.args really is what reaches the real invoke() call.
       dir = mkdtempSync(join(tmpdir(), 'skill-scoped-orchestration-test-'));
       const manager = new SkillsManager(dir);
       await manager.boot();
       await manager.create({
         name: 'probe-skill',
         description: 'A dummy skill for this test.',
-        body: 'Call probe_tool.',
+        body: 'Call read_skill_reference.',
       });
 
       const probeTool = tool(
         async ({ activeSkill }: { activeSkill?: string | null }) =>
           JSON.stringify({ seen: activeSkill ?? null }),
         {
-          name: 'probe_tool',
-          description: 'Reports the injected activeSkill.',
-          schema: z.object({}).passthrough(),
+          name: 'read_skill_reference',
+          description: 'Reports the injected activeSkill (stubbed for this test).',
+          schema: z.object({ name: z.string() }).passthrough(),
         },
       );
 
