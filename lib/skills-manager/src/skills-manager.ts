@@ -5,6 +5,7 @@ import { scanSkillsRoot, readFrontmatter, readFullSkill, inventoryDir } from './
 import {
   runJsScript,
   runPythonScript as execPythonScript,
+  runShellScript as execShellScript,
   setRunnerExecutor,
 } from './internal/runner.js';
 import type { ShellExecutor } from '@tkottke90/shell-executor';
@@ -281,23 +282,43 @@ export class SkillsManager {
     this.cache.delete(name);
   }
 
+  // options-bag, not added positional params — a bare new positional before
+  // the pre-existing single-object `context` param would silently
+  // misinterpret a caller still using that older calling convention.
   async runScript(
     name: string,
     scriptFile: string,
-    context?: Record<string, unknown>,
-  ): Promise<unknown> {
+    options?: { args?: string[]; context?: Record<string, unknown>; timeoutMs?: number },
+  ): Promise<ScriptResult> {
     this.assertWritable();
     this.assertExists(name);
     const scriptPath = join(this.skillsRoot, name, 'scripts', scriptFile);
-    return runJsScript(scriptPath, context);
+    return runJsScript(scriptPath, options?.args ?? [], options?.context ?? {}, options?.timeoutMs);
   }
 
-  async runPythonScript(name: string, scriptFile: string, args?: string[]): Promise<ScriptResult> {
+  async runPythonScript(
+    name: string,
+    scriptFile: string,
+    args?: string[],
+    timeoutMs?: number,
+  ): Promise<ScriptResult> {
     this.assertWritable();
     this.assertExists(name);
     const skillPath = join(this.skillsRoot, name);
     const scriptPath = join(skillPath, 'scripts', scriptFile);
-    return execPythonScript(skillPath, scriptPath, args);
+    return execPythonScript(skillPath, scriptPath, args, timeoutMs);
+  }
+
+  async runShellScript(
+    name: string,
+    scriptFile: string,
+    args?: string[],
+    timeoutMs?: number,
+  ): Promise<ScriptResult> {
+    this.assertWritable();
+    this.assertExists(name);
+    const scriptPath = join(this.skillsRoot, name, 'scripts', scriptFile);
+    return execShellScript(scriptPath, args, timeoutMs);
   }
 
   async readFile(

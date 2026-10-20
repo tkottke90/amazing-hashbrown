@@ -28,7 +28,7 @@ import type { ThreadToolItem, ThreadToolsResponse } from '@/services/tool-settin
 // seed logic and both non-Built-in section filters below, so the "not
 // Built-in" condition can't drift between call sites.
 function isBuiltInTool(tool: ThreadToolItem): boolean {
-  return tool.alwaysOn || tool.category === 'skill-gated';
+  return tool.alwaysOn || tool.category === 'skill-gated' || tool.category === 'skill-scoped';
 }
 
 // A small local derivation, not tool-access-table.tsx's sourceLabel() —

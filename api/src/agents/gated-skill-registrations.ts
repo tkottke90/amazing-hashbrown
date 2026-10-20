@@ -1,8 +1,9 @@
 import type { SkillGatedToolRegistration } from './skill-gated-tools.middleware.js';
 
-// Skill-Gated Tools registrations — the single source of truth both
-// skillExpansionMiddleware (sets activeGatedSkill) and
-// skillGatedToolsMiddleware (filters the model's tool list by it) read from.
+// Skill-Gated Tools registrations — the single source of truth
+// skillGatedToolsMiddleware (filters the model's tool list by exact skill
+// name match against activeSkill) reads from. skillExpansionMiddleware sets
+// activeSkill for every resolved skill now (ADR-0019), not just these.
 // See AGENTS.md § Composition over Customization: a future chat-invoked tool
 // that should only be visible after its skill is typed adds an entry here
 // rather than writing new middleware.

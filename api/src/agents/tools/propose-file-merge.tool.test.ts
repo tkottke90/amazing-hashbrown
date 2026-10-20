@@ -8,7 +8,7 @@ function invokeConfig(): any {
 }
 
 describe('agents/tools/propose-file-merge', () => {
-  it('returns a Command that clears activeGatedSkill and acknowledges the proposal', async () => {
+  it('returns a Command that clears activeSkill and acknowledges the proposal', async () => {
     const result = (await proposeFileMergeTool.invoke(
       {
         path: 'notes/readme.md',
@@ -19,7 +19,7 @@ describe('agents/tools/propose-file-merge', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     )) as any;
 
-    expect(result.update.activeGatedSkill).to.equal(null);
+    expect(result.update.activeSkill).to.equal(null);
     expect(result.update.messages).to.have.length(1);
     expect(result.update.messages[0].name).to.equal('propose_file_merge');
     expect(result.update.messages[0].content).to.include('notes/readme.md');

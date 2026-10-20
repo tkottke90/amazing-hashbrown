@@ -821,7 +821,7 @@ describe('executeScenario — gatedSkill (tool-call/tool-sequence)', () => {
 
   // Mirrors the real skillExpansionMiddleware's own behavior on a small
   // scale: recognizes exactly one slash command, rewrites the message and
-  // reports activeGatedSkill when matched, returns undefined (its real
+  // reports activeSkill when matched, returns undefined (its real
   // no-op shape for plain-chat/unrecognized text) otherwise.
   function makeFakeExpansionMiddleware(
     command: string,
@@ -837,18 +837,18 @@ describe('executeScenario — gatedSkill (tool-call/tool-sequence)', () => {
         if (typeof content !== 'string' || !content.startsWith(`/${command}`)) return undefined;
         const messages = [...state.messages];
         messages[messages.length - 1] = new HumanMessage(expandedBody);
-        return { messages, activeGatedSkill: command };
+        return { messages, activeSkill: command };
       },
     };
   }
 
   // Mirrors the real skillGatedToolsMiddleware: always-on tools stay,
-  // GATED is added only when activeGatedSkill matches the registered command.
+  // GATED is added only when activeSkill matches the registered command.
   function makeFakeGatingMiddleware(command: string): SkillGatedToolsMiddlewareLike {
     return {
       wrapModelCall: async (request, handler) => {
         const tools =
-          request.state.activeGatedSkill === command ? [...request.tools, GATED] : request.tools;
+          request.state.activeSkill === command ? [...request.tools, GATED] : request.tools;
         return handler({ ...request, tools });
       },
     };
@@ -1638,7 +1638,7 @@ describe('executeScenario — required-tool injection scans post-expansion text 
         if (typeof content !== 'string' || !content.startsWith(`/${command}`)) return undefined;
         const messages = [...state.messages];
         messages[messages.length - 1] = new HumanMessage(expandedBody);
-        return { messages, activeGatedSkill: command };
+        return { messages, activeSkill: command };
       },
     };
   }
@@ -1647,7 +1647,7 @@ describe('executeScenario — required-tool injection scans post-expansion text 
     return {
       wrapModelCall: async (request, handler) => {
         const tools =
-          request.state.activeGatedSkill === command ? [...request.tools, GATED] : request.tools;
+          request.state.activeSkill === command ? [...request.tools, GATED] : request.tools;
         return handler({ ...request, tools });
       },
     };

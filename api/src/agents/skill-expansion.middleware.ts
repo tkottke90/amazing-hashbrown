@@ -2,20 +2,19 @@ import { createMiddleware } from 'langchain';
 import { HumanMessage } from '@langchain/core/messages';
 import type { SkillsManager } from '@tkottke90/skills-manager';
 import { skillsManager as defaultSkillsManager } from '../services/skills-manager.js';
-import {
-  gatedSkillStateSchema,
-  type SkillGatedToolRegistration,
-} from './skill-gated-tools.middleware.js';
+import { activeSkillStateSchema } from './skill-gated-tools.middleware.js';
+import { buildArtifactIndex } from './artifact-index.js';
 
 // Expands a slash command in the latest human message immediately before each
 // LLM call. Historical messages with slash commands are passed through as-is.
 // The checkpoint always stores the original "/command args" — only the messages
 // array handed to the LLM is modified (never persisted).
 //
-// `registrations` is the same list skill-gated-tools.middleware.ts uses —
-// when the expanded command matches a registered gated skill, this also sets
-// activeGatedSkill so that middleware's wrapModelCall exposes the matching
-// tool(s) starting on this same turn.
+// activeSkill is set for every resolved skill invocation, not just the
+// handful with a Skill-Gated Tools registration (ADR-0019) — it's the one
+// state channel skill-gated-tools.middleware.ts (exact-name gating) and
+// skill-scoped-tools.middleware.ts (any-skill-is-active gating) both read.
+// See GLOSSARY.md § Skill Invocation & Runtime Access.
 //
 // `getSkills` resolves the skill source per invocation rather than taking a
 // fixed manager, so workspace agents can serve that workspace's
@@ -23,12 +22,11 @@ import {
 // without rebuilding the agent. It's only called for slash commands, so
 // ordinary chat turns never touch the disk.
 export function createSkillExpansionMiddleware(
-  registrations: SkillGatedToolRegistration[],
-  getSkills: () => Promise<Pick<SkillsManager, 'lookup'>> = async () => defaultSkillsManager,
+  getSkills: () => Promise<Pick<SkillsManager, 'load'>> = async () => defaultSkillsManager,
 ) {
   return createMiddleware({
     name: 'SkillExpansionMiddleware',
-    stateSchema: gatedSkillStateSchema,
+    stateSchema: activeSkillStateSchema,
     beforeAgent: async (state) => {
       const messages = [...state.messages];
       let lastHumanIdx = -1;
@@ -49,31 +47,32 @@ export function createSkillExpansionMiddleware(
       const args = spaceIdx === -1 ? '' : content.slice(spaceIdx + 1);
 
       let expanded: string;
-      // Always explicitly resolved on every successful command match (gated
-      // skill -> itself, non-gated or unknown command -> null) rather than
-      // left unset — an omitted key here would leave a stale gate from an
-      // earlier turn untouched. Plain-chat turns never reach this branch at
-      // all (see the startsWith('/') check above), which is intentional:
-      // mid-flow field collection and post-rejection tool retry both rely
-      // on the gate staying open across non-slash-command turns.
-      let activeGatedSkill: string | null;
+      // Always explicitly resolved on every successful or failed command
+      // match rather than left unset — an omitted key here would leave a
+      // stale value from an earlier turn untouched. Plain-chat turns never
+      // reach this branch at all (see the startsWith('/') check above),
+      // which is intentional: mid-flow field collection and post-rejection
+      // tool retry both rely on the value staying put across non-slash-
+      // command turns.
+      let activeSkill: string | null;
       try {
         const manager = await getSkills();
-        const body = await manager.lookup(commandName);
+        const skill = await manager.load(commandName);
+        const body = skill.body;
         expanded = args ? `${body}\n\n${args}` : body;
-        activeGatedSkill = registrations.some((r) => r.skillCommand === commandName)
-          ? commandName
-          : null;
+        activeSkill = commandName;
+        const index = buildArtifactIndex(skill.scripts, skill.references);
+        if (index) expanded = `${expanded}\n\n${index}`;
       } catch {
         expanded = `[Skill "/${commandName}" not found — use the search_skills tool to see what's available]${args ? '\n\n' + args : ''}`;
-        activeGatedSkill = null;
+        activeSkill = null;
       }
 
       messages[lastHumanIdx] = new HumanMessage({
         content: expanded,
         id: lastHuman.id,
       });
-      return { messages, activeGatedSkill };
+      return { messages, activeSkill };
     },
   });
 }

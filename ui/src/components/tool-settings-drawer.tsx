@@ -132,7 +132,7 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
   const saveError = useSignal<string | null>(null);
 
   const isAlwaysOn = tool.alwaysOn;
-  const isSkillGated = tool.category === 'skill-gated';
+  const isSkillGated = tool.category === 'skill-gated' || tool.category === 'skill-scoped';
 
   // Dialog children stay mounted between opens (see mcp-server-drawer.tsx's
   // identical comment) — reset local form state every time this specific

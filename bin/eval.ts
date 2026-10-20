@@ -217,7 +217,7 @@ await bootSkillsManager();
 // chat-agent.ts uses — not a reimplementation. Passed into every runEval
 // call below; inert for suites whose scenarios never set `gatedSkill` (see
 // runner.ts's gatedSkill branch).
-const skillExpansionMiddleware = createSkillExpansionMiddleware(GATED_SKILL_REGISTRATIONS);
+const skillExpansionMiddleware = createSkillExpansionMiddleware();
 const skillGatedToolsMiddleware = createSkillGatedToolsMiddleware(GATED_SKILL_REGISTRATIONS);
 // Same real-instance treatment as the two above — needs no registrations,
 // it only scans the latest human message for #tokens (see

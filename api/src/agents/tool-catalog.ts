@@ -12,7 +12,12 @@
 //
 // design: docs/superpowers/specs/2026-09-12-tool-management-ui-design.md §1
 
-export type ToolCategory = 'built-in' | 'wiki' | 'skill-gated';
+// 'skill-scoped' is distinct from 'skill-gated': a skill-gated tool is tied
+// to one specific named skill (GATED_SKILL_REGISTRATIONS); a skill-scoped
+// tool (read_skill_reference, run_skill_script) is visible whenever ANY
+// skill is Active and resolves "which skill" at call time rather than from
+// a registration — see GLOSSARY.md § Skill Invocation & Runtime Access.
+export type ToolCategory = 'built-in' | 'wiki' | 'skill-gated' | 'skill-scoped';
 
 export interface CatalogEntry {
   toolId: string;
@@ -28,7 +33,8 @@ export interface CatalogEntry {
   alwaysOn: boolean;
   // Set only for skill-gated entries — cross-references
   // GATED_SKILL_REGISTRATIONS's skillCommand, so the read-only UI row can
-  // show which skill backs this tool.
+  // show which skill backs this tool. Never set for skill-scoped entries —
+  // those aren't tied to one named skill.
   skillCommand?: string;
 }
 
@@ -320,5 +326,21 @@ export const TOOL_CATALOG: CatalogEntry[] = [
     category: 'skill-gated',
     alwaysOn: false,
     skillCommand: 'create-skill',
+  },
+  // ── Skill-scoped ──────────────────────────────────────────────────────
+  {
+    toolId: 'read_skill_reference',
+    name: 'Read Skill Reference',
+    description: 'Read a reference file belonging to whichever skill is currently active.',
+    category: 'skill-scoped',
+    alwaysOn: false,
+  },
+  {
+    toolId: 'run_skill_script',
+    name: 'Run Skill Script',
+    description:
+      'Run a script belonging to whichever skill is currently active, under a configurable timeout.',
+    category: 'skill-scoped',
+    alwaysOn: false,
   },
 ];

@@ -55,6 +55,13 @@ function buildResponse(): ThreadToolsResponse {
         alwaysOn: false,
         selected: false,
       }),
+      tool({
+        toolId: 'read_skill_reference',
+        name: 'Read Skill Reference',
+        category: 'skill-scoped',
+        alwaysOn: false,
+        selected: false,
+      }),
       tool({ toolId: 'web_fetch', name: 'Web Fetch', category: 'built-in', selected: true }),
       tool({ toolId: 'shell_exec', name: 'Shell Exec', category: 'built-in', selected: false }),
       tool({

@@ -1,0 +1,87 @@
+suite:
+  id: skill-artifact-access
+  name: Skill Runtime Artifact Access
+  purpose: >
+    Verifies the model actually uses the generated Artifact Index (see
+    GLOSSARY.md § Skill Invocation & Runtime Access, ADR-0022) correctly:
+    given a skill's expanded body with an "## Available Artifacts" section
+    appended — the exact text skill-expansion.middleware.ts produces via
+    buildArtifactIndex() — the model calls read_skill_reference/
+    run_skill_script with the filename the index actually named, rather than
+    guessing a path or inventing its own call shape. read_skill_reference and
+    run_skill_script are bound unconditionally in this harness (see
+    eval-setup.ts) since they're Skill-Scoped Tools, not gated to one named
+    skill the way create-skill.yaml's suite is — no gatedSkill routing is
+    needed here, only the literal generated text a real invocation would
+    produce.
+  passingThreshold: 0.8
+
+scenarios:
+  - id: saa-001-reads-reference-named-in-the-index
+    name: Agent reads the exact reference file the Available Artifacts index names
+    purpose: >
+      Confirms the model treats the generated index as the authoritative
+      call shape — calling read_skill_reference with the precise filename
+      listed, not a guessed path like "references/operations.md" or a
+      paraphrased name.
+    type: tool-call
+    input: >
+      Guide the user through checking service status. See the operations
+      reference for the detailed steps.
+
+
+      ## Available Artifacts
+
+      - Reference `operations.md` → call `read_skill_reference` with `name: "operations.md"`
+    tool: read_skill_reference
+    argChecks:
+      - path: name
+        match: equals
+        value: operations.md
+
+  - id: saa-002-runs-script-named-in-the-index
+    name: Agent runs the exact script the Available Artifacts index names
+    purpose: >
+      Confirms the model calls run_skill_script with the precise filename
+      listed in the generated index, rather than guessing a path or
+      inventing a different tool-call shape for "running a script".
+    type: tool-call
+    input: >
+      Guide the user through checking service status. Run the status check
+      script when asked.
+
+
+      ## Available Artifacts
+
+      - Script `check-status.sh` → call `run_skill_script` with `name: "check-status.sh"`
+    tool: run_skill_script
+    argChecks:
+      - path: name
+        match: equals
+        value: check-status.sh
+
+  - id: saa-003-picks-the-right-artifact-among-several
+    name: Agent picks the artifact that matches the request, not just any listed one
+    purpose: >
+      With more than one script in the index, confirms the model matches the
+      user's actual request to the right entry rather than defaulting to
+      whichever is listed first — the index gives exact call syntax, but the
+      model still has to pick the correct filename for what was asked.
+    type: tool-call
+    input: >
+      Guide the user through disk and memory checks. Run the disk check
+      script when asked about disk space.
+
+
+      ## Available Artifacts
+
+      - Script `check-disk.py` → call `run_skill_script` with `name: "check-disk.py"`
+      - Script `check-memory.py` → call `run_skill_script` with `name: "check-memory.py"`
+
+
+      The user asked: how much disk space is free?
+    tool: run_skill_script
+    argChecks:
+      - path: name
+        match: equals
+        value: check-disk.py

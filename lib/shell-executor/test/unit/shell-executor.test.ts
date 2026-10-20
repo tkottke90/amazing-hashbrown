@@ -225,4 +225,27 @@ describe('ShellExecutor', () => {
       expect(ShellExecutorConfigSchema.parse({}).env).to.deep.equal({});
     });
   });
+
+  describe('timeoutMs', () => {
+    it('kills a command that outlives its timeout and reports a non-zero exit [unit]', async () => {
+      const executor = new ShellExecutor(defaultConfig, { trustAll: true });
+      const result = await executor.execute('sleep 5', undefined, { timeoutMs: 50 });
+      expect(result.exitCode).to.not.equal(0);
+      expect(result.stderr).to.include('exceeding');
+    });
+
+    it('does not affect a command that finishes within its timeout [unit]', async () => {
+      const executor = new ShellExecutor(defaultConfig, { trustAll: true });
+      const result = await executor.execute('echo quick', undefined, { timeoutMs: 5000 });
+      expect(result.stdout.trim()).to.equal('quick');
+      expect(result.exitCode).to.equal(0);
+    });
+
+    it('runs unbounded when no timeoutMs is given [unit]', async () => {
+      const executor = new ShellExecutor(defaultConfig, { trustAll: true });
+      const result = await executor.execute('echo no-timeout');
+      expect(result.stdout.trim()).to.equal('no-timeout');
+      expect(result.exitCode).to.equal(0);
+    });
+  });
 });

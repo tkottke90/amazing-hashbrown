@@ -197,6 +197,7 @@ describe('SkillsManager.createChild', () => {
       ['saveEvals', (m, n) => m.saveEvals(n, { skill_name: n, evals: [] })],
       ['runScript', (m, n) => m.runScript(n, 'a.js')],
       ['runPythonScript', (m, n) => m.runPythonScript(n, 'a.py')],
+      ['runShellScript', (m, n) => m.runShellScript(n, 'a.sh')],
     ];
 
     for (const [op, call] of writeOps) {

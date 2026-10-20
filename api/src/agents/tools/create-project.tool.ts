@@ -69,7 +69,7 @@ export function makeCreateProjectTool(store?: WorkspaceStore, registry?: WikiReg
 
       return new Command({
         update: {
-          activeGatedSkill: null,
+          activeSkill: null,
           messages: [
             new ToolMessage({
               content: `Created project "${workspace.name}" at ${workspace.location}.`,

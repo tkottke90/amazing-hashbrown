@@ -27,7 +27,7 @@ export const proposeFileMergeTool = tool(
   async ({ path, explanation }, runtime: ToolRuntime) => {
     return new Command({
       update: {
-        activeGatedSkill: null,
+        activeSkill: null,
         messages: [
           new ToolMessage({
             content: `Proposed a merged version of "${path}": ${explanation}`,

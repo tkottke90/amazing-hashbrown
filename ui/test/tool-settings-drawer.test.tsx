@@ -124,6 +124,20 @@ describe('ToolSettingsDrawer', () => {
     expect(screen.queryByText('Reset Defaults')).not.toBeInTheDocument();
   });
 
+  it('renders fully read-only for a skill-scoped tool, with no Save/Reset footer', () => {
+    render(
+      <ToolSettingsDrawer
+        tool={tool({ toolId: 'read_skill_reference', category: 'skill-scoped' })}
+        onSaved={jest.fn()}
+        trigger={OPEN_TRIGGER}
+      />,
+    );
+    expect(screen.getByLabelText('Description')).toBeDisabled();
+    expect(screen.getByLabelText('Instructions')).toBeDisabled();
+    expect(screen.queryByText('Save')).not.toBeInTheDocument();
+    expect(screen.queryByText('Reset Defaults')).not.toBeInTheDocument();
+  });
+
   it('Save sends the generic fields plus the matching tool-specific extra fields', async () => {
     mockPatch.mockResolvedValue(tool({ enabled: false }));
     const onSaved = jest.fn();

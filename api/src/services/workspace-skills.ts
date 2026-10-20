@@ -8,8 +8,11 @@ import { getWorkspaceStore, type WorkspaceStore } from './workspace-store.js';
 // The read-only view of skills every consumer (slash-command expansion,
 // search_skills, the workspace skills route) needs. Narrowed with Pick so no
 // caller can reach write or script-execution methods — child managers reject
-// those at runtime too.
-export type SkillReader = Pick<SkillsManager, 'list' | 'search' | 'lookup'>;
+// those at runtime too. 'load' (body + scripts + references in one disk
+// read) is what skill-expansion.middleware.ts uses to also build the
+// Artifact Index; 'lookup' (body only) stays for any other consumer that
+// doesn't need the artifact lists.
+export type SkillReader = Pick<SkillsManager, 'list' | 'search' | 'lookup' | 'load'>;
 
 // Where a workspace ships its own skills, relative to its directory.
 export const WORKSPACE_SKILLS_DIR = join('.agents', 'skills');

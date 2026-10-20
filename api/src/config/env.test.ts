@@ -5,12 +5,28 @@ import {
   ContextWindowSchema,
   LoopGuardSchema,
   ModelConfigSchema,
+  SkillsConfigSchema,
   parseFavoriteModels,
   parseProviders,
   resolveServerTimezone,
 } from './env.js';
 
 describe('config/env', () => {
+  describe('SkillsConfigSchema', () => {
+    it('defaults scriptTimeoutMs to 5 minutes when given an empty object', () => {
+      expect(SkillsConfigSchema.parse({}).scriptTimeoutMs).to.equal(300_000);
+    });
+
+    it('accepts an overridden scriptTimeoutMs', () => {
+      expect(SkillsConfigSchema.parse({ scriptTimeoutMs: 60_000 }).scriptTimeoutMs).to.equal(60_000);
+    });
+
+    it('rejects a non-positive scriptTimeoutMs', () => {
+      expect(() => SkillsConfigSchema.parse({ scriptTimeoutMs: 0 })).to.throw();
+      expect(() => SkillsConfigSchema.parse({ scriptTimeoutMs: -1 })).to.throw();
+    });
+  });
+
   describe('LoopGuardSchema', () => {
     it('defaults all fields when given an empty object', () => {
       const result = LoopGuardSchema.parse({});
