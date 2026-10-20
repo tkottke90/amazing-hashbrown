@@ -1,0 +1,3 @@
+# Sidebar retention filtering applies only to the unfiltered thread fetch
+
+`GET /api/v1/threads` has three branches: no `type` param (the sidebar's own fetch), `?type=all` (the Threads page), and an explicit `?type=X`. We apply the Sidebar Retention Window (and Archived Thread exclusion) only to the first branch, leaving `?type=all` and any explicit `?type=X` call showing every thread unfiltered. This keeps the Threads page a trustworthy, complete record of everything that still exists — the one place you can always find a thread the sidebar is hiding — at the cost of the filtering logic not being a single blanket rule across every call to this endpoint. A future "fix" that applies it uniformly would silently break that guarantee.
