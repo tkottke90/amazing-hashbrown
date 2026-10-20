@@ -36,6 +36,11 @@ function spawnCommand(
       shell: true,
       cwd: config.workingDirectory,
       env: { ...defaultShellEnv(), ...config.env },
+      // Leader of its own process group, so a timeout can SIGKILL the
+      // whole group (see below) — shell: true already means `command` runs
+      // under a `sh -c` wrapper, which forks the real work as a child;
+      // SIGKILLing only that wrapper would orphan it.
+      detached: true,
     });
 
     const stdoutChunks: string[] = [];
@@ -46,7 +51,17 @@ function spawnCommand(
       timeoutMs !== undefined
         ? setTimeout(() => {
             timedOut = true;
-            proc.kill('SIGKILL');
+            // An orphaned child of the `sh -c` wrapper would otherwise keep
+            // running past the timeout and keep the stdout/stderr pipes
+            // open, so 'close' below (which waits for stdio to finish)
+            // would never fire. Killing the negative pid signals the whole
+            // process group instead of just the wrapper.
+            try {
+              if (proc.pid) process.kill(-proc.pid, 'SIGKILL');
+              else proc.kill('SIGKILL');
+            } catch {
+              proc.kill('SIGKILL');
+            }
           }, timeoutMs)
         : undefined;
 

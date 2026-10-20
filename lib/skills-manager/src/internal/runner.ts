@@ -24,7 +24,10 @@ function spawnAndCapture(
   opts: { env?: NodeJS.ProcessEnv; timeoutMs?: number } = {},
 ): Promise<ScriptResult> {
   return new Promise((resolve, reject) => {
-    const proc = spawn(cmd, args, opts.env ? { env: opts.env } : undefined);
+    // detached: true makes this process the leader of its own process
+    // group, so a timeout can SIGKILL the whole group (see below) rather
+    // than just this one process.
+    const proc = spawn(cmd, args, { ...(opts.env ? { env: opts.env } : {}), detached: true });
     let stdout = '';
     let stderr = '';
     let timedOut = false;
@@ -33,7 +36,19 @@ function spawnAndCapture(
       opts.timeoutMs !== undefined
         ? setTimeout(() => {
             timedOut = true;
-            proc.kill('SIGKILL');
+            // A plain proc.kill('SIGKILL') only kills this process. A shell
+            // script's last statement is often an external command (e.g.
+            // `sleep`) that `sh` forks as a child — SIGKILLing only `sh`
+            // orphans that child, which keeps running past the timeout and
+            // keeps the stdout/stderr pipes open, so 'close' below (which
+            // waits for stdio to finish) would never fire. Killing the
+            // negative pid signals the whole process group instead.
+            try {
+              if (proc.pid) process.kill(-proc.pid, 'SIGKILL');
+              else proc.kill('SIGKILL');
+            } catch {
+              proc.kill('SIGKILL');
+            }
           }, opts.timeoutMs)
         : undefined;
 
