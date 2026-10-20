@@ -1,0 +1,3 @@
+# Active Skill tracks every invoked skill, not just Skill-Gated Tools' registrants
+
+Before this, the field now called Active Skill (`activeGatedSkill`) was only set when the invoked skill matched one of the four entries in `GATED_SKILL_REGISTRATIONS` — every other skill invocation left it `null`, so nothing could tell which skill was currently running. It now gets set on every successful slash-command resolution, for any skill, so Skill-Scoped Tools can resolve "which skill" generally. Skill-Gated Tools is unaffected: it still matches by exact skill name, so a skill with no registration simply matches nothing there.

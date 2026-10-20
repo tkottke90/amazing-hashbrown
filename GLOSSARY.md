@@ -143,3 +143,29 @@ _Avoid_: Review queue, triage task, staging item
 **Disposition**:
 The `identified` AfterAgent outcome's own record of what actually happened to the knowledge it found: `written` (landed in the Write Band) or `review` (handed to a Placement Review Task). Distinct from the outcome itself — `identified` always means "worth saving," Disposition says where it ended up.
 _Avoid_: Result, status, action
+
+# Skill Invocation & Runtime Access
+
+How a running skill learns which skill is currently active, and reaches its own scripts and reference docs at runtime instead of only getting its body text injected once.
+
+## Language
+
+**Active Skill**:
+The name of whichever skill a slash-command invocation most recently resolved to, tracked in agent state and persisted across subsequent non-slash-command turns until another slash command resolves. Set for every skill invocation, not only the ones with a Skill-Gated Tools registration — broadening what the field (formerly `activeGatedSkill`) tracks (see ADR-0019).
+_Avoid_: Current skill, invoked skill, activeGatedSkill
+
+**Skill-Gated Tools**:
+The existing pattern (`skill-gated-tools.middleware.ts`) that hides a specific tool from the model's tool list unless the Active Skill is exactly the one named skill registered for it in `GATED_SKILL_REGISTRATIONS` — e.g. `create_workspace` only shows up while `create-workspace` is the Active Skill. One registration maps one skill to its own tool set.
+_Avoid_: Gated tools (ambiguous with Skill-Scoped Tools)
+
+**Skill-Scoped Tools**:
+Tools visible whenever any skill is the Active Skill, rather than one specific registered skill — and that resolve "which skill" implicitly from the Active Skill at call time instead of taking a skill name as an argument. `read_skill_reference` and `run_skill_script` are Skill-Scoped Tools.
+_Avoid_: Gated tools, active-skill tools
+
+**Skill Artifact**:
+A file belonging to a skill's `scripts/` or `references/` directory — its executable scripts and reference docs, collectively, as distinct from the skill's own `SKILL.md` body and frontmatter.
+_Avoid_: Skill file, resource
+
+**Artifact Index**:
+A block of text computed fresh from disk and appended after a skill's authored body on every invocation, listing every Skill Artifact currently present and the exact `read_skill_reference`/`run_skill_script` call needed to use it. Never written back into `SKILL.md` — regenerated every time so it can't drift from what's actually on disk (see ADR-0022).
+_Avoid_: Artifact manifest, script list
