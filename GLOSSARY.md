@@ -80,6 +80,10 @@ _Avoid_: Provenance, writer, author
 An optional free-text label on an `agent`-sourced widget, naming the automation or person responsible for its ongoing updates (e.g. a script name). Settable only by an Agent/CLI write, never by the UI drawer; preserved across any later write that doesn't resupply it. `system`-sourced widgets never have one (see System Widget).
 _Avoid_: Owner, author
 
+**Dashboard Widget Target Snippet**:
+A ready-to-paste natural-language sentence, copied from a writable Widget's own copy-targeting button, naming that Widget's Dashboard Id, Dashboard Name, Widget Id, Widget Title, and type — everything an Agent or the CLI needs to resolve `update_dashboard_widget_content`'s `dashboardId`/`widgetId` without any other lookup. Not offered on System Widgets or Spacer Widgets, neither of which has a Widget Payload an Agent/CLI write could ever touch. See ADR-0019.
+_Avoid_: Targeting snippet, copy snippet, targeting info
+
 ### System Widgets
 
 **System Widget**:
