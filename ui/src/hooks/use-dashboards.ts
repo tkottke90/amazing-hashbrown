@@ -86,6 +86,13 @@ async function deleteDashboard(id: string): Promise<void> {
   }
 }
 
+/** Synchronous read of the current dashboard list, for callers that need a
+ * name lookup without their own refresh() fetch — the dashboard page's own
+ * useDashboards() call already keeps this list current. */
+export function getDashboards(): DashboardListEntry[] {
+  return dashboards.value;
+}
+
 // Test-only: resets module-level state between test files/cases — same
 // role as _resetDashboardWidgetsForTests() in use-dashboard-widgets.ts.
 export function _resetDashboardsForTests(): void {

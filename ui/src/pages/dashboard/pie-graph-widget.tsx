@@ -13,6 +13,7 @@ import { WidgetContent } from './widget-content';
 import { WidgetAction } from './widget-action';
 import { WidgetFooter } from './widget-footer';
 import { WidgetDrawer } from './widget-drawer';
+import { WidgetCopyTargetButton } from './widget-copy-target-button';
 import type { PieGraphWidget as PieGraphWidgetData } from '@tkottke90/amazing-hashbrown-widgets/types';
 
 interface PieGraphWidgetProps {
@@ -125,6 +126,12 @@ export function PieGraphWidget({
               <Pencil />
             </Button>
           }
+        />
+        <WidgetCopyTargetButton
+          dashboardId={dashboardId}
+          widgetId={widget.id}
+          widgetTitle={widget.title}
+          widgetType={widget.type}
         />
         <Button
           type="button"
