@@ -67,9 +67,66 @@ export const ProviderSchema = z.object({
   numCtx: z.number().int().positive().optional(),
   topK: z.number().int().positive().optional(),
   repeatPenalty: z.number().optional(),
+  // Static headers sent with every outbound request this provider makes,
+  // merged on top of whatever its auth mechanism sets (an explicit header
+  // here wins on name collision). Applies to every provider type, including
+  // the Azure OpenAI Provider below — see GLOSSARY.md "Custom Headers".
+  headers: z.record(z.string(), z.string()).optional(),
 });
 
 export type ProviderConfig = z.infer<typeof ProviderSchema>;
+
+// The OAuth2 Client Credentials Flow registration an Azure OpenAI Provider
+// authenticates with — see GLOSSARY.md "Client Credentials"/"Access Token".
+// `grantType` is free text sent verbatim as the token request's `grant_type`
+// — no grant type other than 'client_credentials' is ever actually
+// implemented (see ADR-0025/the design doc §5).
+export const ClientCredentialsSchema = z.object({
+  tokenUrl: z.string(),
+  clientId: z.string(),
+  // May arrive masked ('****') on a settings PATCH — resolved the same way
+  // apiKey's mask sentinel is (see settings.handlers.ts's maskApiKey/unmaskApiKey).
+  clientSecret: z.string().optional(),
+  scope: z.string().optional(),
+  grantType: z.string().default('client_credentials'),
+});
+
+export type ClientCredentials = z.infer<typeof ClientCredentialsSchema>;
+
+// A separate schema, not more optional fields on ProviderSchema above — see
+// ADR-0024. OIDC auth is scoped to exactly this provider type (GLOSSARY.md
+// "Azure OpenAI Provider"); the other three types never gain `auth`/OIDC
+// fields. Azure OpenAI is deployment-scoped rather than model-id-scoped, so
+// `deploymentName` is this provider's one "model" (see GLOSSARY.md
+// "Deployment Name") — there is no `defaultModel`/`baseUrl`/`apiKey` here.
+export const AzureOpenAiProviderSchema = z.object({
+  name: z.string(),
+  type: z.literal('azure-openai'),
+  endpoint: z.string(),
+  deploymentName: z.string(),
+  apiVersion: z.string(),
+  auth: ClientCredentialsSchema,
+  headers: z.record(z.string(), z.string()).optional(),
+  // Same sampling/pricing shape every other provider already has, reused
+  // as-is — models[] entries are keyed by deploymentName rather than a model
+  // id, but ModelConfigSchema's shape doesn't care which string it is.
+  models: z.array(ModelConfigSchema).optional(),
+  maxConcurrency: z.number().int().optional(),
+  timeoutMs: z.number().int().optional(),
+  temperature: z.number().optional(),
+  topP: z.number().optional(),
+  seed: z.number().int().optional(),
+});
+
+export type AzureOpenAiProviderConfig = z.infer<typeof AzureOpenAiProviderSchema>;
+
+// `providers[]`'s actual element type: the existing ProviderSchema or the
+// Azure OpenAI Provider's own schema — a union rather than a Zod
+// discriminatedUnion, since every consumer already hand-narrows on `type`
+// itself (see ADR-0024/the design doc §3 for why a true discriminated union
+// buys nothing here).
+export const AnyProviderSchema = z.union([ProviderSchema, AzureOpenAiProviderSchema]);
+export type AnyProviderConfig = ProviderConfig | AzureOpenAiProviderConfig;
 
 // A user-pinned provider/model pair, surfaced at the top of the chat
 // Provider menu (issue #137). An ordered list rather than a Record — a
@@ -103,35 +160,71 @@ export function parseFavoriteModels(raw: unknown): FavoriteModel[] {
 // providers getter below). Uses console.warn, not the shared logger —
 // logger.ts imports from this file, so logger.warn from here would be a
 // circular import (see the timezone getter below for the same reasoning).
-export function parseProviders(raw: unknown): ProviderConfig[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.flatMap((entry) => {
-    if (typeof entry !== 'object' || entry === null) return [];
-    const { models: rawModels, ...rest } = entry as Record<string, unknown>;
-    const base = ProviderSchema.omit({ models: true }).safeParse(rest);
-    if (!base.success) {
-      const name = (rest as { name?: unknown }).name;
+// Shared by both branches of parseProviders below — same "drop only the
+// malformed model, not the whole provider" philosophy either schema uses.
+function parseProviderModels(rawModels: unknown, providerName: string): ModelConfig[] | undefined {
+  if (!Array.isArray(rawModels)) return undefined;
+  return rawModels.flatMap((m) => {
+    const parsed = ModelConfigSchema.safeParse(m);
+    if (!parsed.success) {
+      const id = (m as { id?: unknown })?.id;
       console.warn(
-        `config: provider "${typeof name === 'string' ? name : '?'}" is invalid — dropped`,
-        base.error.issues,
+        `config: provider "${providerName}" model "${typeof id === 'string' ? id : '(no id)'}" has an invalid value — entry dropped`,
+        parsed.error.issues,
       );
       return [];
     }
-    const models = Array.isArray(rawModels)
-      ? rawModels.flatMap((m) => {
-          const parsed = ModelConfigSchema.safeParse(m);
-          if (!parsed.success) {
-            const id = (m as { id?: unknown })?.id;
-            console.warn(
-              `config: provider "${base.data.name}" model "${typeof id === 'string' ? id : '(no id)'}" has an invalid value — entry dropped`,
-              parsed.error.issues,
-            );
-            return [];
-          }
-          return [parsed.data];
-        })
-      : undefined;
-    return [{ ...base.data, ...(models ? { models } : {}) }];
+    return [parsed.data];
+  });
+}
+
+function warnDroppedProvider(rest: Record<string, unknown>, issues: z.ZodIssue[]): void {
+  const name = (rest as { name?: unknown }).name;
+  console.warn(
+    `config: provider "${typeof name === 'string' ? name : '?'}" is invalid — dropped`,
+    issues,
+  );
+}
+
+// Split into one function per concrete schema — rather than picking between
+// the two with a ternary and calling .omit() on the result — because the
+// two schemas' .omit() signatures don't unify through a shared variable:
+// TS can't call a method through a union of two differently-shaped generic
+// function types.
+function parseStandardProvider(
+  rest: Record<string, unknown>,
+  rawModels: unknown,
+): ProviderConfig[] {
+  const base = ProviderSchema.omit({ models: true }).safeParse(rest);
+  if (!base.success) {
+    warnDroppedProvider(rest, base.error.issues);
+    return [];
+  }
+  const models = parseProviderModels(rawModels, base.data.name);
+  return [{ ...base.data, ...(models ? { models } : {}) }];
+}
+
+function parseAzureOpenAiProvider(
+  rest: Record<string, unknown>,
+  rawModels: unknown,
+): AzureOpenAiProviderConfig[] {
+  const base = AzureOpenAiProviderSchema.omit({ models: true }).safeParse(rest);
+  if (!base.success) {
+    warnDroppedProvider(rest, base.error.issues);
+    return [];
+  }
+  const models = parseProviderModels(rawModels, base.data.name);
+  return [{ ...base.data, ...(models ? { models } : {}) }];
+}
+
+export function parseProviders(raw: unknown): AnyProviderConfig[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((entry): AnyProviderConfig[] => {
+    if (typeof entry !== 'object' || entry === null) return [];
+    const { models: rawModels, ...rest } = entry as Record<string, unknown>;
+    return (rest as { type?: unknown }).type === 'azure-openai'
+      ? parseAzureOpenAiProvider(rest, rawModels)
+      : parseStandardProvider(rest, rawModels);
   });
 }
 
@@ -375,7 +468,7 @@ const AppConfigSchema = z.object({
   skillsRoot: z.string().default('./skills'),
   projectsRoot: z.string().default('./projects'),
   tempProjectsRoot: z.string().optional(),
-  providers: z.array(ProviderSchema).default([]),
+  providers: z.array(AnyProviderSchema).default([]),
   defaultProvider: z.string().default(''),
   timezone: z.string().default('UTC'),
   // Per-IP cap on POST /api/v1/webhooks/tasks — that endpoint may be
@@ -444,7 +537,7 @@ export const env = {
   get webhookRateLimitPerMinute() {
     return configManager.getNumber('webhookRateLimitPerMinute', 60) as number;
   },
-  get providers(): ProviderConfig[] {
+  get providers(): AnyProviderConfig[] {
     // configManager.get() always String()-coerces its result (it's built for
     // scalar env-var-style values) — getSection() is the only accessor that
     // returns the raw, unstringified section, so it's used here (validated

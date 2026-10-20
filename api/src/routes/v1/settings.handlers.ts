@@ -11,11 +11,11 @@ import {
   EmbeddingsSchema,
   RLMConfigSchema,
   WebFetchConfigSchema,
-  ProviderSchema,
+  AnyProviderSchema,
   FavoriteModelSchema,
   GithubTrackerSchema,
   WorkspacesSchema,
-  type ProviderConfig,
+  type AnyProviderConfig,
   type FavoriteModel,
   type CostEntry,
   type RLMConfig,
@@ -23,6 +23,7 @@ import {
 } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
 import { describeCredential, validateCredentialValue } from '../../config/credential-value.js';
+import { getAzureTokenCache } from '../../services/azure-token-cache.js';
 
 // ---- HandlerResult (mirrors artifacts.handlers.ts) ----------------------------
 
@@ -66,7 +67,7 @@ export interface ConfigManagerAccessor {
 export interface EnvAccessor {
   port: number;
   logLevel: string;
-  providers: ProviderConfig[];
+  providers: AnyProviderConfig[];
   defaultProvider: string;
   favoriteModels: FavoriteModel[];
   database: { path: string };
@@ -171,7 +172,7 @@ export type StorageSettings = {
 };
 
 export type ModelProvidersSettings = {
-  providers: ProviderConfig[];
+  providers: AnyProviderConfig[];
   defaultProvider: string;
   favoriteModels: FavoriteModel[];
 };
@@ -194,7 +195,7 @@ export type AgentBehaviorSettings = {
 // §4/§6).
 export type ModelSettingsEntry = {
   provider: string;
-  providerType: ProviderConfig['type'];
+  providerType: AnyProviderConfig['type'];
   modelId: string;
 } & Omit<ModelConfig, 'id'>;
 
@@ -212,7 +213,13 @@ type WriteFn = (validated: unknown, configDir: string, env: EnvAccessor) => void
 // referencing another field or stored config). Runs after patchSchema
 // succeeds and before write; a non-null result is returned as a 400 with
 // these field errors and nothing is written.
-type ValidateFn = (validated: unknown, env: EnvAccessor) => Record<string, string[]> | null;
+// Allowed to return a Promise so the model-providers slug can validate a
+// Rotate by actually fetching a token before the write (ADR-0026) — every
+// other slug's validate stays synchronous; awaiting a plain value is a no-op.
+type ValidateFn = (
+  validated: unknown,
+  env: EnvAccessor,
+) => Record<string, string[]> | null | Promise<Record<string, string[]> | null>;
 
 type SlugDef = {
   get: GetFn;
@@ -320,45 +327,97 @@ const SLUG_MAP: Record<string, SlugDef> = {
 
   'model-providers': {
     get: (env) => ({
-      providers: env.providers.map((p) => ({
-        ...p,
-        apiKey: maskApiKey(p.apiKey),
-      })),
+      providers: env.providers.map((p) =>
+        p.type === 'azure-openai'
+          ? { ...p, auth: { ...p.auth, clientSecret: maskApiKey(p.auth.clientSecret) } }
+          : { ...p, apiKey: maskApiKey(p.apiKey) },
+      ),
       defaultProvider: env.defaultProvider,
       favoriteModels: env.favoriteModels,
     }),
     patchSchema: z.object({
-      providers: z.array(ProviderSchema).optional(),
+      providers: z.array(AnyProviderSchema).optional(),
       defaultProvider: z.string().optional(),
       favoriteModels: z.array(FavoriteModelSchema).optional(),
     }),
-    validate: (v, env) => {
-      const data = v as { providers?: ProviderConfig[]; favoriteModels?: FavoriteModel[] };
+    // Async: beyond the existing favorites cross-check, a submitted
+    // azure-openai entry whose clientId/clientSecret actually changed (a
+    // real Rotate) is validated by fetching a fresh Access Token with the
+    // new values *before* the write runs — a failure rejects the whole
+    // PATCH instead of persisting credentials that don't work (ADR-0026).
+    // A successful fetch also seeds the token cache, so write() below
+    // never needs to re-fetch.
+    validate: async (v, env): Promise<Record<string, string[]> | null> => {
+      const data = v as { providers?: AnyProviderConfig[]; favoriteModels?: FavoriteModel[] };
       if (data.providers === undefined && data.favoriteModels === undefined) return null;
       // Validate against the post-patch state: incoming values where the
       // body has them, stored values otherwise — so changing providers
       // alone can't silently orphan the stored favorites.
       const providers = data.providers ?? env.providers;
       const favorites = data.favoriteModels ?? env.favoriteModels;
-      const errors = validateFavoriteModels(
+      const favoriteErrors = validateFavoriteModels(
         favorites,
         providers.map((p) => p.name),
       );
-      return errors.length > 0 ? { favoriteModels: errors } : null;
+      if (favoriteErrors.length > 0) return { favoriteModels: favoriteErrors };
+
+      if (data.providers !== undefined) {
+        const storedByName = new Map(env.providers.map((p) => [p.name, p]));
+        for (const p of data.providers) {
+          if (p.type !== 'azure-openai') continue;
+          const stored = storedByName.get(p.name);
+          const storedAuth = stored?.type === 'azure-openai' ? stored.auth : undefined;
+          const resolvedSecret = unmaskApiKey(p.auth.clientSecret, storedAuth?.clientSecret);
+          const isRotate =
+            p.auth.clientId !== storedAuth?.clientId || resolvedSecret !== storedAuth?.clientSecret;
+          if (!isRotate) continue;
+          try {
+            await getAzureTokenCache().refresh({
+              ...p,
+              auth: { ...p.auth, clientSecret: resolvedSecret },
+            });
+          } catch (err) {
+            return {
+              providers: [
+                `Failed to authenticate "${p.name}" with the new Client Credentials: ${
+                  err instanceof Error ? err.message : String(err)
+                }`,
+              ],
+            };
+          }
+        }
+      }
+      return null;
     },
     write: (v, configDir, env) => {
       const data = v as {
-        providers?: ProviderConfig[];
+        providers?: AnyProviderConfig[];
         defaultProvider?: string;
         favoriteModels?: FavoriteModel[];
       };
       const updates: Record<string, unknown> = {};
       if (data.providers !== undefined) {
         const storedByName = new Map(env.providers.map((p) => [p.name, p]));
-        updates.providers = data.providers.map((p) => ({
-          ...p,
-          apiKey: unmaskApiKey(p.apiKey, storedByName.get(p.name)?.apiKey),
-        }));
+        updates.providers = data.providers.map((p) => {
+          const stored = storedByName.get(p.name);
+          if (p.type === 'azure-openai') {
+            const storedAuth = stored?.type === 'azure-openai' ? stored.auth : undefined;
+            return {
+              ...p,
+              auth: {
+                ...p.auth,
+                clientSecret: unmaskApiKey(p.auth.clientSecret, storedAuth?.clientSecret),
+              },
+            };
+          }
+          return {
+            ...p,
+            apiKey: unmaskApiKey(
+              p.apiKey,
+              stored?.type !== 'azure-openai' ? stored?.apiKey : undefined,
+            ),
+          };
+        });
       }
       if (data.defaultProvider !== undefined) updates.defaultProvider = data.defaultProvider;
       if (data.favoriteModels !== undefined) updates.favoriteModels = data.favoriteModels;
@@ -576,7 +635,7 @@ export async function patchSettingsSectionHandler(
     return invalid('Validation failed', fieldErrors);
   }
 
-  const crossFieldErrors = def.validate?.(parsed.data, envAccessor);
+  const crossFieldErrors = await def.validate?.(parsed.data, envAccessor);
   if (crossFieldErrors) return invalid('Validation failed', crossFieldErrors);
 
   try {

@@ -21,7 +21,10 @@ export function resolveTurnModel(
   model?: string,
 ): { provider: string; model: string } {
   const config = resolveProviderConfig(provider);
-  const resolvedModel = model ?? config.defaultModel;
+  // The Azure OpenAI Provider has no defaultModel — its Deployment Name is
+  // its one "model" (see GLOSSARY.md "Deployment Name").
+  const resolvedModel =
+    model ?? (config.type === 'azure-openai' ? config.deploymentName : config.defaultModel);
   if (!resolvedModel) {
     throw new Error(`Provider "${config.name}" has no defaultModel and none was passed`);
   }

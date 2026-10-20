@@ -2,7 +2,7 @@ import { createServer, type Server } from 'node:http';
 import { describe, it, after } from 'mocha';
 import { expect } from 'chai';
 import { ChatOllama } from '@langchain/ollama';
-import { ChatOpenAI } from '@langchain/openai';
+import { ChatOpenAI, AzureChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
 import type { Ollama } from 'ollama';
 import {
@@ -15,9 +15,10 @@ import {
   resolveVisionCapability,
   resolveVisionCapabilityFromConfig,
   fetchModelDetails,
+  listModels,
   FALLBACK_VISION_CAPABILITIES,
 } from './provider-factory.js';
-import type { ProviderConfig } from '../config/env.js';
+import type { ProviderConfig, AzureOpenAiProviderConfig } from '../config/env.js';
 
 // Minimal local HTTP server standing in for an OpenAI-compatible /models
 // endpoint — there's no sinon in this repo's toolchain and fetchModelDetails
@@ -69,6 +70,35 @@ const anthropicConfig: ProviderConfig = {
   apiKey: 'sk-ant-test',
   defaultModel: 'claude-sonnet-4-6',
 };
+
+const azureConfig: AzureOpenAiProviderConfig = {
+  name: 'azure',
+  type: 'azure-openai',
+  endpoint: 'https://my-resource.openai.azure.com',
+  deploymentName: 'gpt-4o',
+  apiVersion: '2024-10-21',
+  auth: {
+    tokenUrl: 'https://login.microsoftonline.com/tenant/oauth2/v2.0/token',
+    clientId: 'client-id',
+    clientSecret: 'client-secret',
+    grantType: 'client_credentials',
+  },
+};
+
+// A stub Access Token cache that never makes a real HTTP call — proves the
+// azureADTokenProvider closure wiring, not just field passthrough.
+function stubTokenCache(token = 'fake-token') {
+  const calls: AzureOpenAiProviderConfig[] = [];
+  return {
+    calls,
+    cache: {
+      getToken: async (config: AzureOpenAiProviderConfig) => {
+        calls.push(config);
+        return token;
+      },
+    },
+  };
+}
 
 describe('services/provider-factory', () => {
   describe('createProviderFromConfig()', () => {
@@ -241,6 +271,111 @@ describe('services/provider-factory', () => {
         }) as ChatOllama;
         expect(agent.temperature).to.equal(0.4);
       });
+    });
+
+    describe('azure-openai', () => {
+      it('returns AzureChatOpenAI for type azure-openai', () => {
+        const { cache } = stubTokenCache();
+        const agent = createProviderFromConfig(azureConfig, undefined, { tokenCache: cache });
+        expect(agent).to.be.instanceOf(AzureChatOpenAI);
+      });
+
+      it('passes endpoint, deploymentName and apiVersion through to the Azure-specific fields', () => {
+        const { cache } = stubTokenCache();
+        const agent = createProviderFromConfig(azureConfig, undefined, {
+          tokenCache: cache,
+        }) as AzureChatOpenAI;
+        expect(agent.azureOpenAIEndpoint).to.equal('https://my-resource.openai.azure.com');
+        expect(agent.azureOpenAIApiDeploymentName).to.equal('gpt-4o');
+        expect(agent.azureOpenAIApiVersion).to.equal('2024-10-21');
+      });
+
+      it('wires azureADTokenProvider to the injected token cache rather than a static apiKey', async () => {
+        const { cache, calls } = stubTokenCache('tok-from-cache');
+        const agent = createProviderFromConfig(azureConfig, undefined, {
+          tokenCache: cache,
+        }) as AzureChatOpenAI;
+        const token = await agent.azureADTokenProvider?.();
+        expect(token).to.equal('tok-from-cache');
+        expect(calls).to.have.length(1);
+        expect(calls[0]?.name).to.equal('azure');
+      });
+
+      it('defaults to the shared process-wide token cache when none is injected', () => {
+        // Just proves construction doesn't throw without an explicit
+        // tokenCache dep — getAzureTokenCache() is only actually called
+        // lazily, inside azureADTokenProvider, never at construction time.
+        expect(() => createProviderFromConfig(azureConfig)).to.not.throw();
+      });
+
+      it('throws when no deploymentName-derived model and no model override', () => {
+        const { cache } = stubTokenCache();
+        const noModel = { ...azureConfig, deploymentName: '' };
+        expect(() => createProviderFromConfig(noModel, undefined, { tokenCache: cache })).to.throw(
+          /defaultModel/,
+        );
+      });
+    });
+  });
+
+  describe('headers passthrough', () => {
+    it('passes headers through to ChatOllama (forwarded into its internal ollama client)', () => {
+      const agent = createProviderFromConfig({
+        ...ollamaConfig,
+        headers: { 'x-tenant-id': 'acme' },
+      }) as ChatOllama;
+      // ChatOllama doesn't retain `headers` as its own field — it forwards
+      // the constructor option straight into `this.client` (the `ollama`
+      // npm client), which stores it at `this.config.headers`. That field
+      // isn't part of the `ollama` package's declared public type, so this
+      // reads it via a loose cast rather than fighting the type checker
+      // over an internal implementation detail two layers down.
+      const client = agent.client as unknown as { config?: { headers?: unknown } };
+      expect(client.config?.headers).to.deep.equal({ 'x-tenant-id': 'acme' });
+    });
+
+    it('passes headers through to ChatOpenAI as configuration.defaultHeaders', () => {
+      const agent = createProviderFromConfig({
+        ...openaiConfig,
+        headers: { 'x-tenant-id': 'acme' },
+      }) as ChatOpenAI;
+      expect(agent.clientConfig?.defaultHeaders).to.deep.equal({ 'x-tenant-id': 'acme' });
+    });
+
+    it('passes headers through to ChatAnthropic as clientOptions.defaultHeaders', () => {
+      const agent = createProviderFromConfig({
+        ...anthropicConfig,
+        headers: { 'x-tenant-id': 'acme' },
+      }) as ChatAnthropic;
+      expect(agent.clientOptions.defaultHeaders).to.deep.equal({ 'x-tenant-id': 'acme' });
+    });
+
+    it('passes headers through to AzureChatOpenAI as configuration.defaultHeaders', () => {
+      const { cache } = stubTokenCache();
+      const agent = createProviderFromConfig(
+        { ...azureConfig, headers: { 'x-tenant-id': 'acme' } },
+        undefined,
+        { tokenCache: cache },
+      ) as AzureChatOpenAI;
+      expect(agent.clientConfig?.defaultHeaders).to.deep.equal({ 'x-tenant-id': 'acme' });
+    });
+
+    it('leaves headers unset for every type when not configured', () => {
+      const ollama = createProviderFromConfig(ollamaConfig) as ChatOllama;
+      const ollamaClient = ollama.client as unknown as { config?: { headers?: unknown } };
+      expect(ollamaClient.config?.headers).to.equal(undefined);
+      expect(
+        (createProviderFromConfig(openaiConfig) as ChatOpenAI).clientConfig?.defaultHeaders,
+      ).to.equal(undefined);
+    });
+  });
+
+  describe('listModels()/fetchModelIds (private)', () => {
+    it('resolves to [deploymentName] for azure-openai without making any HTTP call', async () => {
+      // azureConfig's tokenUrl/endpoint point nowhere reachable — if this
+      // made a live call it would reject or hang, not resolve immediately.
+      const models = await listModels(azureConfig);
+      expect(models).to.deep.equal(['gpt-4o']);
     });
   });
 

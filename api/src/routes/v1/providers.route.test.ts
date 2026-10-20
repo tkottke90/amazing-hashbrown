@@ -1,9 +1,23 @@
 import { createServer, type Server } from 'node:http';
 import { describe, it, afterEach } from 'mocha';
 import { expect } from 'chai';
-import { configManager } from '../../config/env.js';
+import { configManager, type AzureOpenAiProviderConfig } from '../../config/env.js';
 import { startTestServer } from '../../../tests/utilities/http-test-server.js';
 import { providersRouter } from './providers.route.js';
+import { getAzureTokenCache } from '../../services/azure-token-cache.js';
+
+const azureConfig: AzureOpenAiProviderConfig = {
+  name: 'azure',
+  type: 'azure-openai',
+  endpoint: 'https://my-resource.openai.azure.com',
+  deploymentName: 'gpt-4o',
+  apiVersion: '2024-10-21',
+  auth: {
+    tokenUrl: 'https://login.example.com/token',
+    clientId: 'id',
+    grantType: 'client_credentials',
+  },
+};
 
 // Minimal local HTTP server standing in for an OpenAI-compatible /models
 // endpoint, tracking every request it receives — used both to supply a
@@ -45,6 +59,7 @@ describe('routes/v1/providers', () => {
     closeModelsServer = undefined;
     configManager.set('providers', []);
     configManager.set('defaultProvider', '');
+    getAzureTokenCache().revoke('azure');
   });
 
   it('calls the openai /models endpoint exactly twice total (not once per model) for a provider with 3 models', async () => {
@@ -186,5 +201,86 @@ describe('routes/v1/providers', () => {
     const model = body.providers[0]?.models[0];
     expect(model?.inputPricePerM).to.equal(2.5);
     expect(model?.outputPricePerM).to.equal(10);
+  });
+
+  it("reports an azure-openai provider's deploymentName as its one model, with no live /models call", async () => {
+    // No mock server at all — if GET / tried to make a live call for this
+    // provider, it would have nothing to reach and the request would fail
+    // rather than resolve.
+    configManager.set('providers', [azureConfig]);
+
+    ({ baseUrl, close: closeTestServer } = await startTestServer(
+      providersRouter,
+      '/api/v1/providers',
+    ));
+    const res = await fetch(baseUrl);
+    expect(res.status).to.equal(200);
+    const body = (await res.json()) as {
+      providers: { name: string; type: string; defaultModel?: string; models: { id: string }[] }[];
+    };
+
+    const provider = body.providers.find((p) => p.name === 'azure');
+    expect(provider?.defaultModel).to.equal('gpt-4o');
+    expect(provider?.models.map((m) => m.id)).to.deep.equal(['gpt-4o']);
+  });
+
+  describe('POST /:name/revoke', () => {
+    it('clears the cached Access Token for an existing azure-openai provider', async () => {
+      const tokenServer = await startModelsServer({ access_token: 'tok-1', expires_in: 3600 });
+      closeModelsServer = tokenServer.close;
+      configManager.set('providers', [
+        { ...azureConfig, auth: { ...azureConfig.auth, tokenUrl: tokenServer.baseUrl } },
+      ]);
+
+      // Seed the cache from the local stand-in token server.
+      await getAzureTokenCache().getToken({
+        ...azureConfig,
+        auth: { ...azureConfig.auth, tokenUrl: tokenServer.baseUrl },
+      });
+      expect(tokenServer.requestCount()).to.equal(1);
+
+      ({ baseUrl, close: closeTestServer } = await startTestServer(
+        providersRouter,
+        '/api/v1/providers',
+      ));
+      const res = await fetch(`${baseUrl}/azure/revoke`, { method: 'POST' });
+      expect(res.status).to.equal(200);
+      expect(await res.json()).to.deep.equal({ ok: true });
+
+      // The cache was actually cleared — the next getToken call re-fetches
+      // rather than returning the (now-revoked) cached token.
+      await getAzureTokenCache().getToken({
+        ...azureConfig,
+        auth: { ...azureConfig.auth, tokenUrl: tokenServer.baseUrl },
+      });
+      expect(tokenServer.requestCount()).to.equal(2);
+    });
+
+    it('404s for an unknown provider name', async () => {
+      configManager.set('providers', [azureConfig]);
+      ({ baseUrl, close: closeTestServer } = await startTestServer(
+        providersRouter,
+        '/api/v1/providers',
+      ));
+      const res = await fetch(`${baseUrl}/does-not-exist/revoke`, { method: 'POST' });
+      expect(res.status).to.equal(404);
+    });
+
+    it('404s for a provider that is not an azure-openai type', async () => {
+      configManager.set('providers', [
+        {
+          name: 'local',
+          type: 'ollama',
+          baseUrl: 'http://localhost:11434',
+          defaultModel: 'llama3',
+        },
+      ]);
+      ({ baseUrl, close: closeTestServer } = await startTestServer(
+        providersRouter,
+        '/api/v1/providers',
+      ));
+      const res = await fetch(`${baseUrl}/local/revoke`, { method: 'POST' });
+      expect(res.status).to.equal(404);
+    });
   });
 });

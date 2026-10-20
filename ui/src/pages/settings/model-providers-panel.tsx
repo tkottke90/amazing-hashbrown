@@ -14,7 +14,7 @@ import { useTitle } from '@/hooks/use-title';
 import { useSettingsSection } from './use-settings-section';
 import { SaveDiscardBar } from './save-discard-bar';
 import { FieldError } from './field-error';
-import { ProviderModal, type ProviderConfig } from './provider-modal';
+import { ProviderModal, type AnyProviderConfig } from './provider-modal';
 import { FormLayout } from '@/components/form-layout';
 import {
   fetchProviders,
@@ -23,9 +23,11 @@ import {
   type FavoriteModel,
 } from '@/hooks/use-providers';
 import { FavoriteModelModal } from './favorite-model-modal';
+import { revokeProviderToken } from '@/services/providers-api';
+import { showToast } from '@/lib/toast';
 
 interface ModelProvidersSettings {
-  providers: ProviderConfig[];
+  providers: AnyProviderConfig[];
   defaultProvider: string;
   favoriteModels: FavoriteModel[];
 }
@@ -34,6 +36,7 @@ const TYPE_LABELS: Record<string, string> = {
   ollama: 'Ollama',
   openai: 'OpenAI',
   anthropic: 'Anthropic',
+  'azure-openai': 'Azure OpenAI',
 };
 
 export function ModelProvidersPanel() {
@@ -86,11 +89,11 @@ export function ModelProvidersPanel() {
     invalidateProviders();
   }
 
-  function handleAddProvider(p: ProviderConfig) {
+  function handleAddProvider(p: AnyProviderConfig) {
     setField('providers', [...providers, p]);
   }
 
-  function handleEditProvider(index: number, p: ProviderConfig) {
+  function handleEditProvider(index: number, p: AnyProviderConfig) {
     // Merge, don't replace — ProviderModal's form only knows about
     // connection fields (baseUrl/apiKey/defaultModel/maxConcurrency), so a
     // plain replace would silently drop any field it doesn't carry, such as
@@ -99,6 +102,20 @@ export function ModelProvidersPanel() {
       i === index ? { ...existing, ...p } : existing,
     );
     setField('providers', updated);
+  }
+
+  async function handleRevokeToken(name: string) {
+    if (
+      !confirm(`Revoke the cached access token for "${name}"? It will re-authenticate on next use.`)
+    ) {
+      return;
+    }
+    try {
+      await revokeProviderToken(name);
+      showToast('success', 'Token revoked');
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to revoke token');
+    }
   }
 
   return (
@@ -142,20 +159,35 @@ export function ModelProvidersPanel() {
                           Default
                         </span>
                       )}
-                      {p.defaultModel && (
-                        <span class="truncate text-xs text-muted-foreground">{p.defaultModel}</span>
+                      {(p.type === 'azure-openai' ? p.deploymentName : p.defaultModel) && (
+                        <span class="truncate text-xs text-muted-foreground">
+                          {p.type === 'azure-openai' ? p.deploymentName : p.defaultModel}
+                        </span>
                       )}
                     </div>
-                    <ProviderModal
-                      mode="edit"
-                      initial={p}
-                      onSave={(updated) => handleEditProvider(i, updated)}
-                      trigger={
-                        <Button type="button" variant="ghost" size="sm">
-                          Edit
+                    <div class="flex items-center gap-2">
+                      {p.type === 'azure-openai' && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          class="text-destructive hover:text-destructive"
+                          onClick={() => void handleRevokeToken(p.name)}
+                        >
+                          Revoke token
                         </Button>
-                      }
-                    />
+                      )}
+                      <ProviderModal
+                        mode="edit"
+                        initial={p}
+                        onSave={(updated) => handleEditProvider(i, updated)}
+                        trigger={
+                          <Button type="button" variant="ghost" size="sm">
+                            Edit
+                          </Button>
+                        }
+                      />
+                    </div>
                   </li>
                 ))}
               </ul>

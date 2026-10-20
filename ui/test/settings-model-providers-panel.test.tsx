@@ -18,6 +18,11 @@ jest.mock('@/services/settings-api', () => {
 });
 jest.mock('@/lib/toast', () => ({ showToast: jest.fn() }));
 
+jest.mock('@/services/providers-api', () => ({
+  listProviderModels: jest.fn().mockResolvedValue([]),
+  revokeProviderToken: jest.fn(),
+}));
+
 // The panel and its Add-favorite modal read live model lists from this hook;
 // mock it so nothing hits a real fetch('/api/v1/providers') in jsdom. Tests
 // set `providers.value` to control what counts as "live".
@@ -30,9 +35,14 @@ jest.mock('@/hooks/use-providers', () => ({
 import { ModelProvidersPanel } from '@/pages/settings/model-providers-panel';
 import * as api from '@/services/settings-api';
 import * as providersHook from '@/hooks/use-providers';
+import * as providersApi from '@/services/providers-api';
+import { showToast } from '@/lib/toast';
 
 const mockFetch = api.fetchSettingsSection as jest.MockedFunction<typeof api.fetchSettingsSection>;
 const mockPatch = api.patchSettingsSection as jest.MockedFunction<typeof api.patchSettingsSection>;
+const mockRevoke = providersApi.revokeProviderToken as jest.MockedFunction<
+  typeof providersApi.revokeProviderToken
+>;
 
 const LIVE_PROVIDERS = [
   { name: 'ollama', type: 'ollama', models: [{ id: 'llama3' }, { id: 'qwen3:14b' }] },
@@ -162,6 +172,101 @@ describe('ModelProvidersPanel', () => {
     mockFetch.mockResolvedValue({ providers: [], defaultProvider: '' });
     render(<ModelProvidersPanel />);
     await waitFor(() => expect(screen.getByText(/No providers configured/)).toBeInTheDocument());
+  });
+
+  describe('Azure OpenAI provider', () => {
+    const AZURE_PROVIDER = {
+      name: 'azure',
+      type: 'azure-openai' as const,
+      endpoint: 'https://my-resource.openai.azure.com',
+      deploymentName: 'gpt-4o',
+      apiVersion: '2024-10-21',
+      auth: {
+        tokenUrl: 'https://login.example.com/token',
+        clientId: 'id',
+        clientSecret: '****',
+        grantType: 'client_credentials',
+      },
+    };
+
+    const originalConfirm = global.confirm;
+    afterEach(() => {
+      global.confirm = originalConfirm;
+    });
+
+    it('renders the Azure OpenAI type badge and shows deploymentName in place of defaultModel [unit]', async () => {
+      mockFetch.mockResolvedValue({ ...DEFAULT_DATA, providers: [AZURE_PROVIDER] });
+      await renderLoaded();
+      expect(screen.getAllByText('Azure OpenAI')[0]).toBeInTheDocument();
+      expect(screen.getAllByText('gpt-4o')[0]).toBeInTheDocument();
+    });
+
+    it('shows a Revoke token button only for an azure-openai provider row [unit]', async () => {
+      mockFetch.mockResolvedValue({
+        ...DEFAULT_DATA,
+        providers: [...DEFAULT_DATA.providers, AZURE_PROVIDER],
+      });
+      await renderLoaded();
+      expect(screen.getAllByRole('button', { name: 'Revoke token' })).toHaveLength(1);
+    });
+
+    it('calls revokeProviderToken and shows a success toast after confirming [unit]', async () => {
+      global.confirm = jest.fn(() => true);
+      mockRevoke.mockResolvedValue(undefined);
+      mockFetch.mockResolvedValue({ ...DEFAULT_DATA, providers: [AZURE_PROVIDER] });
+      await renderLoaded();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Revoke token' }));
+
+      await waitFor(() => expect(mockRevoke).toHaveBeenCalledWith('azure'));
+      expect(showToast).toHaveBeenCalledWith('success', 'Token revoked');
+    });
+
+    it('does not call revokeProviderToken when the confirm dialog is declined [unit]', async () => {
+      global.confirm = jest.fn(() => false);
+      mockFetch.mockResolvedValue({ ...DEFAULT_DATA, providers: [AZURE_PROVIDER] });
+      await renderLoaded();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Revoke token' }));
+
+      expect(mockRevoke).not.toHaveBeenCalled();
+    });
+
+    it('shows an error toast when revoking fails [unit]', async () => {
+      global.confirm = jest.fn(() => true);
+      mockRevoke.mockRejectedValue(new Error('Azure OpenAI provider "azure" not found.'));
+      mockFetch.mockResolvedValue({ ...DEFAULT_DATA, providers: [AZURE_PROVIDER] });
+      await renderLoaded();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Revoke token' }));
+
+      await waitFor(() =>
+        expect(showToast).toHaveBeenCalledWith('error', 'Azure OpenAI provider "azure" not found.'),
+      );
+    });
+
+    it("preserves an azure-openai provider's auth/headers when editing an unrelated field [unit]", async () => {
+      mockFetch.mockResolvedValue({ ...DEFAULT_DATA, providers: [AZURE_PROVIDER] });
+      mockPatch.mockResolvedValue(DEFAULT_DATA);
+      const { container } = await renderLoaded();
+
+      const rows = container.querySelectorAll('[data-slot="provider-row"]');
+      const row = Array.from(rows).find((r) =>
+        r.querySelector('[data-slot="provider-row-name"]')?.textContent?.includes('azure'),
+      ) as HTMLElement;
+      const endpointInput = row.querySelector('#provider-endpoint') as HTMLInputElement;
+      fireEvent.input(endpointInput, { target: { value: 'https://changed.openai.azure.com' } });
+      fireEvent.click(within(row).getByRole('button', { name: 'Save' }));
+
+      fireEvent.click(await screen.findByText('Save changes'));
+
+      await waitFor(() => expect(mockPatch).toHaveBeenCalled());
+      const [, body] = mockPatch.mock.calls[0]!;
+      const providers = (
+        body as { providers: Array<{ name: string; auth?: { clientId: string } }> }
+      ).providers;
+      expect(providers.find((p) => p.name === 'azure')?.auth?.clientId).toEqual('id');
+    });
   });
 
   describe('Favorites card', () => {
