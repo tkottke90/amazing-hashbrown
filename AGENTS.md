@@ -13,6 +13,8 @@ autonomous assistant. It's an npm-workspaces monorepo with two apps:
 Read the `AGENTS.md` in whichever workspace you're changing before making
 edits there — it has directory-specific conventions this file doesn't repeat.
 
+For local development, the system is configured to store it's configuration in a `config/` directory.  The content of this directory should be considered sensitive and should not be checked into source control.  The `config/` directory is gitignored.  The application allows Git Repositories to be cloned into `config/projects/*` so you may come across files for this project int that directory if a project checked out this repo.  It should be ignored for the purposes of development and testing, but may be useful for debugging if you are working on a project that is using this repo as a dependency.
+
 ## Stack
 
 TypeScript everywhere, npm workspaces, ESLint + Prettier (shared root config),
