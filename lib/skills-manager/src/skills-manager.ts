@@ -55,7 +55,7 @@ export class SkillsManager {
     return child;
   }
 
-  setExecutor(executor: ShellExecutor): void {
+  setExecutor(executor: ShellExecutor | null): void {
     setRunnerExecutor(executor);
   }
 

@@ -41,6 +41,12 @@ describe('SkillsManager.createChild', () => {
   });
 
   afterEach(async () => {
+    // Resets the module-level executor singleton any test in this file may
+    // have set via parent.setExecutor() (e.g. the runScript read-only test
+    // below) — Mocha loads every spec file into one process, so an
+    // unreset executor here otherwise leaks into every later-loaded test
+    // file's runPythonScript/runShellScript real-spawn tests.
+    parent.setExecutor(null);
     await rm(tmp, { recursive: true, force: true });
   });
 

@@ -6,7 +6,7 @@ import type { ScriptResult } from '../types.js';
 
 let _executor: ShellExecutor | null = null;
 
-export function setRunnerExecutor(executor: ShellExecutor): void {
+export function setRunnerExecutor(executor: ShellExecutor | null): void {
   _executor = executor;
 }
 
