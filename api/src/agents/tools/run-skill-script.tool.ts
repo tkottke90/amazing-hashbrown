@@ -62,7 +62,7 @@ export function makeRunSkillScriptTool(deps: ResolveSkillScopeDeps = {}) {
     {
       name: 'run_skill_script',
       description:
-        "Run a script belonging to whichever skill is currently active, under a configurable timeout. Scoped to " +
+        'Run a script belonging to whichever skill is currently active, under a configurable timeout. Scoped to ' +
         "that skill's own scripts/ only — there is no way to run another skill's script with this tool. " +
         'Supports .py, .sh, and .js/.mjs/.cjs, returning stdout/stderr/exitCode.',
       schema: RunSkillScriptSchema,
