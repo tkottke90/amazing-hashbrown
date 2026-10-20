@@ -1,0 +1,5 @@
+# Active Skill reaches a Skill-Scoped Tool via toolCall.args, not runtime.configurable
+
+The obvious-looking approach — have `skill-scoped-tools.middleware.ts`'s `wrapToolCall` hook mutate `request.runtime.configurable` and forward that to `handler()`, mirroring how existing tools already read `workspaceId`/`thread_id` out of `runtime.configurable` — does not work: a real `createAgent` orchestration test proved LangGraph's `ToolNode` builds the tool handler's actual `runtime` fresh at invocation time, ignoring whatever `wrapToolCall` returned for that field. The mutation only ever reached a hand-rolled fake handler in a unit test, not a real tool call.
+
+Instead, `wrapToolCall` injects `activeSkill` into `request.toolCall.args` — the object `ToolNode` actually invokes the tool with — and `read_skill_reference`/`run_skill_script`'s zod schemas use `.passthrough()` so this extra key survives validation without being declared in the schema the model sees. The injection always overwrites any value already present under that key, so even a model that guessed at supplying its own `activeSkill` argument can't make it stick.

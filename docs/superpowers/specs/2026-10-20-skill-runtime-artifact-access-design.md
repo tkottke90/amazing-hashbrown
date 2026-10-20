@@ -32,6 +32,8 @@ Both tools go through `resolveSkillScope`'s existing `not-found`/`ambiguous`/`fo
 
 A new, small middleware (`skill-scoped-tools.middleware.ts`, sharing the same renamed state schema) filters `['read_skill_reference', 'run_skill_script']` to visible-only-when-`activeSkill !== null`. This is a different shape than `skill-gated-tools.middleware.ts`'s per-skill registration map and is kept as its own middleware rather than folded into it, since "visible for any active skill" and "visible for one specific registered skill" are genuinely different filters (this is exactly the Skill-Gated-Tools-vs-Skill-Scoped-Tools distinction recorded in the glossary).
 
+The same middleware's `wrapToolCall` hook is also how "which skill" reaches the tool handler without a model-supplied argument: it injects `activeSkill` into the tool call's own `args` (not `runtime.configurable`, which turned out not to propagate to the real handler — see ADR-0023). Both tools' zod schemas use `.passthrough()` so this extra key survives validation without being declared in the model-visible schema.
+
 ### Script execution unification (ADR-0020, ADR-0021)
 
 - `lib/skills-manager/src/internal/runner.ts`'s `runJsScript` moves from `vm.runInContext` to a spawned `node <scriptPath> <args...>` process, returning `ScriptResult` instead of a bare value — bringing it in line with the Python path. The previously-documented `context` object is preserved but now serialized to JSON and delivered via an environment variable the script reads itself (e.g. `SKILL_SCRIPT_CONTEXT`), since a spawned process shares no memory with its parent.

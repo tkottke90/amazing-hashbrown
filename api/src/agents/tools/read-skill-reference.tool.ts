@@ -3,13 +3,19 @@ import { z } from 'zod';
 import { isSafeBasename } from '@tkottke90/skills-manager';
 import { resolveSkillScope, type ResolveSkillScopeDeps } from './skill-scope-resolver.js';
 
-const ReadSkillReferenceSchema = z.object({
-  name: z.string().describe('The reference filename to read (e.g. "operations.md").'),
-});
+// .passthrough(), not the zod default of stripping unknown keys: the
+// Active Skill the middleware injects (see skill-scoped-tools.middleware.ts)
+// arrives as an extra key on this same object, never declared here so the
+// model-visible schema never advertises it.
+const ReadSkillReferenceSchema = z
+  .object({
+    name: z.string().describe('The reference filename to read (e.g. "operations.md").'),
+  })
+  .passthrough();
 
 // A Skill-Scoped Tool (see GLOSSARY.md § Skill Invocation & Runtime Access):
 // deliberately takes no skill argument — "which skill" resolves only from
-// the Active Skill, injected into runtime.configurable by
+// the Active Skill, injected into this call's own args by
 // skill-scoped-tools.middleware.ts's wrapToolCall hook, never from anything
 // the model supplies. That's what makes cross-skill file access impossible
 // by construction rather than by convention (issue #319's acceptance
@@ -18,9 +24,9 @@ const ReadSkillReferenceSchema = z.object({
 // against temp-dir-backed managers, matching get-skill-source.tool.ts.
 export function makeReadSkillReferenceTool(deps: ResolveSkillScopeDeps = {}) {
   return tool(
-    async ({ name }, runtime: ToolRuntime) => {
-      const activeSkill = runtime.configurable?.activeSkill as string | undefined;
-      if (!activeSkill) {
+    async ({ name, activeSkill }, runtime: ToolRuntime) => {
+      const skill = activeSkill as string | null | undefined;
+      if (!skill) {
         return 'No skill is currently active — this tool is only available while a skill is active.';
       }
       if (!isSafeBasename(name)) {
@@ -28,19 +34,19 @@ export function makeReadSkillReferenceTool(deps: ResolveSkillScopeDeps = {}) {
       }
 
       const workspaceId = runtime.configurable?.workspaceId as string | undefined;
-      const resolution = await resolveSkillScope(activeSkill, workspaceId, deps);
+      const resolution = await resolveSkillScope(skill, workspaceId, deps);
       if (resolution.kind === 'not-found') {
-        return `The active skill "${activeSkill}" could not be resolved.`;
+        return `The active skill "${skill}" could not be resolved.`;
       }
       if (resolution.kind === 'ambiguous') {
-        return `"${activeSkill}" exists both app-wide and in this workspace — ask the user (via ask_user) which one they mean first.`;
+        return `"${skill}" exists both app-wide and in this workspace — ask the user (via ask_user) which one they mean first.`;
       }
 
       const { manager, scope } = resolution;
       if (scope === 'workspace') await manager.boot();
 
       try {
-        return await manager.readFile(activeSkill, 'references', name);
+        return await manager.readFile(skill, 'references', name);
       } catch {
         return `No reference file named "${name}" for the active skill.`;
       }

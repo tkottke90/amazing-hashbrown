@@ -9,8 +9,8 @@ import { WorkspaceStore } from '../../services/workspace-store.js';
 import { makeRunSkillScriptTool } from './run-skill-script.tool.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function invokeConfig(opts: { workspaceId?: string; activeSkill?: string } = {}): any {
-  return { configurable: opts, toolCallId: 'call-1' };
+function invokeConfig(workspaceId?: string): any {
+  return { configurable: { workspaceId }, toolCallId: 'call-1' };
 }
 
 describe('agents/tools/run-skill-script', () => {
@@ -36,8 +36,8 @@ describe('agents/tools/run-skill-script', () => {
     const tool = makeRunSkillScriptTool({ globalManager: global, store });
 
     const result = (await tool.invoke(
-      { name: 'check.py' },
-      invokeConfig({ activeSkill: 'with-script' }),
+      { name: 'check.py', activeSkill: 'with-script' },
+      invokeConfig(),
     )) as unknown as string;
     const payload = JSON.parse(result);
 
@@ -50,8 +50,8 @@ describe('agents/tools/run-skill-script', () => {
     const tool = makeRunSkillScriptTool({ globalManager: global, store });
 
     const result = (await tool.invoke(
-      { name: 'check.sh' },
-      invokeConfig({ activeSkill: 'with-script' }),
+      { name: 'check.sh', activeSkill: 'with-script' },
+      invokeConfig(),
     )) as unknown as string;
     const payload = JSON.parse(result);
 
@@ -64,8 +64,8 @@ describe('agents/tools/run-skill-script', () => {
     const tool = makeRunSkillScriptTool({ globalManager: global, store });
 
     const result = (await tool.invoke(
-      { name: 'check.js' },
-      invokeConfig({ activeSkill: 'with-script' }),
+      { name: 'check.js', activeSkill: 'with-script' },
+      invokeConfig(),
     )) as unknown as string;
     const payload = JSON.parse(result);
 
@@ -78,8 +78,8 @@ describe('agents/tools/run-skill-script', () => {
     const tool = makeRunSkillScriptTool({ globalManager: global, store });
 
     const result = (await tool.invoke(
-      { name: 'args.sh', args: ['a', 'b'] },
-      invokeConfig({ activeSkill: 'with-script' }),
+      { name: 'args.sh', args: ['a', 'b'], activeSkill: 'with-script' },
+      invokeConfig(),
     )) as unknown as string;
     const payload = JSON.parse(result);
 
@@ -98,8 +98,8 @@ describe('agents/tools/run-skill-script', () => {
     const tool = makeRunSkillScriptTool({ globalManager: global, store });
 
     const result = (await tool.invoke(
-      { name: '../../etc/passwd' },
-      invokeConfig({ activeSkill: 'with-script' }),
+      { name: '../../etc/passwd', activeSkill: 'with-script' },
+      invokeConfig(),
     )) as unknown as string;
 
     expect(result).to.include('not a safe file name');
@@ -110,8 +110,8 @@ describe('agents/tools/run-skill-script', () => {
     const tool = makeRunSkillScriptTool({ globalManager: global, store });
 
     const result = (await tool.invoke(
-      { name: 'check.rb' },
-      invokeConfig({ activeSkill: 'with-script' }),
+      { name: 'check.rb', activeSkill: 'with-script' },
+      invokeConfig(),
     )) as unknown as string;
 
     expect(result).to.include('not a script this tool can run');
@@ -121,8 +121,8 @@ describe('agents/tools/run-skill-script', () => {
     const tool = makeRunSkillScriptTool({ globalManager: global, store });
 
     const result = (await tool.invoke(
-      { name: 'check.py' },
-      invokeConfig({ activeSkill: 'does-not-exist' }),
+      { name: 'check.py', activeSkill: 'does-not-exist' },
+      invokeConfig(),
     )) as unknown as string;
 
     expect(result).to.include('could not be resolved');
@@ -138,8 +138,8 @@ describe('agents/tools/run-skill-script', () => {
 
     const tool = makeRunSkillScriptTool({ globalManager: global, store });
     const result = (await tool.invoke(
-      { name: 'check.py' },
-      invokeConfig({ activeSkill: 'with-script', workspaceId: workspace.id }),
+      { name: 'check.py', activeSkill: 'with-script' },
+      invokeConfig(workspace.id),
     )) as unknown as string;
 
     expect(result).to.include('exists both app-wide and in this workspace');

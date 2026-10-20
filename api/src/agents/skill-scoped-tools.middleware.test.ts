@@ -69,17 +69,17 @@ describe('agents/skill-scoped-tools.middleware', () => {
     it('passes through unchanged for a tool call that is not skill-scoped', async () => {
       const middleware = createSkillScopedToolsMiddleware();
       let handlerCalled = false;
-      const handler = async (req: { runtime: { configurable?: Record<string, unknown> } }) => {
+      const handler = async (req: { toolCall: { args: Record<string, unknown> } }) => {
         handlerCalled = true;
         return new ToolMessage({
-          content: JSON.stringify(req.runtime.configurable ?? null),
+          content: JSON.stringify(req.toolCall.args),
           tool_call_id: 'call-1',
         });
       };
 
       const result = await middleware.wrapToolCall!(
         {
-          toolCall: { id: 'call-1', name: 'ask_user', args: {} },
+          toolCall: { id: 'call-1', name: 'ask_user', args: { question: 'hi?' } },
           tool: undefined,
           state: { activeSkill: 'wiki-search' },
           runtime: { configurable: { workspaceId: 'w1' } },
@@ -90,8 +90,56 @@ describe('agents/skill-scoped-tools.middleware', () => {
 
       expect(handlerCalled).to.equal(true);
       expect(JSON.parse((result as ToolMessage).content as string)).to.deep.equal({
-        workspaceId: 'w1',
+        question: 'hi?',
       });
+    });
+
+    it('injects activeSkill into toolCall.args for a skill-scoped tool call', async () => {
+      const middleware = createSkillScopedToolsMiddleware();
+      let seenArgs: Record<string, unknown> = {};
+      const handler = async (req: { toolCall: { args: Record<string, unknown> } }) => {
+        seenArgs = req.toolCall.args;
+        return new ToolMessage({ content: '', tool_call_id: 'call-1' });
+      };
+
+      await middleware.wrapToolCall!(
+        {
+          toolCall: { id: 'call-1', name: 'read_skill_reference', args: { name: 'ops.md' } },
+          tool: undefined,
+          state: { activeSkill: 'wiki-search' },
+          runtime: { configurable: {} },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any,
+        handler,
+      );
+
+      expect(seenArgs).to.deep.equal({ name: 'ops.md', activeSkill: 'wiki-search' });
+    });
+
+    it('overwrites any activeSkill value the model itself supplied, last-write-wins', async () => {
+      const middleware = createSkillScopedToolsMiddleware();
+      let seenArgs: Record<string, unknown> = {};
+      const handler = async (req: { toolCall: { args: Record<string, unknown> } }) => {
+        seenArgs = req.toolCall.args;
+        return new ToolMessage({ content: '', tool_call_id: 'call-1' });
+      };
+
+      await middleware.wrapToolCall!(
+        {
+          toolCall: {
+            id: 'call-1',
+            name: 'run_skill_script',
+            args: { name: 'check.py', activeSkill: 'some-other-skill' },
+          },
+          tool: undefined,
+          state: { activeSkill: 'wiki-search' },
+          runtime: { configurable: {} },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any,
+        handler,
+      );
+
+      expect(seenArgs.activeSkill).to.equal('wiki-search');
     });
   });
 
@@ -123,21 +171,24 @@ describe('agents/skill-scoped-tools.middleware', () => {
   }
 
   describe('orchestration — real createAgent graph [orchestration]', () => {
-    it('propagates activeSkill into the real tool handler via runtime.configurable', async () => {
-      // Proves the "mutate request.runtime, forward to handler" pattern
-      // actually works through a real LangGraph ToolNode — not just that
-      // wrapToolCall calls handler() with the object we built (that part a
-      // fake-handler unit test would already prove, and isn't the risky
-      // part). No existing tool in this repo reads graph state from inside
-      // its handler at all — this is the one place that behavior is load-
-      // bearing, so it gets the real-graph treatment rather than a mock.
+    it('propagates activeSkill into the real tool handler via toolCall.args', async () => {
+      // Proves the actual propagation mechanism through a real LangGraph
+      // ToolNode, not just that wrapToolCall calls handler() with the
+      // object we built (that part a fake-handler unit test above already
+      // proves, and isn't the risky part). An earlier version of this
+      // middleware mutated request.runtime instead of request.toolCall.args
+      // — that version passed a unit test with a fake handler but FAILED
+      // this exact orchestration test in real CI (ToolNode builds its own
+      // runtime fresh, ignoring whatever wrapToolCall returns for that
+      // field) — which is exactly why this test exists as a real-graph
+      // check rather than a mock.
       const probeTool = tool(
-        async (_args, runtime: ToolRuntime) =>
-          JSON.stringify({ seen: runtime.configurable?.activeSkill ?? null }),
+        async ({ activeSkill }: { activeSkill?: string | null }) =>
+          JSON.stringify({ seen: activeSkill ?? null }),
         {
           name: 'probe_tool',
           description: 'Reports the injected activeSkill.',
-          schema: z.object({}),
+          schema: z.object({}).passthrough(),
         },
       );
 

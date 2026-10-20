@@ -22,20 +22,26 @@ export function createSkillScopedToolsMiddleware() {
       });
       return handler({ ...request, tools });
     },
-    // Injects the Active Skill into runtime.configurable — the same
-    // out-of-band channel existing tools already read workspaceId/thread_id
-    // from — rather than into toolCall.args, so the model-visible zod schema
-    // for read_skill_reference/run_skill_script never carries a skill-name
-    // field at all. This is how "no arbitrary cross-skill file access" is
-    // enforced by construction rather than convention: the tool handler
-    // cannot be pointed at any skill but whichever one is actually Active.
+    // Injects the Active Skill into toolCall.args rather than
+    // runtime.configurable — confirmed via a real createAgent orchestration
+    // test that mutating request.runtime here does NOT reach the actual
+    // tool handler's runtime (LangGraph's ToolNode builds that fresh,
+    // ignoring whatever wrapToolCall returns for that field); toolCall.args
+    // is what the ToolNode actually invokes the tool with, so mutating it
+    // here is what reaches the handler. The two tools' schemas use
+    // .passthrough() so this extra key survives zod parsing without being
+    // declared in the model-visible schema — the model is never told this
+    // field exists and never supplies it, and even if it tried to, the
+    // assignment below always overwrites it with the real server-side
+    // value, last-write-wins. That's how "no arbitrary cross-skill file
+    // access" is enforced by construction rather than convention.
     wrapToolCall: async (request, handler) => {
       if (!SKILL_SCOPED_TOOL_NAMES.has(request.toolCall.name)) return handler(request);
       return handler({
         ...request,
-        runtime: {
-          ...request.runtime,
-          configurable: { ...request.runtime.configurable, activeSkill: request.state.activeSkill },
+        toolCall: {
+          ...request.toolCall,
+          args: { ...request.toolCall.args, activeSkill: request.state.activeSkill },
         },
       });
     },

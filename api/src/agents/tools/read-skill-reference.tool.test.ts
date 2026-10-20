@@ -10,8 +10,8 @@ import { WORKSPACE_SKILLS_DIR } from '../../services/workspace-skills.js';
 import { makeReadSkillReferenceTool } from './read-skill-reference.tool.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function invokeConfig(opts: { workspaceId?: string; activeSkill?: string } = {}): any {
-  return { configurable: opts, toolCallId: 'call-1' };
+function invokeConfig(workspaceId?: string): any {
+  return { configurable: { workspaceId }, toolCallId: 'call-1' };
 }
 
 describe('agents/tools/read-skill-reference', () => {
@@ -37,8 +37,8 @@ describe('agents/tools/read-skill-reference', () => {
     const tool = makeReadSkillReferenceTool({ globalManager: global, store });
 
     const result = (await tool.invoke(
-      { name: 'operations.md' },
-      invokeConfig({ activeSkill: 'with-ref' }),
+      { name: 'operations.md', activeSkill: 'with-ref' },
+      invokeConfig(),
     )) as unknown as string;
 
     expect(result).to.equal('# Ops\n\nSteps here.');
@@ -60,8 +60,8 @@ describe('agents/tools/read-skill-reference', () => {
     const tool = makeReadSkillReferenceTool({ globalManager: global, store });
 
     const result = (await tool.invoke(
-      { name: '../../etc/passwd' },
-      invokeConfig({ activeSkill: 'with-ref' }),
+      { name: '../../etc/passwd', activeSkill: 'with-ref' },
+      invokeConfig(),
     )) as unknown as string;
 
     expect(result).to.include('not a safe file name');
@@ -72,8 +72,8 @@ describe('agents/tools/read-skill-reference', () => {
     const tool = makeReadSkillReferenceTool({ globalManager: global, store });
 
     const result = (await tool.invoke(
-      { name: 'missing.md' },
-      invokeConfig({ activeSkill: 'with-ref' }),
+      { name: 'missing.md', activeSkill: 'with-ref' },
+      invokeConfig(),
     )) as unknown as string;
 
     expect(result).to.include('No reference file named');
@@ -83,8 +83,8 @@ describe('agents/tools/read-skill-reference', () => {
     const tool = makeReadSkillReferenceTool({ globalManager: global, store });
 
     const result = (await tool.invoke(
-      { name: 'operations.md' },
-      invokeConfig({ activeSkill: 'does-not-exist' }),
+      { name: 'operations.md', activeSkill: 'does-not-exist' },
+      invokeConfig(),
     )) as unknown as string;
 
     expect(result).to.include('could not be resolved');
@@ -103,8 +103,8 @@ describe('agents/tools/read-skill-reference', () => {
 
     const tool = makeReadSkillReferenceTool({ globalManager: global, store });
     const result = (await tool.invoke(
-      { name: 'operations.md' },
-      invokeConfig({ activeSkill: 'shared', workspaceId: workspace.id }),
+      { name: 'operations.md', activeSkill: 'shared' },
+      invokeConfig(workspace.id),
     )) as unknown as string;
 
     expect(result).to.include('exists both app-wide and in this workspace');
@@ -122,8 +122,8 @@ describe('agents/tools/read-skill-reference', () => {
 
     const tool = makeReadSkillReferenceTool({ globalManager: global, store });
     const result = (await tool.invoke(
-      { name: 'notes.md' },
-      invokeConfig({ activeSkill: 'repo-skill', workspaceId: workspace.id }),
+      { name: 'notes.md', activeSkill: 'repo-skill' },
+      invokeConfig(workspace.id),
     )) as unknown as string;
 
     expect(result).to.equal('repo notes');

@@ -5,12 +5,18 @@ import { isSafeBasename, type ScriptResult } from '@tkottke90/skills-manager';
 import { env } from '../../config/env.js';
 import { resolveSkillScope, type ResolveSkillScopeDeps } from './skill-scope-resolver.js';
 
-const RunSkillScriptSchema = z.object({
-  name: z
-    .string()
-    .describe('The script filename to run (e.g. "check.sh", "run.py", "extract.js").'),
-  args: z.array(z.string()).optional().describe('Arguments to pass to the script.'),
-});
+// .passthrough(), not the zod default of stripping unknown keys: the
+// Active Skill the middleware injects (see skill-scoped-tools.middleware.ts)
+// arrives as an extra key on this same object, never declared here so the
+// model-visible schema never advertises it.
+const RunSkillScriptSchema = z
+  .object({
+    name: z
+      .string()
+      .describe('The script filename to run (e.g. "check.sh", "run.py", "extract.js").'),
+    args: z.array(z.string()).optional().describe('Arguments to pass to the script.'),
+  })
+  .passthrough();
 
 const JS_EXTENSIONS = new Set(['.js', '.mjs', '.cjs']);
 
@@ -23,9 +29,9 @@ const JS_EXTENSIONS = new Set(['.js', '.mjs', '.cjs']);
 // script execution path (ADR-0021).
 export function makeRunSkillScriptTool(deps: ResolveSkillScopeDeps = {}) {
   return tool(
-    async ({ name, args }, runtime: ToolRuntime) => {
-      const activeSkill = runtime.configurable?.activeSkill as string | undefined;
-      if (!activeSkill) {
+    async ({ name, args, activeSkill }, runtime: ToolRuntime) => {
+      const skill = activeSkill as string | null | undefined;
+      if (!skill) {
         return 'No skill is currently active — this tool is only available while a skill is active.';
       }
       if (!isSafeBasename(name)) {
@@ -33,12 +39,12 @@ export function makeRunSkillScriptTool(deps: ResolveSkillScopeDeps = {}) {
       }
 
       const workspaceId = runtime.configurable?.workspaceId as string | undefined;
-      const resolution = await resolveSkillScope(activeSkill, workspaceId, deps);
+      const resolution = await resolveSkillScope(skill, workspaceId, deps);
       if (resolution.kind === 'not-found') {
-        return `The active skill "${activeSkill}" could not be resolved.`;
+        return `The active skill "${skill}" could not be resolved.`;
       }
       if (resolution.kind === 'ambiguous') {
-        return `"${activeSkill}" exists both app-wide and in this workspace — ask the user (via ask_user) which one they mean first.`;
+        return `"${skill}" exists both app-wide and in this workspace — ask the user (via ask_user) which one they mean first.`;
       }
 
       const { manager, scope } = resolution;
@@ -48,11 +54,11 @@ export function makeRunSkillScriptTool(deps: ResolveSkillScopeDeps = {}) {
       const ext = extname(name);
       let result: ScriptResult;
       if (ext === '.py') {
-        result = await manager.runPythonScript(activeSkill, name, args ?? [], timeoutMs);
+        result = await manager.runPythonScript(skill, name, args ?? [], timeoutMs);
       } else if (ext === '.sh') {
-        result = await manager.runShellScript(activeSkill, name, args ?? [], timeoutMs);
+        result = await manager.runShellScript(skill, name, args ?? [], timeoutMs);
       } else if (JS_EXTENSIONS.has(ext)) {
-        result = await manager.runScript(activeSkill, name, { args: args ?? [], timeoutMs });
+        result = await manager.runScript(skill, name, { args: args ?? [], timeoutMs });
       } else {
         return `"${name}" is not a script this tool can run (only .py, .sh, and .js/.mjs/.cjs are supported).`;
       }
