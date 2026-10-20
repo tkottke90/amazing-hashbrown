@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { env, type ProviderConfig } from '../config/env.js';
+import { env, type AnyProviderConfig } from '../config/env.js';
 import { logger, serializeError } from '../config/logger.js';
 import type { ThreadStore } from '../services/thread-store.js';
 import { getProviderQueue } from '../services/provider-queue.js';
@@ -245,7 +245,7 @@ export async function runHeadlessTurn(params: HeadlessTurnParams): Promise<void>
 
 // Provider type for error classification; undefined when the provider is no
 // longer configured (classification then falls back to generic matching).
-function providerTypeOf(provider: string): ProviderConfig['type'] | undefined {
+function providerTypeOf(provider: string): AnyProviderConfig['type'] | undefined {
   try {
     return resolveProviderConfig(provider).type;
   } catch {

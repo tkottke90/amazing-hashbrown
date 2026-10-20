@@ -1468,7 +1468,8 @@ export class WorkspaceStore extends BaseStore {
     try {
       const config = resolveProviderConfig(env.defaultProvider);
       snapshotProvider = config.name;
-      snapshotModel = config.defaultModel ?? null;
+      snapshotModel =
+        (config.type === 'azure-openai' ? config.deploymentName : config.defaultModel) ?? null;
     } catch {
       // No providers configured — leave both null.
     }

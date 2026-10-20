@@ -216,6 +216,73 @@ describe('config/env', () => {
       expect(parseProviders(undefined)).to.deep.equal([]);
       expect(parseProviders({ name: 'local' })).to.deep.equal([]);
     });
+
+    it('preserves a well-formed azure-openai provider unchanged [unit]', () => {
+      const raw = [
+        {
+          name: 'azure',
+          type: 'azure-openai',
+          endpoint: 'https://my-resource.openai.azure.com',
+          deploymentName: 'gpt-4o',
+          apiVersion: '2024-10-21',
+          auth: {
+            tokenUrl: 'https://login.microsoftonline.com/tenant/oauth2/v2.0/token',
+            clientId: 'client-id',
+            clientSecret: 'client-secret',
+            scope: 'https://cognitiveservices.azure.com/.default',
+            grantType: 'client_credentials',
+          },
+        },
+      ];
+      expect(parseProviders(raw)).to.deep.equal(raw);
+    });
+
+    it('drops an azure-openai provider missing a required OIDC field, keeping the rest of the list [unit]', () => {
+      const raw = [
+        {
+          name: 'azure',
+          type: 'azure-openai',
+          endpoint: 'https://my-resource.openai.azure.com',
+          deploymentName: 'gpt-4o',
+          apiVersion: '2024-10-21',
+          auth: { clientId: 'client-id', clientSecret: 'client-secret' }, // missing tokenUrl
+        },
+        { name: 'anthropic', type: 'anthropic' },
+      ];
+      expect(parseProviders(raw)).to.deep.equal([{ name: 'anthropic', type: 'anthropic' }]);
+    });
+
+    it('drops only the malformed model entry under an azure-openai provider, keeping its other models [unit]', () => {
+      const raw = [
+        {
+          name: 'azure',
+          type: 'azure-openai',
+          endpoint: 'https://my-resource.openai.azure.com',
+          deploymentName: 'gpt-4o',
+          apiVersion: '2024-10-21',
+          auth: { tokenUrl: 'https://login.example.com/token', clientId: 'id' },
+          models: [
+            { id: 'gpt-4o', temperature: 'hot' },
+            { id: 'gpt-4o', temperature: 1 },
+          ],
+        },
+      ];
+      expect(parseProviders(raw)).to.deep.equal([
+        {
+          name: 'azure',
+          type: 'azure-openai',
+          endpoint: 'https://my-resource.openai.azure.com',
+          deploymentName: 'gpt-4o',
+          apiVersion: '2024-10-21',
+          auth: {
+            tokenUrl: 'https://login.example.com/token',
+            clientId: 'id',
+            grantType: 'client_credentials',
+          },
+          models: [{ id: 'gpt-4o', temperature: 1 }],
+        },
+      ]);
+    });
   });
 
   describe('resolveServerTimezone', () => {

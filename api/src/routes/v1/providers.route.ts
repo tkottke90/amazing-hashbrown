@@ -11,6 +11,7 @@ import {
 import { unmaskApiKey } from './settings.handlers.js';
 import { resolveAvailableFavorites } from '../../services/favorite-models.js';
 import { OllamaEmbeddingProvider, OpenAIEmbeddingProvider } from '@tkottke90/llm-wiki/providers';
+import { getAzureTokenCache } from '../../services/azure-token-cache.js';
 
 export const providersRouter = Router();
 
@@ -42,7 +43,10 @@ providersRouter.get('/', async (_req, res) => {
       return {
         name: p.name,
         type: p.type,
-        defaultModel: p.defaultModel,
+        // The Azure OpenAI Provider has no defaultModel field — its
+        // Deployment Name is its one "model" (see GLOSSARY.md "Deployment
+        // Name"), reported here the same way defaultModel normally is.
+        defaultModel: p.type === 'azure-openai' ? p.deploymentName : p.defaultModel,
         models,
       };
     }),
@@ -146,6 +150,10 @@ function describeModelListError(err: unknown): string {
 providersRouter.post('/models', async (req, res) => {
   const { type, baseUrl, apiKey, name, source, capability } = req.body as ListModelsBody;
 
+  // Deliberately still a 3-value allow-list, not 4: the provider modal
+  // never probes a live model list for 'azure-openai' (no model picker for
+  // that type — see the design doc §4.4/GLOSSARY.md "Deployment Name"), so
+  // nothing should ever call this endpoint with that type.
   if (type !== 'ollama' && type !== 'openai' && type !== 'anthropic') {
     res.status(400).json({ ok: false, error: 'Unknown provider type.' });
     return;
@@ -160,13 +168,20 @@ providersRouter.post('/models', async (req, res) => {
   // config's GET response and the user hasn't retyped it — resolve back
   // to the real stored key, same as the settings PATCH handler. `name`
   // (a saved provider) and `source: 'embeddings'` (the embeddings
-  // section's own key) are the two places a stored key can come from.
-  const stored = name
+  // section's own key) are the two places a stored key can come from. A
+  // saved provider found by name might be an Azure OpenAI Provider (no
+  // apiKey field at all) — typed loosely here since `type?: string` is
+  // optional on this shared shape, so a lookup that lands on one simply
+  // has no apiKey to resolve against.
+  const stored: { type?: string; apiKey?: string } | undefined = name
     ? env.providers.find((p) => p.name === name)
     : source === 'embeddings'
       ? { apiKey: env.embeddings.apiKey }
       : undefined;
-  const resolvedApiKey = unmaskApiKey(apiKey, stored?.apiKey);
+  const resolvedApiKey = unmaskApiKey(
+    apiKey,
+    stored?.type === 'azure-openai' ? undefined : stored?.apiKey,
+  );
 
   const provider: ProviderConfig = { name: name ?? '', type, baseUrl, apiKey: resolvedApiKey };
 
@@ -227,4 +242,21 @@ providersRouter.post('/embeddings/test', async (req, res) => {
   } catch (err) {
     res.status(502).json({ ok: false, error: describeModelListError(err) });
   }
+});
+
+// Revoke: clears the cached Access Token for an Azure OpenAI Provider only —
+// no config write, no IdP call (ADR-0026). Rotate (replacing clientId/
+// clientSecret) goes through the normal settings PATCH flow instead; see
+// settings.handlers.ts's model-providers slug.
+providersRouter.post('/:name/revoke', (req, res) => {
+  const { name } = req.params;
+  const provider = env.providers.find((p) => p.name === name);
+
+  if (!provider || provider.type !== 'azure-openai') {
+    res.status(404).json({ ok: false, error: `Azure OpenAI provider "${name}" not found.` });
+    return;
+  }
+
+  getAzureTokenCache().revoke(name);
+  res.json({ ok: true });
 });

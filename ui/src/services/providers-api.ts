@@ -64,3 +64,18 @@ export async function listProviderModels(req: ListProviderModelsRequest): Promis
 
   return payload.data.models;
 }
+
+// Clears an Azure OpenAI Provider's cached Access Token only — no config
+// change. Rotate (replacing clientId/clientSecret) goes through the normal
+// settings PATCH flow instead; see GLOSSARY.md "Revoke"/"Rotate".
+export async function revokeProviderToken(name: string): Promise<void> {
+  const res = await fetch(`/api/v1/providers/${encodeURIComponent(name)}/revoke`, {
+    method: 'POST',
+  });
+
+  const payload = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+
+  if (!res.ok || !payload.ok) {
+    throw new Error(payload.error ?? `Failed to revoke token: ${res.status}`);
+  }
+}

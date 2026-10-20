@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Command } from '@langchain/langgraph';
 import { logger, serializeError } from '../config/logger.js';
-import { env, type ProviderConfig } from '../config/env.js';
+import { env, type AnyProviderConfig } from '../config/env.js';
 import { getThreadStore, type ThreadStore } from '../services/thread-store.js';
 import {
   getWorkspaceStore,
@@ -63,7 +63,7 @@ interface WorkspaceScope {
 // type, not its name — resolved inside a try because this runs on the failure
 // path, where a misconfigured default provider must not throw a second time
 // (the run itself resolves it through resolveTurnModel(), which does throw).
-function defaultProviderType(): ProviderConfig['type'] | undefined {
+function defaultProviderType(): AnyProviderConfig['type'] | undefined {
   try {
     return resolveProviderConfig(env.defaultProvider).type;
   } catch {

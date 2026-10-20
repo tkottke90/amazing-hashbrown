@@ -173,3 +173,41 @@ _Avoid_: Skill file, resource
 **Artifact Index**:
 A block of text computed fresh from disk and appended after a skill's authored body on every invocation, listing every Skill Artifact currently present and the exact `read_skill_reference`/`run_skill_script` call needed to use it. Never written back into `SKILL.md` — regenerated every time so it can't drift from what's actually on disk (see ADR-0022).
 _Avoid_: Artifact manifest, script list
+
+# Provider Authentication
+
+How a configured LLM Provider authenticates its outbound requests, and the Azure OpenAI Provider's OIDC-specific credential lifecycle.
+
+## Language
+
+**Provider**:
+One configured LLM backend (`providers[]` entry) — a `name`, a `type` that selects its client implementation (`ollama`, `openai`, `anthropic`, or Azure OpenAI Provider), and whatever connection/auth fields that `type` needs.
+_Avoid_: Model provider, backend
+
+**Azure OpenAI Provider**:
+A Provider `type` authenticated only via OIDC/OAuth2 Client Credentials Flow rather than a static API key — the one Provider `type` this app supports OIDC for. Identified by an `endpoint`, a Deployment Name, and an `apiVersion` rather than a live model catalog.
+_Avoid_: OIDC provider, Azure provider
+
+**Deployment Name**:
+An Azure OpenAI Provider's single selectable "model." Azure OpenAI is deployment-scoped rather than model-id-scoped, so this is shown as-is in place of a live model list, and doubles as the key for any per-model pricing/sampling override.
+_Avoid_: Model, model id (for this Provider type)
+
+**Client Credentials**:
+The `tokenUrl`, `clientId`, `clientSecret`, `scope`, and `grantType` an Azure OpenAI Provider is registered with — distinct from the Access Token they're exchanged for.
+_Avoid_: OIDC config, credentials (ambiguous with Access Token)
+
+**Access Token**:
+The short-lived bearer credential an Azure OpenAI Provider's Client Credentials are exchanged for. Held in memory only, keyed by Provider name, never written to disk; refreshed proactively before it would be handed out expired or near-expiry.
+_Avoid_: Token, credential (see Client Credentials)
+
+**Revoke**:
+Clearing an Azure OpenAI Provider's cached Access Token without touching its stored Client Credentials, forcing re-authentication on the next use. Not a call to an IdP revocation endpoint — a client-credentials Access Token has no standard one.
+_Avoid_: Logout, disconnect, Refresh
+
+**Rotate**:
+Replacing an Azure OpenAI Provider's `clientId`/`clientSecret` (its `tokenUrl`/`scope`/`grantType` stay as-is), validated by fetching a fresh Access Token with the new values before the change is persisted — a failed fetch rejects the whole write.
+_Avoid_: Reset, Refresh (Refresh is the automatic proactive renewal of an already-registered Access Token; Rotate is the user-initiated replacement of the Client Credentials themselves)
+
+**Custom Headers**:
+An optional, per-Provider map of static HTTP headers sent with every one of that Provider's requests, merged on top of whatever its auth sets. Applies to every Provider type, not just the Azure OpenAI Provider.
+_Avoid_: Default headers, request headers

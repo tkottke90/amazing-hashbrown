@@ -1,5 +1,5 @@
 import type { ChatErrorCategory } from '@tkottke90/llm-common-types/chat';
-import type { ProviderConfig } from '../config/env.js';
+import type { AnyProviderConfig } from '../config/env.js';
 
 // Maps a thrown turn-ending error to one of the user-facing categories the
 // chat UI renders instead of a generic "Something went wrong" message — see
@@ -147,7 +147,7 @@ function classifyOllamaError(err: unknown): ChatErrorCategory {
 // is a compile error rather than a silent fall-through to 'unknown'.
 export function classifyChatError(
   err: unknown,
-  providerType?: ProviderConfig['type'],
+  providerType?: AnyProviderConfig['type'],
 ): ClassifiedChatError {
   const source = unwrapSourceError(err);
   const message = messageOf(source);
@@ -159,7 +159,9 @@ export function classifyChatError(
   switch (providerType) {
     case 'anthropic':
       return { category: classifyAnthropicError(source), message };
+    // Azure OpenAI's errors arrive in the same `openai` SDK wire shape.
     case 'openai':
+    case 'azure-openai':
       return { category: classifyOpenAIError(source), message };
     case 'ollama':
       return { category: classifyOllamaError(source), message };

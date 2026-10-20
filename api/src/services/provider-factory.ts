@@ -1,12 +1,13 @@
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { ChatOllama } from '@langchain/ollama';
-import { ChatOpenAI } from '@langchain/openai';
+import { ChatOpenAI, AzureChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
 import { Ollama } from 'ollama';
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
-import { env, type ProviderConfig } from '../config/env.js';
+import { env, type AnyProviderConfig } from '../config/env.js';
 import { logger } from '../config/logger.js';
+import { getAzureTokenCache, type AzureTokenCache } from './azure-token-cache.js';
 
 // Temporary diagnostic instrumentation for investigating a suspected
 // tool-call extraction bug against a local OpenAI-compatible server
@@ -62,31 +63,67 @@ export interface EffectiveSampling {
  * docs/superpowers/specs/2026-10-14-per-model-sampling-pricing-config-design.md.
  */
 export function resolveEffectiveSampling(
-  config: ProviderConfig,
+  config: AnyProviderConfig,
   modelId: string,
 ): EffectiveSampling {
   const modelEntry = config.models?.find((m) => m.id === modelId);
+  // numCtx/topK/repeatPenalty don't exist on the Azure OpenAI Provider
+  // schema at all (see ADR-0024) — resolve them only for the three provider
+  // types that still carry them.
+  const ollamaOnlyFields = config.type === 'azure-openai' ? undefined : config;
   return {
     temperature: modelEntry?.temperature ?? config.temperature,
     topP: modelEntry?.topP ?? config.topP,
     seed: modelEntry?.seed ?? config.seed,
-    numCtx: modelEntry?.numCtx ?? config.numCtx,
-    topK: modelEntry?.topK ?? config.topK,
-    repeatPenalty: modelEntry?.repeatPenalty ?? config.repeatPenalty,
+    numCtx: modelEntry?.numCtx ?? ollamaOnlyFields?.numCtx,
+    topK: modelEntry?.topK ?? ollamaOnlyFields?.topK,
+    repeatPenalty: modelEntry?.repeatPenalty ?? ollamaOnlyFields?.repeatPenalty,
   };
+}
+
+export interface CreateProviderDeps {
+  // Injected so tests can stub the Access Token fetch instead of making a
+  // real HTTP call. Defaults to the shared process-wide cache.
+  tokenCache?: Pick<AzureTokenCache, 'getToken'>;
 }
 
 /**
  * Pure factory — accepts explicit config rather than reading env.
  * Exported so unit tests can drive it without touching the live configManager.
  */
-export function createProviderFromConfig(config: ProviderConfig, model?: string): BaseChatModel {
-  const resolvedModel = model ?? config.defaultModel;
+export function createProviderFromConfig(
+  config: AnyProviderConfig,
+  model?: string,
+  deps: CreateProviderDeps = {},
+): BaseChatModel {
+  // The Azure OpenAI Provider has no defaultModel — its Deployment Name is
+  // its one "model" (see GLOSSARY.md "Deployment Name").
+  const resolvedModel =
+    model ?? (config.type === 'azure-openai' ? config.deploymentName : config.defaultModel);
   if (!resolvedModel) {
     throw new Error(`Provider "${config.name}" has no defaultModel and none was passed`);
   }
 
   const sampling = resolveEffectiveSampling(config, resolvedModel);
+
+  if (config.type === 'azure-openai') {
+    const tokenCache = deps.tokenCache ?? getAzureTokenCache();
+    // Access Token acquisition/refresh is handled entirely inside this
+    // lazy callback (ADR-0025) — AzureChatOpenAI calls it itself whenever
+    // it's about to make a request, so this factory stays synchronous.
+    return new AzureChatOpenAI({
+      model: resolvedModel,
+      azureOpenAIEndpoint: config.endpoint,
+      azureOpenAIApiDeploymentName: config.deploymentName,
+      azureOpenAIApiVersion: config.apiVersion,
+      azureADTokenProvider: () => tokenCache.getToken(config),
+      timeout: config.timeoutMs,
+      temperature: sampling.temperature,
+      topP: sampling.topP,
+      modelKwargs: sampling.seed === undefined ? undefined : { seed: sampling.seed },
+      configuration: { defaultHeaders: config.headers },
+    });
+  }
 
   switch (config.type) {
     case 'ollama':
@@ -99,6 +136,7 @@ export function createProviderFromConfig(config: ProviderConfig, model?: string)
       return new ChatOllama({
         model: resolvedModel,
         baseUrl: config.baseUrl,
+        headers: config.headers,
         temperature: sampling.temperature,
         topP: sampling.topP,
         seed: sampling.seed,
@@ -125,6 +163,7 @@ export function createProviderFromConfig(config: ProviderConfig, model?: string)
         configuration: {
           baseURL: config.baseUrl,
           fetch: process.env.DEBUG_LLM_HTTP === '1' ? loggingFetch : undefined,
+          defaultHeaders: config.headers,
         },
       });
     case 'anthropic':
@@ -142,7 +181,7 @@ export function createProviderFromConfig(config: ProviderConfig, model?: string)
         // ChatOpenAI) — it forwards `clientOptions` straight to the
         // underlying @anthropic-ai/sdk client, which is where `timeout`
         // actually lives.
-        clientOptions: { timeout: config.timeoutMs },
+        clientOptions: { timeout: config.timeoutMs, defaultHeaders: config.headers },
       });
   }
 }
@@ -174,10 +213,13 @@ export function createProviderFromConfig(config: ProviderConfig, model?: string)
  * passes through untouched, same as before per-model config existed.
  */
 export function applyEvalDeterminism(
-  config: ProviderConfig,
+  config: AnyProviderConfig,
   seed: number,
   options: { temperature?: number } = {},
-): ProviderConfig {
+): AnyProviderConfig {
+  // azure-openai falls into the same else-branch as ollama/openai below —
+  // it has no seed-concept difference from openai (both use the generic
+  // modelKwargs seed passthrough), so no special-casing is needed here.
   const models = config.models?.map(({ temperature: _temperature, seed: _seed, ...rest }) => rest);
   const base = { ...config, ...(models ? { models } : {}) };
 
@@ -196,14 +238,20 @@ export function applyEvalDeterminism(
  * printing at the start of an eval run so a result is never ambiguous about
  * whether it was pinned.
  */
-export function describeSampling(config: ProviderConfig): string {
+export function describeSampling(config: AnyProviderConfig): string {
   const parts = [`temperature=${config.temperature ?? 'provider default'}`];
   if (config.topP !== undefined) parts.push(`top_p=${config.topP}`);
   parts.push(`seed=${config.seed ?? 'none'}`);
   return parts.join(', ');
 }
 
-async function fetchModelIds(provider: ProviderConfig): Promise<string[]> {
+async function fetchModelIds(provider: AnyProviderConfig): Promise<string[]> {
+  // Azure OpenAI is deployment-scoped, not model-id-scoped — there is no
+  // live /models call to make; the Deployment Name is the one "model"
+  // (see GLOSSARY.md "Deployment Name", design doc §4.4).
+  if (provider.type === 'azure-openai') {
+    return [provider.deploymentName];
+  }
   switch (provider.type) {
     case 'ollama': {
       const client = new Ollama({ host: provider.baseUrl });
@@ -245,7 +293,7 @@ export interface RawModelDetails {
  * Returns [] immediately for any non-openai provider type, since only
  * openai-type /models responses are known to carry this extra data.
  */
-export async function fetchModelDetails(provider: ProviderConfig): Promise<RawModelDetails[]> {
+export async function fetchModelDetails(provider: AnyProviderConfig): Promise<RawModelDetails[]> {
   if (provider.type !== 'openai') return [];
   try {
     const client = new OpenAI({ baseURL: provider.baseUrl, apiKey: provider.apiKey });
@@ -262,7 +310,7 @@ export async function fetchModelDetails(provider: ProviderConfig): Promise<RawMo
  * specific error to the user (e.g. the chat model picker's background
  * refresh via GET /api/v1/providers).
  */
-export async function listModels(provider: ProviderConfig): Promise<string[]> {
+export async function listModels(provider: AnyProviderConfig): Promise<string[]> {
   try {
     return await fetchModelIds(provider);
   } catch {
@@ -275,7 +323,7 @@ export async function listModels(provider: ProviderConfig): Promise<string[]> {
  * the real failure — used by POST /api/v1/providers/models, where the
  * caller (the provider modal) needs to show the user why listing failed.
  */
-export async function listModelsOrThrow(provider: ProviderConfig): Promise<string[]> {
+export async function listModelsOrThrow(provider: AnyProviderConfig): Promise<string[]> {
   return fetchModelIds(provider);
 }
 
@@ -297,9 +345,13 @@ export async function listModelsOrThrow(provider: ProviderConfig): Promise<strin
  * ("embed" appears in the id), which covers real OpenAI's embedding
  * models and every embedding model observed from Lemonade's catalog.
  */
-export async function listEmbeddingModels(provider: ProviderConfig): Promise<string[]> {
+export async function listEmbeddingModels(provider: AnyProviderConfig): Promise<string[]> {
   const allModels = await fetchModelIds(provider);
 
+  // Unreachable from anywhere real in the app today — the Embeddings
+  // settings panel is driven by env.embeddings.type (a separate 2-value
+  // enum), never by a chat Provider — but falls through harmlessly to the
+  // generic `return allModels` below, same as anthropic already does.
   if (provider.type === 'ollama') {
     const client = new Ollama({ host: provider.baseUrl });
     const isEmbedding = await Promise.all(
@@ -322,7 +374,7 @@ export async function listEmbeddingModels(provider: ProviderConfig): Promise<str
   return allModels;
 }
 
-export function resolveProviderConfig(name?: string): ProviderConfig {
+export function resolveProviderConfig(name?: string): AnyProviderConfig {
   const providers = env.providers;
   if (providers.length === 0) {
     throw new Error('No providers configured. Add a providers[] block to config.yaml.');
@@ -373,12 +425,13 @@ export async function hasOllamaVisionCapability(
  * uses the live check above instead.
  */
 export const FALLBACK_VISION_CAPABILITIES: Record<
-  ProviderConfig['type'],
+  AnyProviderConfig['type'],
   Record<string, boolean>
 > = {
   ollama: {},
   openai: {},
   anthropic: {},
+  'azure-openai': {},
 };
 
 /**
@@ -400,7 +453,7 @@ export const FALLBACK_VISION_CAPABILITIES: Record<
  * worse than an unnecessary warning.
  */
 export async function resolveVisionCapabilityFromConfig(
-  providerConfig: ProviderConfig,
+  providerConfig: AnyProviderConfig,
   modelId: string,
   rawDetails?: RawModelDetails,
 ): Promise<boolean> {
@@ -409,6 +462,8 @@ export async function resolveVisionCapabilityFromConfig(
     return hasOllamaVisionCapability(client, modelId);
   }
 
+  // azure-openai falls into this same SDK-profile-based check as
+  // openai/anthropic — AzureChatOpenAI shares the same `.profile` mechanism.
   try {
     const llm = createProviderFromConfig(providerConfig, modelId);
     return (
@@ -437,7 +492,7 @@ export async function resolveVisionCapability(
   providerName: string | undefined,
   modelId: string,
 ): Promise<boolean> {
-  let providerConfig: ProviderConfig;
+  let providerConfig: AnyProviderConfig;
   try {
     providerConfig = resolveProviderConfig(providerName);
   } catch {

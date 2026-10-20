@@ -47,6 +47,13 @@ const suite: TestSuite = {
     },
     {
       tags: ['@user-workflow'],
+      action: 'Add an azure-openai provider via the modal and Save',
+      expectedOutcome:
+        'PATCH body providers array includes the new Azure OpenAI Provider with its OIDC Client Credentials, and the live model-list endpoint is never called',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
       action: 'Edit the Embeddings model field and Save',
       expectedOutcome: 'PATCH body equals the full Embeddings section with only model changed',
       test: () => {},
@@ -247,7 +254,8 @@ test.describe('Settings save contracts', { annotation: suiteAnnotations(suite) }
     const dialog = page.getByRole('dialog');
     await dialog.getByLabel('Name').fill('openai-test');
     await dialog.getByLabel('Type').click();
-    await page.getByRole('option', { name: 'openai' }).click();
+    // exact: true — otherwise this substring-matches the newer "Azure OpenAI" option too.
+    await page.getByRole('option', { name: 'openai', exact: true }).click();
     await dialog.getByLabel('Base URL').fill('https://api.openai.com/v1');
     // Add-mode starts with an empty Base URL, so the Select's auto-load (on
     // dialog open) bailed out with a "Base URL is required" error before we
@@ -269,12 +277,75 @@ test.describe('Settings save contracts', { annotation: suiteAnnotations(suite) }
           // provider-modal.tsx always includes this in its submit payload
           // now (issue #159) — defaults to 1 when the field is left as-is.
           maxConcurrency: 1,
+          // provider-modal.tsx always includes Custom Headers in its submit
+          // payload now (#250) — empty when the field is left as-is.
+          headers: {},
         },
       ],
       defaultProvider: '',
       favoriteModels: [],
     };
     expect(captured['model-providers']).toEqual(expected);
+  });
+
+  test('Model providers: adding an azure-openai provider sends it in the providers array without ever probing live models @user-workflow', async ({
+    page,
+  }, testInfo) => {
+    const captured = await mockSettingsApi(page);
+    // Unlike the other three provider types, azure-openai never lists live
+    // models (no model picker for that type — see the design doc §4.4) —
+    // confirm this endpoint is never hit, not just that the test happens to
+    // not need it mocked.
+    let modelsEndpointCalled = false;
+    await page.route('**/api/v1/providers/models', async (route) => {
+      modelsEndpointCalled = true;
+      await route.fulfill({ json: { ok: true, data: { models: [] } } });
+    });
+    await page.goto('/settings?section=model-providers');
+    await page.waitForSelector('[data-slot="settings-nav-item"]');
+    await pauseBeforeAction(page, testInfo);
+
+    await page.getByRole('button', { name: 'Add provider' }).first().click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Name').fill('azure-test');
+    await dialog.getByLabel('Type').click();
+    await page.getByRole('option', { name: 'Azure OpenAI' }).click();
+    await dialog.getByLabel('Endpoint').fill('https://my-resource.openai.azure.com');
+    await dialog.getByLabel('Deployment name').fill('gpt-4o');
+    await dialog.getByLabel('API version').fill('2024-10-21');
+    await dialog
+      .getByLabel('Token URL')
+      .fill('https://login.microsoftonline.com/tenant/oauth2/v2.0/token');
+    await dialog.getByLabel('Client ID').fill('client-id');
+    await dialog.getByLabel('Client secret').fill('client-secret');
+    await dialog.getByLabel('Scope').fill('https://cognitiveservices.azure.com/.default');
+    await dialog.getByRole('button', { name: 'Add provider' }).click();
+
+    await save(page);
+
+    const expected: ModelProvidersSettings = {
+      providers: [
+        {
+          name: 'azure-test',
+          type: 'azure-openai',
+          endpoint: 'https://my-resource.openai.azure.com',
+          deploymentName: 'gpt-4o',
+          apiVersion: '2024-10-21',
+          auth: {
+            tokenUrl: 'https://login.microsoftonline.com/tenant/oauth2/v2.0/token',
+            clientId: 'client-id',
+            clientSecret: 'client-secret',
+            scope: 'https://cognitiveservices.azure.com/.default',
+            grantType: 'client_credentials',
+          },
+          headers: {},
+        },
+      ],
+      defaultProvider: '',
+      favoriteModels: [],
+    };
+    expect(captured['model-providers']).toEqual(expected);
+    expect(modelsEndpointCalled).toBe(false);
   });
 
   test('Embeddings: Save sends the full section with only model changed @user-workflow', async ({

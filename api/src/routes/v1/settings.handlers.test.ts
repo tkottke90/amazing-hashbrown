@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { createServer, type Server } from 'node:http';
 import { describe, it, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import yaml from 'yaml';
@@ -78,6 +79,27 @@ function writeYaml(configDir: string, data: Record<string, unknown>): void {
 
 function noop() {}
 async function asyncNoop() {}
+
+// Local stand-in for an azure-openai provider's OIDC token endpoint — same
+// "a real HTTP call is the only way to exercise this" rationale as
+// provider-factory.test.ts's startModelsServer, since the model-providers
+// write path's Rotate check calls the real AzureTokenCache.refresh().
+function startTokenServer(
+  status: number,
+  body: unknown,
+): Promise<{ baseUrl: string; close: () => void }> {
+  return new Promise((resolve) => {
+    const server: Server = createServer((_req, res) => {
+      res.writeHead(status, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(body));
+    });
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      resolve({ baseUrl: `http://127.0.0.1:${port}`, close: () => server.close() });
+    });
+  });
+}
 
 // ---- Suite ------------------------------------------------------------------
 
@@ -219,6 +241,36 @@ describe('routes/v1/settings.handlers', () => {
       if (result.ok) {
         const data = result.data as { providers: Array<{ apiKey?: string }> };
         expect(data.providers[0].apiKey).to.equal(undefined);
+      }
+    });
+
+    it('masks auth.clientSecret (not apiKey) to "****" in model-providers GET for an azure-openai provider [unit]', () => {
+      const envWithAzure = makeEnv({
+        providers: [
+          {
+            name: 'azure',
+            type: 'azure-openai',
+            endpoint: 'https://my-resource.openai.azure.com',
+            deploymentName: 'gpt-4o',
+            apiVersion: '2024-10-21',
+            auth: {
+              tokenUrl: 'https://login.example.com/token',
+              clientId: 'client-id',
+              clientSecret: 'real-secret',
+              grantType: 'client_credentials',
+            },
+          },
+        ],
+      });
+      const result = getSettingsSectionHandler('model-providers', envWithAzure, makeConfig(tmpDir));
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        const data = result.data as {
+          providers: Array<{ apiKey?: string; auth?: { clientId: string; clientSecret?: string } }>;
+        };
+        expect(data.providers[0].apiKey).to.equal(undefined);
+        expect(data.providers[0].auth?.clientId).to.equal('client-id');
+        expect(data.providers[0].auth?.clientSecret).to.equal('****');
       }
     });
 
@@ -614,6 +666,202 @@ describe('routes/v1/settings.handlers', () => {
       const written = readYaml(tmpDir);
       const savedProviders = written.providers as Array<{ apiKey?: string }>;
       expect(savedProviders[0].apiKey).to.equal('sk-new-key');
+    });
+
+    it('preserves stored clientSecret when incoming is "****" for an azure-openai provider, with no token fetch [unit]', async () => {
+      const storedProviders: EnvAccessor['providers'] = [
+        {
+          name: 'azure-rotate-test',
+          type: 'azure-openai',
+          endpoint: 'https://my-resource.openai.azure.com',
+          deploymentName: 'gpt-4o',
+          apiVersion: '2024-10-21',
+          auth: {
+            tokenUrl: 'https://unreachable.example.invalid/token',
+            clientId: 'client-id',
+            clientSecret: 'real-secret',
+            grantType: 'client_credentials',
+          },
+        },
+      ];
+      const envWithAzure = makeEnv({ providers: storedProviders });
+      const config = makeConfig(tmpDir);
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
+
+      // clientId/clientSecret are both unchanged (**** resolves back to the
+      // stored secret) — not a Rotate, so no token fetch should happen at
+      // all, which this test proves by pointing tokenUrl at an address that
+      // would reject/hang if actually contacted.
+      const result = await patchSettingsSectionHandler(
+        'model-providers',
+        {
+          providers: [
+            {
+              name: 'azure-rotate-test',
+              type: 'azure-openai',
+              endpoint: 'https://my-resource.openai.azure.com',
+              deploymentName: 'gpt-4o',
+              apiVersion: '2024-10-21',
+              auth: {
+                tokenUrl: 'https://unreachable.example.invalid/token',
+                clientId: 'client-id',
+                clientSecret: '****',
+                grantType: 'client_credentials',
+              },
+            },
+          ],
+        },
+        config,
+        envWithAzure,
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      );
+
+      expect(result.ok).to.equal(true);
+      const written = readYaml(tmpDir);
+      const savedProviders = written.providers as Array<{ auth?: { clientSecret?: string } }>;
+      expect(savedProviders[0].auth?.clientSecret).to.equal('real-secret');
+    });
+
+    it("rejects the whole PATCH and writes nothing when a Rotate's new Client Credentials fail to authenticate [unit]", async () => {
+      const tokenServer = await startTokenServer(401, { error: 'invalid_client' });
+      try {
+        const storedProviders: EnvAccessor['providers'] = [
+          {
+            name: 'azure-rotate-test',
+            type: 'azure-openai',
+            endpoint: 'https://my-resource.openai.azure.com',
+            deploymentName: 'gpt-4o',
+            apiVersion: '2024-10-21',
+            auth: {
+              tokenUrl: tokenServer.baseUrl,
+              clientId: 'old-client-id',
+              clientSecret: 'old-secret',
+              grantType: 'client_credentials',
+            },
+          },
+        ];
+        const envWithAzure = makeEnv({ providers: storedProviders });
+        const config = makeConfig(tmpDir);
+        const {
+          loadAgentInstructions,
+          invalidateChatAgent,
+          seedProviderCosts,
+          reloadTrackerRegistry,
+        } = makeSideEffects();
+
+        const result = await patchSettingsSectionHandler(
+          'model-providers',
+          {
+            providers: [
+              {
+                name: 'azure-rotate-test',
+                type: 'azure-openai',
+                endpoint: 'https://my-resource.openai.azure.com',
+                deploymentName: 'gpt-4o',
+                apiVersion: '2024-10-21',
+                auth: {
+                  tokenUrl: tokenServer.baseUrl,
+                  clientId: 'new-client-id',
+                  clientSecret: 'new-secret',
+                  grantType: 'client_credentials',
+                },
+              },
+            ],
+          },
+          config,
+          envWithAzure,
+          loadAgentInstructions,
+          invalidateChatAgent,
+          seedProviderCosts,
+          reloadTrackerRegistry,
+        );
+
+        expect(result.ok).to.equal(false);
+        if (!result.ok) {
+          expect(result.status).to.equal(400);
+          expect(result.fieldErrors?.providers?.[0]).to.match(
+            /Failed to authenticate "azure-rotate-test"/,
+          );
+        }
+        // Nothing was written — the stored (old) credentials are untouched.
+        expect(readYaml(tmpDir)).to.deep.equal({});
+      } finally {
+        tokenServer.close();
+      }
+    });
+
+    it("persists a Rotate's new Client Credentials once they authenticate successfully [unit]", async () => {
+      const tokenServer = await startTokenServer(200, { access_token: 'tok-1', expires_in: 3600 });
+      try {
+        const storedProviders: EnvAccessor['providers'] = [
+          {
+            name: 'azure-rotate-test',
+            type: 'azure-openai',
+            endpoint: 'https://my-resource.openai.azure.com',
+            deploymentName: 'gpt-4o',
+            apiVersion: '2024-10-21',
+            auth: {
+              tokenUrl: tokenServer.baseUrl,
+              clientId: 'old-client-id',
+              clientSecret: 'old-secret',
+              grantType: 'client_credentials',
+            },
+          },
+        ];
+        const envWithAzure = makeEnv({ providers: storedProviders });
+        const config = makeConfig(tmpDir);
+        const {
+          loadAgentInstructions,
+          invalidateChatAgent,
+          seedProviderCosts,
+          reloadTrackerRegistry,
+        } = makeSideEffects();
+
+        const result = await patchSettingsSectionHandler(
+          'model-providers',
+          {
+            providers: [
+              {
+                name: 'azure-rotate-test',
+                type: 'azure-openai',
+                endpoint: 'https://my-resource.openai.azure.com',
+                deploymentName: 'gpt-4o',
+                apiVersion: '2024-10-21',
+                auth: {
+                  tokenUrl: tokenServer.baseUrl,
+                  clientId: 'new-client-id',
+                  clientSecret: 'new-secret',
+                  grantType: 'client_credentials',
+                },
+              },
+            ],
+          },
+          config,
+          envWithAzure,
+          loadAgentInstructions,
+          invalidateChatAgent,
+          seedProviderCosts,
+          reloadTrackerRegistry,
+        );
+
+        expect(result.ok).to.equal(true);
+        const written = readYaml(tmpDir);
+        const savedProviders = written.providers as Array<{
+          auth?: { clientId?: string; clientSecret?: string };
+        }>;
+        expect(savedProviders[0].auth?.clientId).to.equal('new-client-id');
+        expect(savedProviders[0].auth?.clientSecret).to.equal('new-secret');
+      } finally {
+        tokenServer.close();
+      }
     });
 
     it('writes trackers github token nested under workspaces.tasks.trackers [unit]', async () => {
