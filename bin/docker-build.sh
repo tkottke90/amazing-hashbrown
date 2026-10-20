@@ -27,11 +27,14 @@ docker build \
 
 # linux/arm64: native on Apple Silicon, so local testing (docker run/compose)
 # runs without QEMU emulation. Separate tag — never pushed by the release
-# pipeline, just for local use.
-docker build \
-  -t amazing-hashbrown:arm64 \
-  --platform linux/arm64 \
-  --secret id=npm_token,env=NPM_TOKEN \
-  --build-arg COMMIT_SHA="$COMMIT_SHA" \
-  --build-arg APP_VERSION="$APP_VERSION" \
-  .
+# pipeline, just for local use. CI runners are amd64 and never consume this
+# tag, so skip it there (SKIP_ARM64_BUILD=true) to save build time.
+if [ "${SKIP_ARM64_BUILD:-false}" != "true" ]; then
+  docker build \
+    -t amazing-hashbrown:arm64 \
+    --platform linux/arm64 \
+    --secret id=npm_token,env=NPM_TOKEN \
+    --build-arg COMMIT_SHA="$COMMIT_SHA" \
+    --build-arg APP_VERSION="$APP_VERSION" \
+    .
+fi
