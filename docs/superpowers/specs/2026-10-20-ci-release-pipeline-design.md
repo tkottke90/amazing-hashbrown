@@ -113,7 +113,7 @@ to clean up the local and remote tag once the test run is confirmed working.
   `publish <tag> <changelog-file>`. Pushes the current branch, pushes the
   tag (this is what triggers CI), then — unless `detect-dry-run` says this
   tag is a dry run — runs `gh release create <tag> --title <tag> --notes-file
-  <changelog-file>`.
+<changelog-file>`.
 - **`docker-build-release`, `docker-tag-version`, `docker-save`** — kept,
   unchanged signatures. They're simply invoked from CI now instead of from a
   developer's machine.
@@ -268,7 +268,7 @@ Rewritten to match the new shape:
   Straightforward to add later if this comes up in practice; not needed for
   the first version.
 - Publishing this application itself as an npm package — it's `private:
-  true`; `NPM_DOMAIN`/`NPM_TOKEN` exist purely to authenticate `npm ci`
+true`; `NPM_DOMAIN`/`NPM_TOKEN` exist purely to authenticate `npm ci`
   during the build, same as `tests.yml` today.
 - Any GitHub Environment / manual-approval gate on the CI job — the tag push
   itself is the deliberate human action that gates everything downstream.

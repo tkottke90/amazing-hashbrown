@@ -40,17 +40,26 @@ jobs:
         env:
           SKIP_ARM64_BUILD: 'true'
 
+      - name: Resolve Zot registry host
+        id: zot
+        if: steps.detect.outputs.is_dry_run != 'true'
+        # vars.ZOT_URL is a full URL (https://docker.artifacts.tdkottke.com);
+        # docker login/tag/push need a bare host[:port], not a URL.
+        run: echo "host=${ZOT_URL#*://}" >> "$GITHUB_OUTPUT"
+        env:
+          ZOT_URL: ${{ vars.ZOT_URL }}
+
       - name: Docker login to Zot
         if: steps.detect.outputs.is_dry_run != 'true'
-        run: docker login "${{ vars.ZOT_URL }}" -u "${{ secrets.ZOT_USERNAME }}" -p "${{ secrets.ZOT_TOKEN }}"
+        run: docker login "${{ steps.zot.outputs.host }}" -u "${{ secrets.ZOT_USERNAME }}" -p "${{ secrets.ZOT_TOKEN }}"
 
       - name: Tag and save release image
         if: steps.detect.outputs.is_dry_run != 'true'
         run: |
           bin/release.sh docker-tag-version amazing-hashbrown:latest \
-            "${{ vars.ZOT_URL }}/amazing-hashbrown:${{ github.ref_name }}"
+            "${{ steps.zot.outputs.host }}/amazing-hashbrown:${{ github.ref_name }}"
           bin/release.sh docker-save \
-            "${{ vars.ZOT_URL }}/amazing-hashbrown:${{ github.ref_name }}" \
+            "${{ steps.zot.outputs.host }}/amazing-hashbrown:${{ github.ref_name }}" \
             /tmp/amazing-hashbrown.tar
 
       - name: Upload image tar to GitHub Release
@@ -61,4 +70,4 @@ jobs:
 
       - name: Push versioned + latest tags to Zot
         if: steps.detect.outputs.is_dry_run != 'true'
-        run: bin/release.sh registry-publish "${{ vars.ZOT_URL }}/amazing-hashbrown" "${{ github.ref_name }}"
+        run: bin/release.sh registry-publish "${{ steps.zot.outputs.host }}/amazing-hashbrown" "${{ github.ref_name }}"
