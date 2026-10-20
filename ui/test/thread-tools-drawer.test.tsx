@@ -101,6 +101,7 @@ describe('ThreadToolsDrawer', () => {
 
     expect(screen.getByText('Always on')).toBeInTheDocument();
     expect(screen.getByText('Gated by skill')).toBeInTheDocument();
+    expect(screen.getByText('Active skill tool')).toBeInTheDocument();
 
     const webFetchRow = screen.getByText('Web Fetch').closest('li')!;
     expect(webFetchRow.querySelector('button')).toHaveTextContent('Remove');

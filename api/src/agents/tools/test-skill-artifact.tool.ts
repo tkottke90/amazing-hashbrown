@@ -7,7 +7,9 @@ import { resolveSkillScope, type ResolveSkillScopeDeps } from './skill-scope-res
 
 const TestSkillArtifactSchema = z.object({
   skill: z.string().describe('The skill this script belongs to.'),
-  name: z.string().describe('The script filename to dry-run (e.g. "run.py", "check.sh", "check.js").'),
+  name: z
+    .string()
+    .describe('The script filename to dry-run (e.g. "run.py", "check.sh", "check.js").'),
   args: z.array(z.string()).optional().describe('Arguments to pass to the script.'),
 });
 

@@ -18,7 +18,9 @@ describe('config/env', () => {
     });
 
     it('accepts an overridden scriptTimeoutMs', () => {
-      expect(SkillsConfigSchema.parse({ scriptTimeoutMs: 60_000 }).scriptTimeoutMs).to.equal(60_000);
+      expect(SkillsConfigSchema.parse({ scriptTimeoutMs: 60_000 }).scriptTimeoutMs).to.equal(
+        60_000,
+      );
     });
 
     it('rejects a non-positive scriptTimeoutMs', () => {

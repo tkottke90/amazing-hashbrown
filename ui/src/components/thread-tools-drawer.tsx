@@ -160,7 +160,14 @@ function ThreadToolsBody() {
               <ToolRow
                 key={tool.toolId}
                 tool={tool}
-                action={{ kind: 'none', caption: tool.alwaysOn ? 'Always on' : 'Gated by skill' }}
+                action={{
+                  kind: 'none',
+                  caption: tool.alwaysOn
+                    ? 'Always on'
+                    : tool.category === 'skill-scoped'
+                      ? 'Active skill tool'
+                      : 'Gated by skill',
+                }}
               />
             ))}
           </ul>

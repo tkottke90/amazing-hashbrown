@@ -24,7 +24,11 @@ describe('agents/skill-scoped-tools.middleware', () => {
   describe('wrapModelCall [unit]', () => {
     it('hides read_skill_reference/run_skill_script when no skill is active', async () => {
       const middleware = createSkillScopedToolsMiddleware();
-      const tools = [fakeTool('ask_user'), fakeTool('read_skill_reference'), fakeTool('run_skill_script')];
+      const tools = [
+        fakeTool('ask_user'),
+        fakeTool('read_skill_reference'),
+        fakeTool('run_skill_script'),
+      ];
       let seenTools: { name: string }[] = [];
       const handler = async (req: { tools: { name: string }[] }) => {
         seenTools = req.tools;
@@ -39,7 +43,11 @@ describe('agents/skill-scoped-tools.middleware', () => {
 
     it('exposes both tools once any skill is active', async () => {
       const middleware = createSkillScopedToolsMiddleware();
-      const tools = [fakeTool('ask_user'), fakeTool('read_skill_reference'), fakeTool('run_skill_script')];
+      const tools = [
+        fakeTool('ask_user'),
+        fakeTool('read_skill_reference'),
+        fakeTool('run_skill_script'),
+      ];
       let seenTools: { name: string }[] = [];
       const handler = async (req: { tools: { name: string }[] }) => {
         seenTools = req.tools;
@@ -105,7 +113,10 @@ describe('agents/skill-scoped-tools.middleware', () => {
       this._callIndex += 1;
       const msg =
         this._callIndex === 1
-          ? new AIMessage({ content: '', tool_calls: [{ id: 'call_1', name: 'probe_tool', args: {} }] })
+          ? new AIMessage({
+              content: '',
+              tool_calls: [{ id: 'call_1', name: 'probe_tool', args: {} }],
+            })
           : new AIMessage({ content: 'done' });
       return { generations: [{ message: msg, text: '' }] };
     }
@@ -123,7 +134,11 @@ describe('agents/skill-scoped-tools.middleware', () => {
       const probeTool = tool(
         async (_args, runtime: ToolRuntime) =>
           JSON.stringify({ seen: runtime.configurable?.activeSkill ?? null }),
-        { name: 'probe_tool', description: 'Reports the injected activeSkill.', schema: z.object({}) },
+        {
+          name: 'probe_tool',
+          description: 'Reports the injected activeSkill.',
+          schema: z.object({}),
+        },
       );
 
       const agent = createAgent({
@@ -138,7 +153,9 @@ describe('agents/skill-scoped-tools.middleware', () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any);
 
-      const toolMessage = final.messages.find((m: BaseMessage) => m.getType() === 'tool') as ToolMessage;
+      const toolMessage = final.messages.find(
+        (m: BaseMessage) => m.getType() === 'tool',
+      ) as ToolMessage;
       expect(JSON.parse(String(toolMessage.content))).to.deep.equal({ seen: 'some-skill' });
     });
   });

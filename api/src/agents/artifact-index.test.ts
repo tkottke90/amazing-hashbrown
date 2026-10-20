@@ -32,10 +32,7 @@ describe('agents/artifact-index', () => {
   });
 
   it('produces the exact documented format [unit]', () => {
-    const result = buildArtifactIndex(
-      { 'check-status.sh': 'p1' },
-      { 'operations.md': 'p2' },
-    );
+    const result = buildArtifactIndex({ 'check-status.sh': 'p1' }, { 'operations.md': 'p2' });
     expect(result).to.equal(
       '## Available Artifacts\n' +
         '- Reference `operations.md` → call `read_skill_reference` with `name: "operations.md"`\n' +

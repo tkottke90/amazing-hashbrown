@@ -49,7 +49,7 @@ export function makeReadSkillReferenceTool(deps: ResolveSkillScopeDeps = {}) {
       name: 'read_skill_reference',
       description:
         "Read a reference file belonging to whichever skill is currently active. Scoped to that skill's " +
-        'own references/ only — there is no way to read another skill\'s files with this tool.',
+        "own references/ only — there is no way to read another skill's files with this tool.",
       schema: ReadSkillReferenceSchema,
     },
   );

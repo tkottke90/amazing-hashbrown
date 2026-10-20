@@ -15,7 +15,7 @@ New vocabulary (Active Skill, Skill-Gated Tools, Skill-Scoped Tools, Skill Artif
 
 ### Active Skill tracking broadens (ADR-0019)
 
-`skill-expansion.middleware.ts` sets Active Skill (the state field currently named `activeGatedSkill`, renamed to reflect its broader role) for *every* skill a slash command successfully resolves, not only the four in `GATED_SKILL_REGISTRATIONS`. `gatedSkillStateSchema` and its consumers (`skill-gated-tools.middleware.ts`, `gated-skill-registrations.ts`) are renamed to match but otherwise unchanged in behavior — Skill-Gated Tools still filters by exact skill-name match, so a skill with no registration continues to unlock nothing there.
+`skill-expansion.middleware.ts` sets Active Skill (the state field currently named `activeGatedSkill`, renamed to reflect its broader role) for _every_ skill a slash command successfully resolves, not only the four in `GATED_SKILL_REGISTRATIONS`. `gatedSkillStateSchema` and its consumers (`skill-gated-tools.middleware.ts`, `gated-skill-registrations.ts`) are renamed to match but otherwise unchanged in behavior — Skill-Gated Tools still filters by exact skill-name match, so a skill with no registration continues to unlock nothing there.
 
 Active Skill state stores only the skill's **name** — nothing about app-vs-workspace scope. Both new tools re-resolve `{manager, scope}` via the existing `resolveSkillScope(name, workspaceId)` at call time, the same way `test_skill_artifact`/`get_skill_source` already do. This avoids introducing a second place that needs to agree on scope resolution.
 

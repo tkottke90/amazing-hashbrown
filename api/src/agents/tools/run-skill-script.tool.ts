@@ -6,11 +6,10 @@ import { env } from '../../config/env.js';
 import { resolveSkillScope, type ResolveSkillScopeDeps } from './skill-scope-resolver.js';
 
 const RunSkillScriptSchema = z.object({
-  name: z.string().describe('The script filename to run (e.g. "check.sh", "run.py", "extract.js").'),
-  args: z
-    .array(z.string())
-    .optional()
-    .describe('Arguments to pass to the script.'),
+  name: z
+    .string()
+    .describe('The script filename to run (e.g. "check.sh", "run.py", "extract.js").'),
+  args: z.array(z.string()).optional().describe('Arguments to pass to the script.'),
 });
 
 const JS_EXTENSIONS = new Set(['.js', '.mjs', '.cjs']);

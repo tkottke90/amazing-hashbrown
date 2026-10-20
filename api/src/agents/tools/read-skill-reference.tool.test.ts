@@ -47,7 +47,10 @@ describe('agents/tools/read-skill-reference', () => {
   it('errors clearly when no skill is active [unit]', async () => {
     const tool = makeReadSkillReferenceTool({ globalManager: global, store });
 
-    const result = (await tool.invoke({ name: 'operations.md' }, invokeConfig())) as unknown as string;
+    const result = (await tool.invoke(
+      { name: 'operations.md' },
+      invokeConfig(),
+    )) as unknown as string;
 
     expect(result).to.include('No skill is currently active');
   });
