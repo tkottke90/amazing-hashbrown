@@ -41,6 +41,12 @@ const suite: TestSuite = {
       expectedOutcome: "The thread's id is written to the clipboard",
       test: () => {},
     },
+    {
+      tags: ['@user-workflow'],
+      action: 'Open the kebab menu and click Archive',
+      expectedOutcome: 'POST .../archive is sent and the row disappears from the sidebar',
+      test: () => {},
+    },
   ],
 };
 
@@ -53,6 +59,7 @@ interface MockThread {
   forkedFromSeq: number | null;
   afterAgentState: { status: 'idle' };
   links: { self: string; afterAgentStatus: string };
+  archivedAt?: string | null;
 }
 
 function afterAgentFields(id: string): Pick<MockThread, 'afterAgentState' | 'links'> {
@@ -92,20 +99,47 @@ async function mockThreadsApi(page: import('@playwright/test').Page, threads: Mo
   await page.route('**/api/v1/threads**', async (route: Route) => {
     const url = new URL(route.request().url());
     const method = route.request().method();
-    const match = url.pathname.match(/^\/api\/v1\/threads(?:\/([^/]+))?$/);
+    const match = url.pathname.match(
+      /^\/api\/v1\/threads(?:\/([^/]+)(?:\/(archive|unarchive))?)?$/,
+    );
 
     if (!match) {
       await route.fallback();
       return;
     }
     const id = match[1];
+    const action = match[2];
 
+    // The sidebar's own GET excludes archived threads server-side (D13) —
+    // mirror that here so the row actually disappears after Archive.
     if (!id && method === 'GET') {
-      await route.fulfill({ json: threads });
+      await route.fulfill({ json: threads.filter((t) => !t.archivedAt) });
       return;
     }
 
-    if (id && method === 'GET') {
+    if (id && action === 'archive' && method === 'POST') {
+      const thread = threads.find((t) => t.id === id);
+      if (!thread) {
+        await route.fulfill({ status: 404, json: { error: 'not found' } });
+        return;
+      }
+      thread.archivedAt = '2026-10-20T00:00:00.000Z';
+      await route.fulfill({ json: thread });
+      return;
+    }
+
+    if (id && action === 'unarchive' && method === 'POST') {
+      const thread = threads.find((t) => t.id === id);
+      if (!thread) {
+        await route.fulfill({ status: 404, json: { error: 'not found' } });
+        return;
+      }
+      thread.archivedAt = null;
+      await route.fulfill({ json: thread });
+      return;
+    }
+
+    if (id && !action && method === 'GET') {
       const thread = threads.find((t) => t.id === id);
       if (!thread) {
         await route.fulfill({ status: 404, json: { error: 'not found' } });
@@ -234,6 +268,26 @@ test.describe(
 
       const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
       expect(clipboardText).toBe('thread-a');
+    });
+
+    test('archive via kebab menu removes the row with no confirmation step', async ({
+      page,
+    }, testInfo) => {
+      await mockThreadsApi(page, seedThreads());
+      await page.goto('/');
+      await pauseBeforeAction(page, testInfo);
+
+      const row = page
+        .locator('[data-slot="thread-row"]')
+        .filter({ hasText: 'Second conversation' });
+      await row.hover();
+      await row.locator('button[aria-haspopup="menu"]').click();
+
+      // No "Archive this thread?" confirmation step, unlike Delete.
+      await page.getByRole('menuitem', { name: 'Archive' }).click();
+
+      await expect(page.getByText('Second conversation')).not.toBeVisible();
+      await expect(page.getByText('First conversation')).toBeVisible();
     });
   },
 );

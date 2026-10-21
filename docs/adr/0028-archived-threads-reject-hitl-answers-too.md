@@ -1,0 +1,3 @@
+# Archived threads also reject HITL answers, unlike task threads
+
+`task`-type threads already reject chat, retry, and fork with a 409 via `rejectIfTaskRunThread` (`chat.route.ts`), but deliberately exempt `/hitl` — answering a task run's own prompt re-queues the automated run through `respondIfTaskPrompt`, a separate mechanism, not `resumeChatToSse`. An Archived Thread has no such re-queue path, so leaving `/hitl` open would let a pending prompt resume the agent and add new messages — exactly what "cannot be added to" rules out. We give Archived Threads their own, broader guard (chat + retry + fork + hitl) instead of mechanically reusing `task`'s narrower one. Anyone assuming parity with the `task` guard should not "fix" this into matching it.

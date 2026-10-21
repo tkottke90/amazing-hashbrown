@@ -150,3 +150,70 @@ describe('routes/v1/chat.route — automated task run threads', () => {
     expect(res.status).to.equal(409);
   });
 });
+
+// Covers the archived-thread half of the chat routes — see
+// docs/superpowers/specs/2026-10-20-thread-archiving-sidebar-retention-design.md
+// and docs/adr/0028-archived-threads-reject-hitl-answers-too.md. Unlike a
+// task-run thread, an archived thread's /hitl route also rejects — there is
+// no re-queue mechanism to exempt it, so answering a pending prompt would
+// just resume the agent and add new messages.
+describe('routes/v1/chat.route — archived threads', () => {
+  let baseUrl: string;
+  let close: () => Promise<void>;
+  let dir: string;
+
+  before(async () => {
+    ({ baseUrl, close } = await startTestServer(chatRouter, '/api/v1/chat'));
+  });
+
+  after(async () => {
+    await close();
+  });
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'chat-route-archived-thread-test-'));
+    const db = openDatabase(join(dir, 'test.db'));
+    bootThreadStore(db);
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function archivedThread(): string {
+    const threadId = randomUUID();
+    getThreadStore().upsertThreadOnFirstMessage(threadId, 'Archived chat', 'chat');
+    getThreadStore().archiveThread(threadId);
+    return threadId;
+  }
+
+  it('rejects a chat message into an archived thread with 409 [orchestration]', async () => {
+    const res = await fetch(`${baseUrl}/${archivedThread()}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ content: 'hello?' }),
+    });
+    expect(res.status).to.equal(409);
+    expect(await res.json()).to.deep.equal({ error: 'Archived threads are read-only' });
+  });
+
+  it('rejects a retry in an archived thread with 409 [orchestration]', async () => {
+    const res = await fetch(`${baseUrl}/${archivedThread()}/retry`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).to.equal(409);
+    expect(await res.json()).to.deep.equal({ error: 'Archived threads are read-only' });
+  });
+
+  it('rejects a hitl answer in an archived thread with 409 — unlike a task-run thread, this route has no other guard today [orchestration]', async () => {
+    const res = await fetch(`${baseUrl}/${archivedThread()}/hitl`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ promptId: 'prompt-1', answer: 'anything' }),
+    });
+    expect(res.status).to.equal(409);
+    expect(await res.json()).to.deep.equal({ error: 'Archived threads are read-only' });
+  });
+});

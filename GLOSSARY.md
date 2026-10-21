@@ -211,3 +211,21 @@ _Avoid_: Reset, Refresh (Refresh is the automatic proactive renewal of an alread
 **Custom Headers**:
 An optional, per-Provider map of static HTTP headers sent with every one of that Provider's requests, merged on top of whatever its auth sets. Applies to every Provider type, not just the Azure OpenAI Provider.
 _Avoid_: Default headers, request headers
+
+# Thread Archiving & Sidebar Visibility
+
+How a chat thread leaves the global chat sidebar — permanently via Archiving, or temporarily via inactivity — without the underlying data ever being deleted.
+
+## Language
+
+**Archived Thread**:
+A chat thread with a non-null archive timestamp. Hidden from the sidebar regardless of age, and rejects chat, retry, hitl-answer, and fork with a 409 — renaming, deleting, generating a report, and Unarchiving stay allowed. Opening one never makes it the active thread (see ADR-0029).
+_Avoid_: Closed thread, locked thread, frozen thread, stale thread (see Sidebar Retention Window, a different and unrelated state)
+
+**Archive** / **Unarchive**:
+The two actions that set and clear a thread's archive timestamp. Archive is reachable from both the sidebar's own thread row and the Threads page; Unarchive only from the Threads page, since an Archived Thread never appears in the sidebar to unarchive from.
+_Avoid_: Close/Reopen, Lock/Unlock, Hide/Show (see Sidebar Retention Window)
+
+**Sidebar Retention Window**:
+The `chat.sidebarRetentionDays` config value: how many days since a chat thread's `updatedAt` before it's excluded from the sidebar's own thread list (see ADR-0027, ADR-0030). This is a live computation against `updatedAt`, not a persisted flag on the thread — unlike an Archived Thread, a thread this excludes carries no state of its own, stays fully usable, and reappears in the sidebar the moment it's continued and `updatedAt` moves forward again.
+_Avoid_: Stale thread, hidden thread, archived (not to be confused with Archived Thread, a real persisted state this one deliberately isn't)

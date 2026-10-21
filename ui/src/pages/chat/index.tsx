@@ -19,6 +19,7 @@ import { useComputed, useSignal } from '@preact/signals';
 import { useLocation } from 'preact-iso';
 import { useEffect } from 'preact/hooks';
 import { TaskRunView } from './task-run-view';
+import { ArchivedThreadView } from './archived-thread-view';
 
 export function ThreadView() {
   const { route } = useLocation();
@@ -132,8 +133,9 @@ export function ThreadView() {
 
 export function ChatRoot({ id }: { path?: string; id?: string }) {
   // 'chat' renders the normal chat view; 'run' the read-only view of an
-  // automated task run; 'resolving' is the brief check in between.
-  const mode = useSignal<'chat' | 'run' | 'resolving'>('chat');
+  // automated task run; 'archived' the read-only view of an Archived
+  // Thread (GLOSSARY.md); 'resolving' is the brief check in between.
+  const mode = useSignal<'chat' | 'run' | 'archived' | 'resolving'>('chat');
 
   useEffect(() => {
     refreshThreadList();
@@ -142,10 +144,13 @@ export function ChatRoot({ id }: { path?: string; id?: string }) {
   useEffect(() => {
     if (!id) return;
     // A thread already in the chat list is a chat — switch straight to it.
-    // Anything else is checked first: an automated run's thread opens
-    // read-only and must never become the persisted active chat thread
-    // (switchThread's side effect), or the app would reopen it on the
-    // next visit.
+    // Anything else is checked first: an automated run's thread, and an
+    // Archived Thread, both open read-only and must never become the
+    // persisted active chat thread (switchThread's side effect), or the
+    // app would reopen it on the next visit. This relies on the sidebar's
+    // own fetch (threads, populated by refreshThreadList) already
+    // excluding archived threads server-side (see threads.route.ts's GET
+    // '/' — D13) — an archived thread should never match here.
     if (threads.value.some((t) => t.id === id)) {
       mode.value = 'chat';
       void switchThread(id);
@@ -158,6 +163,8 @@ export function ChatRoot({ id }: { path?: string; id?: string }) {
       if (cancelled) return;
       if (instance.threadType.value === 'task') {
         mode.value = 'run';
+      } else if (instance.archivedAt.value) {
+        mode.value = 'archived';
       } else {
         mode.value = 'chat';
         void switchThread(id);
@@ -172,6 +179,8 @@ export function ChatRoot({ id }: { path?: string; id?: string }) {
     <Layout addLabel="New conversation">
       {mode.value === 'run' && id ? (
         <TaskRunView threadId={id} />
+      ) : mode.value === 'archived' && id ? (
+        <ArchivedThreadView threadId={id} />
       ) : mode.value === 'resolving' ? (
         <div class="h-full" />
       ) : (

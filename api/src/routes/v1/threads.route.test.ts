@@ -102,10 +102,11 @@ describe('routes/v1/threads — GET /', () => {
   let dir: string;
   let baseUrl: string;
   let close: () => Promise<void>;
+  let db: ReturnType<typeof openDatabase>;
 
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), 'threads-route-list-test-'));
-    const db = openDatabase(join(dir, 'test.db'));
+    db = openDatabase(join(dir, 'test.db'));
     bootThreadStore(db);
     getThreadStore().upsertThreadOnFirstMessage('chat-1', 'A chat', 'chat');
     getThreadStore().upsertThreadOnFirstMessage('wiki-1', 'A wiki thread', 'wiki');
@@ -151,5 +152,83 @@ describe('routes/v1/threads — GET /', () => {
 
     expect(res.status).to.equal(400);
     expect(await res.json()).to.deep.equal({ error: 'Unknown thread type "bogus"' });
+  });
+
+  it('excludes an archived chat thread from the default (sidebar) list, but not from ?type=all [orchestration]', async () => {
+    getThreadStore().archiveThread('chat-1');
+
+    const defaultList = (await (await get('/')).json()) as { id: string }[];
+    expect(defaultList.map((t) => t.id)).to.not.include('chat-1');
+
+    const allList = (await (await get('/?type=all')).json()) as { id: string }[];
+    expect(allList.map((t) => t.id)).to.include('chat-1');
+  });
+
+  it('excludes a chat thread stale past the retention window from the default list, but not from ?type=all [orchestration]', async () => {
+    const staleDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    // No public store API backdates updated_at — reach into the raw db,
+    // the same connection bootThreadStore() opened, to simulate an old
+    // thread without waiting real time.
+    db.prepare(`UPDATE threads SET updated_at = ? WHERE id = ?`).run(staleDate, 'chat-1');
+
+    const defaultList = (await (await get('/')).json()) as { id: string }[];
+    expect(defaultList.map((t) => t.id)).to.not.include('chat-1');
+
+    const allList = (await (await get('/?type=all')).json()) as { id: string }[];
+    expect(allList.map((t) => t.id)).to.include('chat-1');
+  });
+});
+
+describe('routes/v1/threads — archive/unarchive', () => {
+  let dir: string;
+  let baseUrl: string;
+  let close: () => Promise<void>;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'threads-route-archive-test-'));
+    const db = openDatabase(join(dir, 'test.db'));
+    bootThreadStore(db);
+    getThreadStore().upsertThreadOnFirstMessage('chat-1', 'A chat', 'chat');
+    getThreadStore().upsertThreadOnFirstMessage('wiki-1', 'A wiki thread', 'wiki');
+    ({ baseUrl, close } = await startTestServer(threadsRouter, '/api/v1/threads'));
+  });
+
+  afterEach(async () => {
+    await close();
+    getThreadStore().close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const post = (path: string) => fetch(`${baseUrl}${path}`, { method: 'POST' });
+
+  it('archives a chat thread [orchestration]', async () => {
+    const res = await post('/chat-1/archive');
+    expect(res.status).to.equal(200);
+    const body = (await res.json()) as { archivedAt: string | null };
+    expect(body.archivedAt).to.not.equal(null);
+  });
+
+  it('404s archiving an unknown thread [orchestration]', async () => {
+    const res = await post('/no-such-thread/archive');
+    expect(res.status).to.equal(404);
+  });
+
+  it('400s archiving a non-chat thread [orchestration]', async () => {
+    const res = await post('/wiki-1/archive');
+    expect(res.status).to.equal(400);
+    expect(await res.json()).to.deep.equal({ error: 'Only chat threads can be archived' });
+  });
+
+  it('unarchives a chat thread [orchestration]', async () => {
+    await post('/chat-1/archive');
+    const res = await post('/chat-1/unarchive');
+    expect(res.status).to.equal(200);
+    const body = (await res.json()) as { archivedAt: string | null };
+    expect(body.archivedAt).to.equal(null);
+  });
+
+  it('404s unarchiving an unknown thread [orchestration]', async () => {
+    const res = await post('/no-such-thread/unarchive');
+    expect(res.status).to.equal(404);
   });
 });

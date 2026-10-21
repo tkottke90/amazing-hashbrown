@@ -8,13 +8,15 @@ import { getActiveSseWriter } from '../../agents/active-sse-writer.js';
 import { getWakeupStore, toCardPayload, type Wakeup } from '../../services/wakeup-store.js';
 import { getWakeupRegistry } from '../../services/wakeup-registry.js';
 import { createProvider } from '../../services/provider-factory.js';
-import { configManager } from '../../config/env.js';
+import { configManager, env } from '../../config/env.js';
 import { readRawToolsConfig } from './tool-settings.handlers.js';
 import {
   listThreadsHandler,
   getThreadHandler,
   type TaskRunSummary,
   renameThreadHandler,
+  archiveThreadHandler,
+  unarchiveThreadHandler,
   deleteThreadHandler,
   forkThreadHandler,
   generateTitleHandler,
@@ -38,10 +40,24 @@ function isThreadType(value: string): value is ThreadType {
 // list) unchanged; `?type=all` is the only way to get every thread type —
 // a query param instead of a sibling path (e.g. `/all`) avoids needing to
 // register it ahead of `/:id` to stop Express matching it as `id: 'all'`.
+//
+// Retention/archive filtering (the Sidebar Retention Window + Archived
+// Thread exclusion) applies ONLY to the no-`type`-param branch below — the
+// sidebar's own fetch. `?type=all` and any explicit `?type=X` stay fully
+// unfiltered, so the Threads page is always a complete, trustworthy record
+// of everything that still exists. See ADR-0027 for why this is deliberate,
+// not an oversight to "fix" into uniform filtering.
 threadsRouter.get('/', (req: Request, res: Response) => {
   const { type } = req.query as { type?: string };
   if (type === undefined) {
-    res.json(listThreadsHandler(getThreadStore(), { type: 'chat' }));
+    const retentionDays = env.chat.sidebarRetentionDays;
+    const updatedAfter =
+      retentionDays > 0
+        ? new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString()
+        : undefined;
+    res.json(
+      listThreadsHandler(getThreadStore(), { type: 'chat', excludeArchived: true, updatedAfter }),
+    );
   } else if (type === 'all') {
     res.json(listThreadsHandler(getThreadStore()));
   } else if (isThreadType(type)) {
@@ -109,6 +125,35 @@ threadsRouter.patch('/:id', (req: Request, res: Response) => {
     return;
   }
   const result = renameThreadHandler(getThreadStore(), id, title);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(result.data);
+});
+
+// Archiving is scoped to 'chat' threads only (design doc D1) — a 400 here,
+// not a silent no-op, so a caller attempting it on a 'wiki'/'workspace-chat'/
+// 'task' thread gets an explicit, unambiguous rejection instead of wondering
+// why nothing happened.
+threadsRouter.post('/:id/archive', (req: Request, res: Response) => {
+  const { id } = req.params as { id: string };
+  const meta = getThreadStore().getThreadMeta(id);
+  if (meta && meta.type !== 'chat') {
+    res.status(400).json({ error: 'Only chat threads can be archived' });
+    return;
+  }
+  const result = archiveThreadHandler(getThreadStore(), id);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(result.data);
+});
+
+threadsRouter.post('/:id/unarchive', (req: Request, res: Response) => {
+  const { id } = req.params as { id: string };
+  const result = unarchiveThreadHandler(getThreadStore(), id);
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;

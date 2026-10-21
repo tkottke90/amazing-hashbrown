@@ -25,6 +25,20 @@ function rejectIfTaskRunThread(threadId: string, res: import('express').Response
   return true;
 }
 
+// An Archived Thread (GLOSSARY.md) is read-only: chat, retry, fork, AND
+// hitl-answer all reject with 409. Deliberately a separate check from
+// rejectIfTaskRunThread above rather than folding into it — a task-run
+// thread's own guard exempts /hitl (answering it re-queues the run via
+// respondIfTaskPrompt, a different mechanism entirely), but an archived
+// thread has no such exemption: resuming a pending prompt would add new
+// messages, exactly what "cannot be added to" rules out. See
+// docs/adr/0028-archived-threads-reject-hitl-answers-too.md.
+function rejectIfArchivedThread(threadId: string, res: import('express').Response): boolean {
+  if (!getThreadStore().getThreadMeta(threadId)?.archivedAt) return false;
+  res.status(409).json({ error: 'Archived threads are read-only' });
+  return true;
+}
+
 function setSseHeaders(res: import('express').Response): void {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -59,6 +73,7 @@ chatRouter.post('/:threadId', async (req, res) => {
     return;
   }
   if (rejectIfTaskRunThread(threadId, res)) return;
+  if (rejectIfArchivedThread(threadId, res)) return;
 
   setSseHeaders(res);
   const stopKeepalive = startSseKeepalive(res);
@@ -111,6 +126,7 @@ chatRouter.post('/:threadId/hitl', async (req, res) => {
   // An Inbox task run's prompt is answered from its run thread through this
   // route — re-queue the task rather than resuming it as a chat turn.
   if (respondIfTaskPrompt(req, res, { threadId, promptId, answer })) return;
+  if (rejectIfArchivedThread(threadId, res)) return;
 
   setSseHeaders(res);
   const stopKeepalive = startSseKeepalive(res);
@@ -155,6 +171,7 @@ chatRouter.post('/:threadId/retry', async (req, res) => {
   }
 
   if (rejectIfTaskRunThread(threadId, res)) return;
+  if (rejectIfArchivedThread(threadId, res)) return;
 
   if (!getThreadStore().resolveRetryTarget(threadId)) {
     res.status(400).json({ error: 'Thread has no retryable (failed) turn' });

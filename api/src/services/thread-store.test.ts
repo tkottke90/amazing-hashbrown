@@ -65,6 +65,40 @@ describe('services/thread-store', () => {
       const list = store.listThreads();
       expect(list.map((t) => t.id)).to.deep.equal(['newer', 'older']);
     });
+
+    it('excludeArchived omits an archived thread, but an unfiltered call still includes it', () => {
+      store.upsertThreadOnFirstMessage('to-archive', 'Archive me');
+      store.archiveThread('to-archive');
+
+      const filtered = store.listThreads({ excludeArchived: true });
+      expect(filtered.map((t) => t.id)).to.not.include('to-archive');
+
+      const unfiltered = store.listThreads();
+      expect(unfiltered.map((t) => t.id)).to.include('to-archive');
+    });
+
+    it('updatedAfter omits a thread whose updated_at is older than the cutoff', async () => {
+      store.upsertThreadOnFirstMessage('stale', 'Stale thread');
+      const cutoff = new Date(Date.now() + 1000).toISOString();
+
+      const filtered = store.listThreads({ updatedAfter: cutoff });
+      expect(filtered.map((t) => t.id)).to.not.include('stale');
+
+      const unfiltered = store.listThreads();
+      expect(unfiltered.map((t) => t.id)).to.include('stale');
+    });
+
+    it('excludeArchived and updatedAfter combine with AND, not override each other', async () => {
+      store.upsertThreadOnFirstMessage('archived-and-stale', 'Both');
+      store.archiveThread('archived-and-stale');
+      const recentCutoff = new Date(Date.now() - 1000).toISOString();
+
+      // Not archived, so excludeArchived alone wouldn't exclude it on recency
+      // grounds — this thread must be excluded by the archived check alone,
+      // confirming the two filters don't cancel each other out.
+      const result = store.listThreads({ excludeArchived: true, updatedAfter: recentCutoff });
+      expect(result.map((t) => t.id)).to.not.include('archived-and-stale');
+    });
   });
 
   describe('renameThread', () => {
@@ -86,6 +120,44 @@ describe('services/thread-store', () => {
 
     it('returns null for an unknown thread', () => {
       expect(store.renameThread('no-such-thread', 'X')).to.equal(null);
+    });
+  });
+
+  describe('archiveThread / unarchiveThread', () => {
+    let store: ThreadStore;
+    let dir: string;
+
+    before(() => ({ store, dir } = makeStore()));
+    after(() => {
+      store.close();
+      rmSync(dir, { recursive: true });
+    });
+
+    it('archives an existing thread, setting archivedAt', () => {
+      store.upsertThreadOnFirstMessage('t1', 'Original');
+      const result = store.archiveThread('t1');
+      expect(result).to.not.equal(null);
+      expect(result!.archivedAt).to.not.equal(null);
+    });
+
+    it('is idempotent — archiving an already-archived thread still succeeds', () => {
+      const result = store.archiveThread('t1');
+      expect(result).to.not.equal(null);
+      expect(result!.archivedAt).to.not.equal(null);
+    });
+
+    it('returns null archiving an unknown thread', () => {
+      expect(store.archiveThread('no-such-thread')).to.equal(null);
+    });
+
+    it('unarchives, clearing archivedAt', () => {
+      const result = store.unarchiveThread('t1');
+      expect(result).to.not.equal(null);
+      expect(result!.archivedAt).to.equal(null);
+    });
+
+    it('returns null unarchiving an unknown thread', () => {
+      expect(store.unarchiveThread('no-such-thread')).to.equal(null);
     });
   });
 

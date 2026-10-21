@@ -124,6 +124,7 @@ function makeThread(overrides: Partial<ThreadSummary> = {}): ThreadSummary {
     },
     provider: null,
     model: null,
+    archivedAt: null,
     ...overrides,
   };
 }

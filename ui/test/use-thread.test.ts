@@ -670,6 +670,7 @@ describe('use-thread — switchThread model handling', () => {
         },
         provider: 'ollama',
         model: 'llama3.2',
+        archivedAt: null,
       },
     ];
 

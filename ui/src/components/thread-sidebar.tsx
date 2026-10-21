@@ -6,6 +6,7 @@ import {
   Pencil,
   Sparkles,
   Copy,
+  Archive,
   Trash2,
   Loader2,
   BookOpen,
@@ -37,6 +38,7 @@ import {
   refreshThreadList,
   newThread,
   renameThread,
+  archiveThread,
   deleteThread,
   regenerateTitle,
   showErrorMessages,
@@ -190,6 +192,13 @@ function ThreadRow({ thread, isActive }: ThreadRowProps) {
               Copy thread ID
             </DropdownMenuItem>
             <ThreadReportButton threadId={thread.id} variant="menu-item" />
+            {/* No confirm step, unlike Delete below — Archive is reversible
+                (Unarchive on the Threads page), so it stays a plain
+                one-click action. */}
+            <DropdownMenuItem onSelect={() => void archiveThread(thread.id)}>
+              <Archive className="size-4" />
+              Archive
+            </DropdownMenuItem>
             <DropdownMenuItem
               variant="destructive"
               onSelect={() => {
