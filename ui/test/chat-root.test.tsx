@@ -15,6 +15,7 @@ jest.mock('@/lib/sse', () => ({
 
 import { ChatRoot } from '@/pages/chat';
 import { _resetThreadInstancesForTests } from '@/hooks/use-thread';
+import { ThemeProvider } from '@/hooks/use-theme';
 
 const ARCHIVED_THREAD = 'archived-thread-1';
 
@@ -61,7 +62,11 @@ afterEach(() => {
 
 describe('ChatRoot — archived-thread routing', () => {
   it('renders ArchivedThreadView, not the normal chat view, for an archived thread [unit]', async () => {
-    render(<ChatRoot id={ARCHIVED_THREAD} />);
+    render(
+      <ThemeProvider>
+        <ChatRoot id={ARCHIVED_THREAD} />
+      </ThemeProvider>,
+    );
 
     await waitFor(() => expect(screen.getByTestId('archived-thread-view')).toBeInTheDocument());
     expect(screen.queryByPlaceholderText(/message/i)).not.toBeInTheDocument();
