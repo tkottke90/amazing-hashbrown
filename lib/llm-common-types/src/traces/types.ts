@@ -16,6 +16,9 @@ export const TraceSourceSchema = z.enum([
   'wiki-ingestion',
   'workspace-chat',
   'workspace-summary',
+  // The one-shot narrative pass over a workspace retrospective report's
+  // deterministic evidence bundle (api/src/agents/workspace-retrospective-narrative.ts).
+  'workspace-retrospective',
   // An automated task run (api/src/agents/task-execution.ts).
   'task-run',
   // A headless turn (api/src/agents/headless-turn.ts) triggered by a timed

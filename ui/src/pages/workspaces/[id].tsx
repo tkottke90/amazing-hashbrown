@@ -11,6 +11,7 @@ import { WorkspaceChatTab } from '@/pages/workspaces/workspace-chat-tab';
 import { WorkspaceMobileHeader } from '@/pages/workspaces/workspace-mobile-header';
 import { WorkspaceDetailsSheet } from '@/pages/workspaces/workspace-details-sheet';
 import { WorkspaceActionsSheet } from '@/pages/workspaces/workspace-actions-sheet';
+import { WorkspaceRetrospectiveButton } from '@/components/workspace-retrospective-button';
 import {
   DETAIL_TABS,
   DETAIL_TAB_TITLE_SUFFIX,
@@ -348,6 +349,7 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
                     </Button>
                   </>
                 )}
+                <WorkspaceRetrospectiveButton workspaceId={ws.id} />
                 <Button size="sm" variant="destructive" onClick={handleDelete}>
                   Delete
                 </Button>

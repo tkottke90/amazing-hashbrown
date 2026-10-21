@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Workspace Retrospective — {{ workspace.name }}</title>
+  <style>{{ styles | safe }}</style>
+</head>
+<body>
+<button class="theme-toggle" onclick="toggleTheme()">Toggle theme</button>
+
+<div class="header">
+  <h1>Workspace Retrospective: {{ workspace.name }}</h1>
+  <div class="subtitle">
+    Workspace <code>{{ workspaceId }}</code> &middot; generated {{ generatedAt | reportTime }}
+  </div>
+</div>
+
+{% if workspace.goal %}
+  <h2>Goal</h2>
+  <p>{{ workspace.goal }}</p>
+{% endif %}
+
+<h2>Summary</h2>
+<div class="meta-grid">
+  <div class="meta-card">
+    <div class="label">Tasks</div>
+    <div class="value">{{ summary.taskCount }}</div>
+  </div>
+  <div class="meta-card">
+    <div class="label">Task runs</div>
+    <div class="value">{{ summary.runCount }}</div>
+  </div>
+  <div class="meta-card">
+    <div class="label">Failures</div>
+    <div class="value" style="{{ 'color:var(--fail)' if summary.failureCount > 0 }}">{{ summary.failureCount }}</div>
+  </div>
+  <div class="meta-card">
+    <div class="label">Wiki writes</div>
+    <div class="value">{{ summary.wikiWriteCount }}</div>
+  </div>
+  <div class="meta-card">
+    <div class="label">Anomalies flagged</div>
+    <div class="value" style="{{ 'color:var(--warn)' if summary.anomalyCount > 0 }}">{{ summary.anomalyCount }}</div>
+  </div>
+</div>
+
+{% if narrative %}
+  <h2>What happened, and why</h2>
+  <div class="narrative-box">{{ narrative | markdown }}</div>
+{% endif %}
+
+<h2>Anomalies</h2>
+<div class="anomaly-list">
+  {% for a in anomalies %}
+    {% if a.kind == 'repeated_failures' %}
+      <div class="anomaly-row">
+        <span class="anomaly-kind">Repeated failures</span>
+        <span>Task <strong>{{ a.taskTitle }}</strong> failed {{ a.attempts }} time{{ 's' if a.attempts != 1 }} in a row before its last settled run{% if a.lastSummary %} &mdash; "{{ a.lastSummary }}"{% endif %}</span>
+      </div>
+    {% elif a.kind == 'wiki_mismatch' %}
+      <div class="anomaly-row">
+        <span class="anomaly-kind">Wiki mismatch</span>
+        <span>Wrote <strong>{{ a.pageTitle }}</strong> ({{ a.pageKind }}) to wiki <code>{{ a.actualWikiName }}</code>, not this workspace's own wiki (<code>{{ a.expectedWikiId }}</code>)</span>
+        <span class="trace-meta">{{ a.at | reportTime }}</span>
+      </div>
+    {% else %}
+      <div class="anomaly-row">
+        <span class="anomaly-kind">{{ 'Recursion limit' if a.escalationKind == 'recursion_limit_warning' else 'Loop stagnation' }}</span>
+        <span>{{ a.question }}</span>
+        <span class="trace-meta">{{ a.at | reportTime }}</span>
+      </div>
+    {% endif %}
+  {% else %}
+    <p style="color:var(--text-muted)">No anomalies flagged.</p>
+  {% endfor %}
+</div>
+
+<h2>Chat</h2>
+{% if chat %}
+  <div class="meta-grid">
+    <div class="meta-card">
+      <div class="label">Turns</div>
+      <div class="value">{{ chat.stats.turnCount }}</div>
+    </div>
+    <div class="meta-card">
+      <div class="label">Tool calls</div>
+      <div class="value">{{ chat.stats.toolCallCount }}</div>
+    </div>
+    <div class="meta-card">
+      <div class="label">Failures</div>
+      <div class="value" style="{{ 'color:var(--fail)' if chat.stats.failureCount > 0 }}">{{ chat.stats.failureCount }}</div>
+    </div>
+    <div class="meta-card">
+      <div class="label">Wiki writes</div>
+      <div class="value">{{ chat.stats.wikiWriteCount }}</div>
+    </div>
+  </div>
+  <p><a href="/api/v1/threads/{{ chat.threadId }}/report" target="_blank" rel="noopener">Full chat report →</a></p>
+{% else %}
+  <p style="color:var(--text-muted)">This workspace has no chat thread.</p>
+{% endif %}
+
+<h2>Tasks</h2>
+<div class="task-list">
+  {% for task in tasks %}
+    <div class="task-card">
+      <div class="task-card-header">
+        <span class="task-title">{{ task.title }}</span>
+        <span class="badge badge-type">{{ task.origin }}</span>
+        <span class="badge badge-type">{{ task.status }}</span>
+        {% if task.provider or task.model %}
+          <span class="trace-meta">{{ task.provider }}/{{ task.model }}</span>
+        {% endif %}
+      </div>
+      <div class="run-list">
+        {% for run in task.runs %}
+          <details class="run-row" {{ 'open' if run.status == 'failed' }}>
+            <summary>
+              <span class="step-badge">Run #{{ run.runNumber }}</span>
+              {% if run.status == 'failed' %}
+                <span class="badge badge-fail">{{ run.status }}</span>
+              {% elif run.status == 'done' %}
+                <span class="badge badge-pass">{{ run.status }}</span>
+              {% else %}
+                <span class="badge badge-pending">{{ run.status }}</span>
+              {% endif %}
+              {% if run.recoveryAttempts > 0 %}
+                <span class="badge badge-bias">{{ run.recoveryAttempts }} crash recover{{ 'y' if run.recoveryAttempts == 1 else 'ies' }}</span>
+              {% endif %}
+              <span class="trace-meta">{{ run.summary or 'No summary recorded' }}</span>
+            </summary>
+            <div class="run-nested">
+              {% if run.threadReport %}
+                <div class="summary-stats">
+                  <div class="stat"><span class="num">{{ run.threadReport.stats.toolCallCount }}</span><span class="lbl">tool calls</span></div>
+                  <div class="stat"><span class="num">{{ run.threadReport.stats.failureCount }}</span><span class="lbl">failures</span></div>
+                  <div class="stat"><span class="num">{{ run.threadReport.stats.wikiWriteCount }}</span><span class="lbl">wiki writes</span></div>
+                </div>
+                <p><a href="/api/v1/threads/{{ run.threadReport.threadId }}/report" target="_blank" rel="noopener">Full run report →</a></p>
+              {% else %}
+                <p style="color:var(--text-muted)">This run's thread could not be loaded.</p>
+              {% endif %}
+            </div>
+          </details>
+        {% else %}
+          <div class="run-row"><em style="color:var(--text-muted)">No runs recorded</em></div>
+        {% endfor %}
+      </div>
+      {% if task.progressEntries | length > 0 %}
+        <div class="run-nested" style="padding: 0.65rem 0.9rem;">
+          <strong style="font-size:0.8rem">Files touched (tracker-linked runs only)</strong>
+          {% for entry in task.progressEntries %}
+            <div class="chip-body" style="padding-left:0">
+              {{ entry.completedAt | reportTime }} &middot; {{ entry.outcome }} &middot;
+              {% if entry.filesChanged | length > 0 %}{{ entry.filesChanged | join(', ') }}{% else %}no files changed{% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+  {% else %}
+    <p style="color:var(--text-muted)">No tasks were created in this workspace.</p>
+  {% endfor %}
+</div>
+
+<script>
+function toggleTheme() {
+  const root = document.documentElement;
+  const current = root.getAttribute('data-theme');
+  root.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+}
+</script>
+</body>
+</html>

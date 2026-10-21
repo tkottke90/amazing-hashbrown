@@ -1530,6 +1530,41 @@ describe('services/workspace-store', () => {
 
       expect(store.listTaskProgressEntries('github', 'issue-1')).to.have.length(1);
     });
+
+    describe('listTaskProgressEntriesForWorkspace', () => {
+      it('returns entries across every tracker a workspace has used, newest first', () => {
+        store.insertTaskProgressEntry(
+          makeEntry({
+            workspaceId: 'ws-1',
+            trackerType: 'github',
+            trackerId: 'issue-1',
+            taskId: 'task-older',
+            completedAt: '2026-01-01T00:00:00.000Z',
+          }),
+        );
+        store.insertTaskProgressEntry(
+          makeEntry({
+            workspaceId: 'ws-1',
+            trackerType: 'linear',
+            trackerId: 'TASK-9',
+            taskId: 'task-newer',
+            completedAt: '2026-01-02T00:00:00.000Z',
+          }),
+        );
+
+        const entries = store.listTaskProgressEntriesForWorkspace('ws-1');
+        expect(entries.map((e) => e.taskId)).to.deep.equal(['task-newer', 'task-older']);
+      });
+
+      it("excludes another workspace's entries", () => {
+        store.insertTaskProgressEntry(makeEntry({ workspaceId: 'ws-1', taskId: 'task-a' }));
+        store.insertTaskProgressEntry(makeEntry({ workspaceId: 'ws-2', taskId: 'task-b' }));
+
+        expect(
+          store.listTaskProgressEntriesForWorkspace('ws-1').map((e) => e.taskId),
+        ).to.deep.equal(['task-a']);
+      });
+    });
   });
 
   describe('per-run records (migration 32 — task_queue thread_id/summary/trigger_source/scheduled_for)', () => {
