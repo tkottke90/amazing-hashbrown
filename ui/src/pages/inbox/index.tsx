@@ -1,12 +1,15 @@
 import { useEffect } from 'preact/hooks';
 import { forwardRef } from 'preact/compat';
-import { useComputed } from '@preact/signals';
-import { Plus, Inbox as InboxIcon } from 'lucide-preact';
+import { useComputed, useSignal } from '@preact/signals';
+import { Archive, ArchiveRestore, Plus, Inbox as InboxIcon } from 'lucide-preact';
 
 import { Layout } from '@/components/layout';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { CardBadge } from '@/components/card-badge';
 import { TaskDrawer } from '@/components/task-drawer';
-import { tasks, refreshTasks } from '@/hooks/use-tasks';
+import { tasks, refreshTasks, archiveTask, unarchiveTask } from '@/hooks/use-tasks';
 import type { Task } from '@/services/tasks-api';
 import { useTitle } from '@/hooks/use-title';
 import { triggerTypeLabel } from '@/lib/task-runs';
@@ -23,7 +26,10 @@ const TaskRow = forwardRef<HTMLTableRowElement, { task: Task }>(function TaskRow
       class="border-b border-border last:border-0 hover:bg-muted/30 transition-colors cursor-pointer"
     >
       <td class="px-4 py-3">
-        <p class="font-medium text-sm">{task.title}</p>
+        <p class="font-medium text-sm flex items-center gap-2">
+          {task.title}
+          {task.archivedAt && <CardBadge variant="violet">Archived</CardBadge>}
+        </p>
         {task.outcome && (
           <p class="text-xs text-muted-foreground mt-0.5 truncate max-w-sm">{task.outcome}</p>
         )}
@@ -59,6 +65,23 @@ const TaskRow = forwardRef<HTMLTableRowElement, { task: Task }>(function TaskRow
           <span class="text-xs text-muted-foreground">—</span>
         )}
       </td>
+      <td class="px-4 py-3">
+        {task.board?.lane === 'done' && (
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            title={task.archivedAt ? 'Unarchive' : 'Archive'}
+            data-testid="inbox-task-archive-toggle"
+            onClick={(e: MouseEvent) => {
+              e.stopPropagation();
+              void (task.archivedAt ? unarchiveTask(task.id) : archiveTask(task.id));
+            }}
+          >
+            {task.archivedAt ? <ArchiveRestore class="size-3.5" /> : <Archive class="size-3.5" />}
+          </Button>
+        )}
+      </td>
     </tr>
   );
 });
@@ -70,6 +93,7 @@ const TABLE_HEADER = (
     <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Trigger</th>
     <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Status</th>
     <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Due</th>
+    <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Actions</th>
   </tr>
 );
 
@@ -98,9 +122,13 @@ function InboxTable({ taskList, onSaved }: { taskList: Task[]; onSaved: () => vo
 export function InboxView(_props: { path?: string }) {
   useTitle('Inbox');
 
+  // Resets to off on every load of this view (D14), never remembered
+  // across sessions.
+  const showArchived = useSignal(false);
+
   useEffect(() => {
-    void refreshTasks({ workspace_id: null });
-  }, []);
+    void refreshTasks({ workspace_id: null, showArchived: showArchived.value });
+  }, [showArchived.value]);
 
   const inboxTasks = useComputed(() => tasks.value.filter((t) => !t.workspaceId));
 
@@ -113,7 +141,7 @@ export function InboxView(_props: { path?: string }) {
   const noDueDate = useComputed(() => inboxTasks.value.filter((t) => !t.dueAt));
 
   function onSaved() {
-    void refreshTasks({ workspace_id: null });
+    void refreshTasks({ workspace_id: null, showArchived: showArchived.value });
   }
 
   return (
@@ -130,17 +158,31 @@ export function InboxView(_props: { path?: string }) {
                 </p>
               </div>
             </div>
-            <TaskDrawer
-              task={null}
-              defaultWorkspaceId={null}
-              onSaved={onSaved}
-              trigger={
-                <Button>
-                  <Plus class="size-4" />
-                  New task
-                </Button>
-              }
-            />
+            <div class="flex items-center gap-3">
+              <div class="flex items-center gap-2">
+                <Switch
+                  id="inbox-show-archived"
+                  size="sm"
+                  checked={showArchived.value}
+                  onCheckedChange={(checked) => (showArchived.value = checked)}
+                  data-testid="inbox-show-archived"
+                />
+                <Label htmlFor="inbox-show-archived" className="text-xs text-muted-foreground">
+                  Show archived
+                </Label>
+              </div>
+              <TaskDrawer
+                task={null}
+                defaultWorkspaceId={null}
+                onSaved={onSaved}
+                trigger={
+                  <Button>
+                    <Plus class="size-4" />
+                    New task
+                  </Button>
+                }
+              />
+            </div>
           </div>
 
           {inboxTasks.value.length === 0 && (

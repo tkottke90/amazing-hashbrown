@@ -116,6 +116,7 @@ function TasksTab({
   onSaved,
   onGoToChat,
   quickAddOpen,
+  showArchived,
 }: {
   workspaceId: string;
   onSaved: () => void;
@@ -123,6 +124,9 @@ function TasksTab({
   // Shared with the mobile bottom bar's "+" on the Overview tab — see
   // WorkspaceDetailView.
   quickAddOpen: Signal<boolean>;
+  // The "Show Archived" toggle — owned by WorkspaceDetailView since it also
+  // drives the refreshTasks() calls this tab doesn't make itself.
+  showArchived: Signal<boolean>;
 }) {
   const workspaceTasks = useComputed(() =>
     tasks.value.filter((t) => t.workspaceId === workspaceId),
@@ -137,6 +141,7 @@ function TasksTab({
       taskList={workspaceTasks.value}
       onSaved={onSaved}
       onGoToChat={onGoToChat}
+      showArchived={showArchived}
     />
   ) : (
     <TaskListMobile
@@ -145,6 +150,7 @@ function TasksTab({
       onSaved={onSaved}
       onGoToChat={onGoToChat}
       quickAddOpen={quickAddOpen}
+      showArchived={showArchived}
     />
   );
 }
@@ -175,6 +181,9 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
   // Shared by the Overview and Tasks tabs' bottom-bar "+" and by
   // TaskListMobile's own "Add task" button (see task-list-mobile.tsx).
   const quickAddOpen = useSignal(false);
+  // The Tasks tab's "Show Archived" toggle — resets to off on every load of
+  // this view (D14), never remembered across sessions.
+  const showArchived = useSignal(false);
   // Files' bottom-bar "+" increments this; FilesTab's mobile branch watches
   // it to trigger FileTree's upload flow (see files-tab.tsx).
   const filesUploadRequest = useSignal(0);
@@ -184,8 +193,8 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
 
   useEffect(() => {
     void refreshWorkspaces();
-    if (id) void refreshTasks({ workspace_id: id });
-  }, [id]);
+    if (id) void refreshTasks({ workspace_id: id, showArchived: showArchived.value });
+  }, [id, showArchived.value]);
 
   const workspace = useComputed(() => workspaces.value.find((w) => w.id === id));
   const proj = useComputed(() => (id ? getProjectForWorkspace(id) : undefined));
@@ -439,7 +448,8 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
                   workspaceId={id}
                   open={quickAddOpen}
                   onSaved={() => {
-                    if (id) void refreshTasks({ workspace_id: id });
+                    if (id)
+                      void refreshTasks({ workspace_id: id, showArchived: showArchived.value });
                   }}
                 />
               )}
@@ -449,12 +459,13 @@ export function WorkspaceDetailView({ id }: { id?: string; path?: string }) {
             <TasksTab
               workspaceId={id}
               onSaved={() => {
-                if (id) void refreshTasks({ workspace_id: id });
+                if (id) void refreshTasks({ workspace_id: id, showArchived: showArchived.value });
               }}
               onGoToChat={() => {
                 setHash('chat');
               }}
               quickAddOpen={quickAddOpen}
+              showArchived={showArchived}
             />
           )}
           {tab.value === 'files' && id && (

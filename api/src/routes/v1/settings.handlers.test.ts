@@ -28,6 +28,7 @@ function makeEnv(overrides: Partial<EnvAccessor> = {}): EnvAccessor {
     afterAgent: { enabled: true },
     updates: { checkForUpdates: false },
     chat: { showErrorMessages: false, codeBlockWrap: false },
+    taskBoard: { doneRetentionDays: 5 },
     embeddings: {
       enabled: true,
       type: 'ollama',
@@ -217,6 +218,15 @@ describe('routes/v1/settings.handlers', () => {
       if (result.ok) {
         const data = result.data as { chat: { codeBlockWrap: boolean } };
         expect(data.chat.codeBlockWrap).to.equal(false);
+      }
+    });
+
+    it('returns taskBoard.doneRetentionDays defaulting to 5 for agent-behavior (ADR-0031) [unit]', () => {
+      const result = getSettingsSectionHandler('agent-behavior', makeEnv(), makeConfig(tmpDir));
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        const data = result.data as { taskBoard: { doneRetentionDays: number } };
+        expect(data.taskBoard.doneRetentionDays).to.equal(5);
       }
     });
 
@@ -589,6 +599,31 @@ describe('routes/v1/settings.handlers', () => {
         codeBlockWrap: true,
         sidebarRetentionDays: 7,
       });
+    });
+
+    it('PATCH agent-behavior writes taskBoard.doneRetentionDays [unit]', async () => {
+      const config = makeConfig(tmpDir);
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
+
+      const result = await patchSettingsSectionHandler(
+        'agent-behavior',
+        { taskBoard: { doneRetentionDays: 10 } },
+        config,
+        makeEnv(),
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      );
+
+      expect(result.ok).to.equal(true);
+      const written = readYaml(tmpDir);
+      expect(written.taskBoard).to.deep.equal({ doneRetentionDays: 10 });
     });
 
     it('PATCH general returns the new GET response (includes updated logLevel) [unit]', async () => {

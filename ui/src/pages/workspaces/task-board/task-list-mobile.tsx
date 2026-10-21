@@ -4,6 +4,8 @@ import { BottomSheet } from '@tkottke90/preact-dialog';
 import { ChevronDown, ChevronRight, Plus } from 'lucide-preact';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { TaskDrawer, type TaskDraft } from '@/components/task-drawer';
 import { findMove, performMove, requestMove } from '@/components/task-board/board-move';
 import { ReplyForm } from '@/components/task-board/reply-form';
@@ -226,6 +228,7 @@ export function TaskListMobile({
   onSaved,
   onGoToChat,
   quickAddOpen: quickAddOpenProp,
+  showArchived,
 }: {
   workspaceId: string;
   taskList: Task[];
@@ -235,6 +238,7 @@ export function TaskListMobile({
   // bottom app bar's shared "+" on both the Overview and Tasks tabs).
   // Defaults to an internal signal so standalone/desktop usage is unaffected.
   quickAddOpen?: Signal<boolean>;
+  showArchived: Signal<boolean>;
 }) {
   const sections = mobileSections(taskList, queueState.value);
   const collapsed = useSignal<Partial<Record<MobileSection, boolean>>>(
@@ -283,15 +287,32 @@ export function TaskListMobile({
           {taskList.length} {taskList.length === 1 ? 'task' : 'tasks'} · {sections.running.length}{' '}
           running
         </p>
-        <Button
-          type="button"
-          size="sm"
-          data-testid="quick-add-button"
-          onClick={() => (quickAddOpen.value = true)}
-        >
-          <Plus class="size-3.5" />
-          Add task
-        </Button>
+        <div class="flex items-center gap-3">
+          <div class="flex items-center gap-2">
+            <Switch
+              id="task-list-mobile-show-archived"
+              size="sm"
+              checked={showArchived.value}
+              onCheckedChange={(checked) => (showArchived.value = checked)}
+              data-testid="task-list-mobile-show-archived"
+            />
+            <Label
+              htmlFor="task-list-mobile-show-archived"
+              className="text-xs text-muted-foreground"
+            >
+              Show archived
+            </Label>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            data-testid="quick-add-button"
+            onClick={() => (quickAddOpen.value = true)}
+          >
+            <Plus class="size-3.5" />
+            Add task
+          </Button>
+        </div>
       </div>
 
       {SECTION_ORDER.filter((section) => sections[section].length > 0).map((section) => {

@@ -1,8 +1,24 @@
 import { forwardRef } from 'preact/compat';
 import type { ComponentChildren, JSX } from 'preact';
-import { Bot, Calendar, Clock, Link as LinkIcon } from 'lucide-preact';
+import {
+  Archive,
+  ArchiveRestore,
+  Bot,
+  Calendar,
+  Clock,
+  Link as LinkIcon,
+  MoreHorizontal,
+} from 'lucide-preact';
 import { cn } from '@/lib/utils';
 import { formatFireTime } from '@/lib/cron-drafts';
+import { CardBadge } from '@/components/card-badge';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
+import { archiveTask, unarchiveTask } from '@/hooks/use-tasks';
 import type { BoardReason, Task, TaskSchedule, TaskStatus } from '@/services/tasks-api';
 
 const STATUS_BADGE: Record<TaskStatus, { label: string; dot: string }> = {
@@ -183,6 +199,7 @@ export const BoardCard = forwardRef<HTMLDivElement, BoardCardProps>(function Boa
     >
       <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
         <StatusBadge status={task.status} />
+        {task.archivedAt && <CardBadge variant="violet">Archived</CardBadge>}
         {task.trackerId && (
           <span class="inline-flex items-center gap-0.5 whitespace-nowrap font-mono">
             <LinkIcon class="size-3" />
@@ -209,6 +226,30 @@ export const BoardCard = forwardRef<HTMLDivElement, BoardCardProps>(function Boa
         )}
         <span class="ml-auto flex items-center gap-2">
           {action}
+          {lane === 'done' && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                aria-label={`Options for ${task.title}`}
+                onClick={(e: MouseEvent) => e.stopPropagation()}
+                className="shrink-0 rounded p-1 hover:bg-muted"
+              >
+                <MoreHorizontal className="size-3.5" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {task.archivedAt ? (
+                  <DropdownMenuItem onSelect={() => void unarchiveTask(task.id)}>
+                    <ArchiveRestore className="size-4" />
+                    Unarchive
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem onSelect={() => void archiveTask(task.id)}>
+                    <Archive className="size-4" />
+                    Archive
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           {task.assignedTo === 'agent' && (
             <span
               aria-label="Assigned to the agent"

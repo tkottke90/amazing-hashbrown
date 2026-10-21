@@ -299,6 +299,19 @@ export const ChatSchema = z.object({
   sidebarRetentionDays: z.number().int().min(0).default(7),
 });
 
+// Config for the Kanban board's Done lane — deliberately named TaskBoardSchema
+// rather than TasksConfigSchema (below), which is an unrelated section
+// (env.workspaces.tasks.trackers — GitHub issue-tracker tokens) with a
+// confusingly similar name.
+export const TaskBoardSchema = z.object({
+  // How many days since a Done-lane task's updatedAt before it's excluded
+  // from the board's Done lane and the Inbox (the Done Lane Retention
+  // Window — see GLOSSARY.md). 0 disables this. Deliberately defaults to a
+  // non-zero value, unlike this app's usual opt-in-by-default config
+  // convention — see ADR-0031 (mirrors chat.sidebarRetentionDays/ADR-0030).
+  doneRetentionDays: z.number().int().min(0).default(5),
+});
+
 export const EmbeddingsSchema = z.object({
   enabled: z.boolean().default(true),
   type: z.enum(['ollama', 'openai']).default('ollama'),
@@ -491,6 +504,7 @@ const AppConfigSchema = z.object({
   afterAgent: AfterAgentSchema.optional(),
   updates: UpdatesSchema.optional(),
   chat: ChatSchema.optional(),
+  taskBoard: TaskBoardSchema.optional(),
   embeddings: EmbeddingsSchema.optional(),
   agent: AgentSchema.optional(),
   artifactGc: ArtifactGcSchema.optional(),
@@ -632,6 +646,16 @@ export const env = {
       return (configManager as any).getSection('chat', ChatSchema) as z.infer<typeof ChatSchema>;
     } catch {
       return ChatSchema.parse({});
+    }
+  },
+  get taskBoard(): z.infer<typeof TaskBoardSchema> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (configManager as any).getSection('taskBoard', TaskBoardSchema) as z.infer<
+        typeof TaskBoardSchema
+      >;
+    } catch {
+      return TaskBoardSchema.parse({});
     }
   },
   get embeddings(): z.infer<typeof EmbeddingsSchema> {

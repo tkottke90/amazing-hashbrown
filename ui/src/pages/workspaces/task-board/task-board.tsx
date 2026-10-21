@@ -1,4 +1,4 @@
-import { useSignal } from '@preact/signals';
+import { useSignal, type Signal } from '@preact/signals';
 import type { ComponentChildren, JSX } from 'preact';
 import {
   closestCorners,
@@ -26,6 +26,8 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { Plus } from 'lucide-preact';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { TaskDrawer } from '@/components/task-drawer';
 import { LANE_LABELS, requestMove } from '@/components/task-board/board-move';
 import { queueState } from '@/hooks/use-tasks';
@@ -195,11 +197,13 @@ export function TaskBoard({
   taskList,
   onSaved,
   onGoToChat,
+  showArchived,
 }: {
   workspaceId: string;
   taskList: Task[];
   onSaved: () => void;
   onGoToChat: () => void;
+  showArchived: Signal<boolean>;
 }) {
   const lanes = tasksByLane(taskList, queueState.value);
   const activeId = useSignal<string | null>(null);
@@ -249,17 +253,31 @@ export function TaskBoard({
           {taskList.length} {taskList.length === 1 ? 'task' : 'tasks'} · {running} running · queue
           runs one at a time
         </p>
-        <TaskDrawer
-          task={null}
-          defaultWorkspaceId={workspaceId}
-          onSaved={onSaved}
-          trigger={
-            <Button size="sm">
-              <Plus class="size-3.5" />
-              Add task
-            </Button>
-          }
-        />
+        <div class="flex items-center gap-3">
+          <div class="flex items-center gap-2">
+            <Switch
+              id="task-board-show-archived"
+              size="sm"
+              checked={showArchived.value}
+              onCheckedChange={(checked) => (showArchived.value = checked)}
+              data-testid="task-board-show-archived"
+            />
+            <Label htmlFor="task-board-show-archived" className="text-xs text-muted-foreground">
+              Show archived
+            </Label>
+          </div>
+          <TaskDrawer
+            task={null}
+            defaultWorkspaceId={workspaceId}
+            onSaved={onSaved}
+            trigger={
+              <Button size="sm">
+                <Plus class="size-3.5" />
+                Add task
+              </Button>
+            }
+          />
+        </div>
       </div>
 
       <DndContext

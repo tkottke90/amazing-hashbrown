@@ -24,6 +24,8 @@ import {
   pauseTask,
   takeOverTask,
   resumeTask,
+  archiveTask,
+  unarchiveTask,
   tasks,
 } from '@/hooks/use-tasks';
 import { workspaces } from '@/hooks/use-workspaces';
@@ -232,7 +234,9 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
   );
   // New tasks only: queue the task for the agent as soon as it's created.
   const addToQueue = useSignal(draft?.addToQueue ?? false);
-  const actionLoading = useSignal<'pause' | 'take-over' | 'cancel' | 'resume' | null>(null);
+  const actionLoading = useSignal<
+    'pause' | 'take-over' | 'cancel' | 'resume' | 'archive' | 'unarchive' | null
+  >(null);
   const actionError = useSignal('');
 
   const dependencies = useSignal<TaskDependency[]>([]);
@@ -488,6 +492,32 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
       liveStatus.value = updated.status;
     } catch (err) {
       actionError.value = err instanceof Error ? err.message : 'Failed to resume.';
+    } finally {
+      actionLoading.value = null;
+    }
+  }
+
+  async function handleArchive() {
+    if (!task) return;
+    actionLoading.value = 'archive';
+    actionError.value = '';
+    try {
+      await archiveTask(task.id);
+    } catch (err) {
+      actionError.value = err instanceof Error ? err.message : 'Failed to archive.';
+    } finally {
+      actionLoading.value = null;
+    }
+  }
+
+  async function handleUnarchive() {
+    if (!task) return;
+    actionLoading.value = 'unarchive';
+    actionError.value = '';
+    try {
+      await unarchiveTask(task.id);
+    } catch (err) {
+      actionError.value = err instanceof Error ? err.message : 'Failed to unarchive.';
     } finally {
       actionLoading.value = null;
     }
@@ -971,6 +1001,38 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
               >
                 Open run
               </Button>
+            )}
+          </div>
+        )}
+
+        {!isNew && task && liveTask.value?.board?.lane === 'done' && (
+          <div class="rounded-lg bg-muted/50 border border-border p-3 flex items-center gap-2 flex-wrap">
+            <span class="text-xs text-muted-foreground flex-1">
+              {liveTask.value?.archivedAt ? 'This task is archived.' : 'This task is done.'}
+            </span>
+            {liveTask.value?.archivedAt ? (
+              <Button
+                size="xs"
+                variant="outline"
+                type="button"
+                disabled={actionLoading.value !== null}
+                onClick={() => void handleUnarchive()}
+              >
+                {actionLoading.value === 'unarchive' ? 'Unarchiving…' : 'Unarchive'}
+              </Button>
+            ) : (
+              <Button
+                size="xs"
+                variant="outline"
+                type="button"
+                disabled={actionLoading.value !== null}
+                onClick={() => void handleArchive()}
+              >
+                {actionLoading.value === 'archive' ? 'Archiving…' : 'Archive'}
+              </Button>
+            )}
+            {actionError.value && (
+              <p class="text-xs text-destructive w-full">{actionError.value}</p>
             )}
           </div>
         )}

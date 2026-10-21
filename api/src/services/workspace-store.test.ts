@@ -299,6 +299,58 @@ describe('services/workspace-store', () => {
     });
   });
 
+  describe('task archiving (migration 44 — tasks.archived_at)', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-store-task-archiving-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('a freshly created task reads archivedAt as null', () => {
+      const task = store.createTask({ title: 't' });
+      expect(task.archivedAt).to.equal(null);
+    });
+
+    it('archiveTask sets archivedAt without bumping updatedAt', () => {
+      const task = store.createTask({ title: 't' });
+
+      const archived = store.archiveTask(task.id)!;
+
+      expect(archived.archivedAt).to.not.equal(null);
+      expect(archived.updatedAt).to.equal(task.updatedAt);
+      expect(store.getTask(task.id)!.archivedAt).to.equal(archived.archivedAt);
+    });
+
+    it('archiveTask returns null for an unknown id', () => {
+      expect(store.archiveTask('missing')).to.equal(null);
+    });
+
+    it('unarchiveTask clears archivedAt and bumps updatedAt (ADR-0034)', async () => {
+      const task = store.createTask({ title: 't' });
+      const archived = store.archiveTask(task.id)!;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+
+      const unarchived = store.unarchiveTask(task.id)!;
+
+      expect(unarchived.archivedAt).to.equal(null);
+      expect(new Date(unarchived.updatedAt).getTime()).to.be.greaterThan(
+        new Date(archived.updatedAt).getTime(),
+      );
+      expect(store.getTask(task.id)!.archivedAt).to.equal(null);
+    });
+
+    it('unarchiveTask returns null for an unknown id', () => {
+      expect(store.unarchiveTask('missing')).to.equal(null);
+    });
+  });
+
   describe('project close process columns (migration 25)', () => {
     let store: WorkspaceStore;
     let dir: string;

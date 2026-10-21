@@ -381,6 +381,11 @@ function planFrom(task: Task, ctx: BoardContext, source: Source, to: Lane): Move
       return plan(MARK_DONE);
 
     case 'done': {
+      // Archiving is an explicit decision to put a task away — a stray drag
+      // from the "Show archived" view must not silently reopen/rerun it.
+      // Unarchive first (its own route, not a board-move). See ADR-0032.
+      if (task.archivedAt) return reject('Unarchive this task before moving it.');
+
       // A cron task in Done whose schedule has finished would land straight
       // back in Done as 'pending', so reopening it drops the spent schedule.
       const reopen: MoveStep[] = isCron(task)

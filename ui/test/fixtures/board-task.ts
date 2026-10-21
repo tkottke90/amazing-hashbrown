@@ -19,6 +19,7 @@ export function boardTask(overrides: Partial<Task> = {}, board: Partial<Board> =
     trackerId: null,
     plan: null,
     blockedReason: null,
+    archivedAt: null,
     createdAt: '2026-09-28T00:00:00.000Z',
     updatedAt: '2026-09-28T00:00:00.000Z',
     ...overrides,

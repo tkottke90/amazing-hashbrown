@@ -43,6 +43,7 @@ function task(overrides: Partial<Task> = {}): Task {
     role: null,
     blockedReason: null,
     cohortOf: null,
+    archivedAt: null,
     createdAt: '2026-09-28T00:00:00.000Z',
     updatedAt: '2026-09-28T00:00:00.000Z',
     ...overrides,
@@ -174,6 +175,10 @@ const SOURCES = {
   }),
   done: () => ({ t: task({ status: 'done' }), c: ctx() }),
   cancelled: () => ({ t: task({ status: 'cancelled' }), c: ctx() }),
+  doneArchived: () => ({
+    t: task({ status: 'done', archivedAt: '2026-10-21T00:00:00.000Z' }),
+    c: ctx(),
+  }),
   doneRepeat: () => ({
     t: task({ status: 'done', triggerType: 'cron_repeat' }),
     c: ctx({
@@ -227,6 +232,7 @@ describe('services/board-rules', () => {
       ['scheduledRepeat', 'scheduled', undefined],
       ['done', 'done', undefined],
       ['cancelled', 'done', undefined],
+      ['doneArchived', 'done', undefined],
       ['pendingUser', 'backlog', 'assigned_to_user'],
       ['pendingWaitingDependency', 'backlog', 'waiting_on_dependency'],
       ['pendingAgent', 'backlog', undefined],
@@ -539,6 +545,12 @@ describe('services/board-rules', () => {
         expectRejected('doneRepeat', 'scheduled', /repeating schedule/));
       it(`rejects Needs attention ${TestTypes.UNIT}`, () =>
         expectRejected('done', 'attention', /on their own/));
+      it(`rejects reopening to Backlog while archived (ADR-0032) ${TestTypes.UNIT}`, () =>
+        expectRejected('doneArchived', 'backlog', /Unarchive/));
+      it(`rejects rerunning on Queue while archived ${TestTypes.UNIT}`, () =>
+        expectRejected('doneArchived', 'queue', /Unarchive/));
+      it(`rejects rescheduling while archived ${TestTypes.UNIT}`, () =>
+        expectRejected('doneArchived', 'scheduled', /Unarchive/));
     });
 
     describe('trigger protection', () => {
