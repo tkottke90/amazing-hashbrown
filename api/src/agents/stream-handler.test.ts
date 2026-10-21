@@ -22,6 +22,7 @@ import {
   resumeChatToSse,
   retryChatToSse,
   THREAD_BUSY_MESSAGE,
+  extractStreamText,
   type ChatStreamDeps,
 } from './stream-handler.js';
 import { recordAssistantStart } from './thread-message-writer.js';
@@ -150,6 +151,42 @@ describe('agents/stream-handler', () => {
       writer({ type: 'wiki_domain_created', wikiId: 'homelab' });
 
       expect(events()).to.deep.equal([{ type: 'wiki_domain_created', wikiId: 'homelab' }]);
+    });
+  });
+
+  describe('extractStreamText()', () => {
+    it('passes a plain string through unchanged', () => {
+      expect(extractStreamText('hello')).to.equal('hello');
+    });
+
+    it('returns the text of a single text content block', () => {
+      expect(extractStreamText([{ type: 'text', text: 'hello' }])).to.equal('hello');
+    });
+
+    it('concatenates multiple text blocks in order', () => {
+      expect(
+        extractStreamText([
+          { type: 'text', text: 'Hello' },
+          { type: 'text', text: ' world' },
+        ]),
+      ).to.equal('Hello world');
+    });
+
+    it('ignores input_json_delta (and other non-text) blocks interleaved with text blocks — no tool-arg JSON leaks into visible text', () => {
+      expect(
+        extractStreamText([
+          { type: 'text', text: 'Checking the weather' },
+          { type: 'input_json_delta', index: 1, partial_json: '{"location":"S' },
+          { type: 'text', text: '...' },
+          { type: 'input_json_delta', index: 1, partial_json: 'F"}' },
+        ]),
+      ).to.equal('Checking the weather...');
+    });
+
+    it('returns an empty string for undefined, null, or non-array/non-string input', () => {
+      expect(extractStreamText(undefined)).to.equal('');
+      expect(extractStreamText(null)).to.equal('');
+      expect(extractStreamText(42)).to.equal('');
     });
   });
 
@@ -962,6 +999,78 @@ describe('agents/stream-handler', () => {
       const allEvents = events();
       expect(allEvents.every((e) => e.type === 'text_delta')).to.equal(true);
       expect(allEvents.map((e) => e.delta as string).join('')).to.equal('Hello world');
+    });
+
+    it('accumulates text from array-shaped chunk.content (the real @langchain/anthropic shape with tools bound), ignoring interleaved input_json_delta tool-arg blocks', async () => {
+      recordAssistantStart(store, 't1', 'msg1b', TEST_SENT_AT);
+      const { sink, events } = fakeSink();
+      const result = await pipeEvents(
+        sink,
+        'msg1b',
+        eventsFrom([
+          {
+            event: 'on_chat_model_stream',
+            data: { chunk: { content: [{ type: 'text', text: 'Checking the weather' }] } },
+          },
+          {
+            event: 'on_chat_model_stream',
+            data: { chunk: { content: [{ type: 'text', text: ' in Seattle' }] } },
+          },
+          {
+            event: 'on_tool_start',
+            name: 'get_weather',
+            run_id: 'tc-arr',
+            data: { input: { location: 'Seattle' } },
+          },
+          // Tool-argument JSON streamed as its own array-shaped chunk — must
+          // never reach parse.content even though it arrives through the
+          // same on_chat_model_stream case as the text deltas above.
+          {
+            event: 'on_chat_model_stream',
+            data: {
+              chunk: {
+                content: [{ type: 'input_json_delta', index: 0, partial_json: '{"location":"Sea' }],
+              },
+            },
+          },
+          {
+            event: 'on_chat_model_stream',
+            data: {
+              chunk: { content: [{ type: 'input_json_delta', index: 0, partial_json: 'ttle"}' }] },
+            },
+          },
+          {
+            event: 'on_tool_end',
+            name: 'get_weather',
+            run_id: 'tc-arr',
+            data: { output: 'sunny' },
+          },
+          {
+            event: 'on_chat_model_stream',
+            data: { chunk: { content: [{ type: 'text', text: '. It is sunny.' }] } },
+          },
+        ]),
+        store,
+        't1',
+        TEST_SENT_AT,
+      );
+
+      // The tool call mid-turn forces a new assistant segment (pre-existing,
+      // orthogonal behavior — see "splits into a new assistant row" below) —
+      // pipeEvents only returns the trailing segment's own content, so
+      // assert on that plus the first segment's persisted row, not one
+      // combined string.
+      expect(result.content).to.equal('. It is sunny.');
+      const firstSegment = store.getMessage('t1', 'msg1b')!;
+      expect(firstSegment.status).to.equal('done');
+      expect((firstSegment.payload as { content: string }).content).to.equal(
+        'Checking the weather in Seattle',
+      );
+
+      // No tool-arg JSON fragment reached the live SSE text_delta stream either.
+      const textDeltas = events().filter((e) => e.type === 'text_delta');
+      expect(textDeltas.every((e) => !(e.delta as string).includes('partial_json'))).to.equal(true);
+      expect(textDeltas.every((e) => !(e.delta as string).includes('location'))).to.equal(true);
     });
 
     it('separates <think>...</think> content into thoughtContent, not content', async () => {

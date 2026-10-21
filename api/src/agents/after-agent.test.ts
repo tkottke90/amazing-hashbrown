@@ -76,8 +76,10 @@ function captureAfterAgentBroadcasts(threadId: string) {
 // used to inspect exactly what text was sent to the model, without a mocking library.
 function fakeStructuredLlm(responses: Record<string, unknown>) {
   const calls: { runName: string; prompt: string }[] = [];
+  const structuredOutputCalls: unknown[][] = [];
   const llm = {
-    withStructuredOutput() {
+    withStructuredOutput(...args: unknown[]) {
+      structuredOutputCalls.push(args);
       return {
         withRetry() {
           return {
@@ -94,7 +96,7 @@ function fakeStructuredLlm(responses: Record<string, unknown>) {
       };
     },
   };
-  return { llm: llm as unknown as BaseChatModel, calls };
+  return { llm: llm as unknown as BaseChatModel, calls, structuredOutputCalls };
 }
 
 describe('agents/after-agent', () => {
@@ -169,6 +171,21 @@ describe('agents/after-agent', () => {
       );
 
       expect(setNextSpanNameCalls).to.deep.equal(['after-agent:classify']);
+    });
+
+    it('calls withStructuredOutput(schema, { method: "jsonSchema" }) — forced tool_choice is rejected with a 400 by current-generation Claude models', async () => {
+      const fakeHandler = {
+        setNextSpanName: () => {},
+      } as unknown as ObservabilityCallbackHandler;
+
+      const schema = z.object({ shouldWrite: z.boolean(), reason: z.string() });
+      const { llm, structuredOutputCalls } = fakeStructuredLlm({
+        'after-agent:classify': { shouldWrite: true, reason: 'x' },
+      });
+
+      await invokeStructured(llm, schema, 'some prompt', fakeHandler, 'after-agent:classify');
+
+      expect(structuredOutputCalls).to.deep.equal([[schema, { method: 'jsonSchema' }]]);
     });
   });
 

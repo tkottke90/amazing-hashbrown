@@ -39,7 +39,7 @@ export class LangChainInferenceAdapter implements InferenceAdapter {
     const lcMessages = toLangChainMessages(messages);
 
     if (options?.schema) {
-      const structured = this.model.withStructuredOutput(options.schema);
+      const structured = this.model.withStructuredOutput(options.schema, { method: 'jsonSchema' });
       const result = await structured.invoke(lcMessages);
       return {
         message: { role: 'assistant', content: JSON.stringify(result) },
