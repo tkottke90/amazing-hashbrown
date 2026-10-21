@@ -117,9 +117,24 @@ describe('ThreadRow dropdown — Archive', () => {
   it('archives a thread with one click, no confirmation step [unit]', async () => {
     const thread = makeThread('t-1');
     threads.value = [thread];
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ ...thread, archivedAt: '2026-10-20T00:00:00.000Z' }),
+    const archived = { ...thread, archivedAt: '2026-10-20T00:00:00.000Z' };
+    // URL-aware, not a blanket mock: ThreadSidebar's own background effects
+    // (refreshQueue, fetchTasks) also hit `fetch` on mount, and expect
+    // array/object shapes of their own — a single thread object answering
+    // every call corrupts those signals and crashes the render (the exact
+    // "Jest worker encountered child process exceptions" failure this is
+    // guarding against), rather than failing the assertion cleanly.
+    global.fetch = jest.fn().mockImplementation((url: string) => {
+      if (url === `/api/v1/threads/${thread.id}/archive`) {
+        return Promise.resolve({ ok: true, json: async () => archived });
+      }
+      if (url === '/api/v1/threads') {
+        return Promise.resolve({ ok: true, json: async () => [] });
+      }
+      if (url === '/api/v1/threads?type=all') {
+        return Promise.resolve({ ok: true, json: async () => [] });
+      }
+      return Promise.resolve({ ok: false, json: async () => ({}) });
     }) as unknown as typeof fetch;
 
     render(<ThreadSidebar />);

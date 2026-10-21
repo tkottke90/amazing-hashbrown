@@ -34,11 +34,21 @@ const originalFetch = global.fetch;
 
 beforeEach(() => {
   mockPath = `/chat/${ARCHIVED_THREAD}`;
+  // URL-aware, not a blanket mock: ChatRoot renders the full sidebar (via
+  // Layout), whose own background effects (refreshQueue, fetchTasks) also
+  // call `fetch` on mount and expect array/object shapes of their own —
+  // answering every call with the single thread object corrupts those
+  // signals and crashes a later render (the exact "Jest worker encountered
+  // child process exceptions" failure this is guarding against), rather
+  // than failing an assertion cleanly.
   global.fetch = jest.fn().mockImplementation((url: string) => {
     if (url === '/api/v1/threads') {
       return Promise.resolve({ ok: true, json: async () => [] });
     }
-    return Promise.resolve({ ok: true, json: async () => archivedThreadResponse });
+    if (url === `/api/v1/threads/${ARCHIVED_THREAD}`) {
+      return Promise.resolve({ ok: true, json: async () => archivedThreadResponse });
+    }
+    return Promise.resolve({ ok: false, json: async () => ({}) });
   }) as unknown as typeof fetch;
 });
 
