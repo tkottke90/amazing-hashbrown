@@ -416,6 +416,7 @@ describe('buildWorkspaceContextBlock()', () => {
       wikiDomain: null,
       latestSummary: null,
       olderSummaries: [],
+      taskFiles: [],
       autoApproveShell: false,
       ...overrides,
     };
@@ -465,5 +466,23 @@ describe('buildWorkspaceContextBlock()', () => {
     expect(block).to.include('already everything needed to answer');
     expect(block).to.include('already complete and exhaustive, not a truncated preview');
     expect(block).to.not.include('read via shell if needed');
+  });
+
+  it('renders a Task Files manifest with the shell_exec instruction when taskFiles is non-empty (ADR-0039)', () => {
+    const block = buildWorkspaceContextBlock(
+      makeContext({
+        taskFiles: [{ taskId: 'task-a', goal: 'Fix the flaky test', createdAt: '20260901000000' }],
+      }),
+    );
+
+    expect(block).to.include('## Task files');
+    expect(block).to.include('- task-a — "Fix the flaky test" (20260901000000)');
+    expect(block).to.include('use shell_exec to read');
+  });
+
+  it('omits the Task Files block entirely when taskFiles is empty', () => {
+    const block = buildWorkspaceContextBlock(makeContext({ taskFiles: [] }));
+
+    expect(block).to.not.include('## Task files');
   });
 });

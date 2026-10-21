@@ -564,6 +564,13 @@ export interface WorkspaceChatContext {
   // can read any of these via its bound shell-exec tool if it decides the
   // older context is relevant.
   olderSummaries: { path: string; timestamp: string }[];
+  // Every Task File in the workspace (`.hashbrown/tasks/*.md`) — rendered
+  // as a manifest only (ADR-0039), never full content, since unlike
+  // latestSummary there's no single most-relevant one to always spend
+  // context on. createdAt is the file's own 14-digit timestamp prefix, not
+  // reformatted — comparable against <ambient_context> the same way the
+  // summaries' timestamps already are.
+  taskFiles: { taskId: string; goal: string; createdAt: string }[];
   // Skips interactive shell_exec approval for this workspace (denylist still
   // applies). Flows into tool construction only — never rendered into the
   // system prompt text below.
@@ -606,6 +613,16 @@ export function buildWorkspaceContextBlock(ctx: WorkspaceChatContext): string {
         'which summaries exist or how long ago one was generated — compare the timestamp ' +
         'against <ambient_context> directly rather than running a shell command to check. ' +
         "Reach for shell_exec only when the user asks what a summary's content actually says.",
+    );
+  }
+  if (ctx.taskFiles.length > 0) {
+    lines.push(
+      '',
+      '## Task files',
+      ...ctx.taskFiles.map((f) => `- ${f.taskId} — "${f.goal}" (${f.createdAt})`),
+      '',
+      'Full detail for any of these lives in its own file — use shell_exec to read ' +
+        '.hashbrown/tasks/<file> only when the user asks about that specific task.',
     );
   }
   return lines.join('\n');
