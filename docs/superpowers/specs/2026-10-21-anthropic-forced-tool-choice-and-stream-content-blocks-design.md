@@ -157,9 +157,11 @@ const structured = this.model.withStructuredOutput(options.schema, { method: 'js
 output surface (`output_config.format` on Anthropic, `response_format:
 json_schema` on OpenAI, `format: <schema>` on Ollama) instead of forcing a
 tool call, so the Sonnet 5.5/Opus 5.5/Fable 5.1/Mythos 5.1 restriction never
-comes into play. Confirmed against the installed `@langchain/openai`
-(`1.6.2`) and `@langchain/ollama` (`1.3.0`) packages that `"jsonSchema"` is
-already each provider's own default when `method` is unspecified — this is a
+comes into play. Confirmed against `@langchain/ollama` `1.3.0` (the exact pinned version) and
+`@langchain/openai` `1.6.3` (one patch ahead of the pinned `1.6.2` — same
+`withStructuredOutput` logic, re-verify on the exact pinned version at
+implementation time if that matters) that `"jsonSchema"` is already each
+provider's own default when `method` is unspecified — this is a
 no-op behavior change for OpenAI and Ollama traffic through `rlm-adapter.ts`,
 and a targeted fix for Anthropic. No prompt changes needed on either side;
 the schemas and validated output shape are unchanged, only the wire mechanism
