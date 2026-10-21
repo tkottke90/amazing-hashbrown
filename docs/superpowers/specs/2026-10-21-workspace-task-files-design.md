@@ -2,7 +2,7 @@
 
 ## Context
 
-Each task run starts a genuinely new agent thread (`task_queue.thread_id`), and today's only built-in continuity is `buildRunKickoff` carrying forward the *same task*'s previous-run summary, plus PR #306's `task_progress_entries` carrying forward *tracker/dependency-linked* siblings' summaries across workspaces. Neither gives a human or an agent a single, readable artifact of "what happened on this task, across all its runs, in this workspace" — a user watching a sequence of workspace tasks has to reconstruct that by hand from separate run transcripts.
+Each task run starts a genuinely new agent thread (`task_queue.thread_id`), and today's only built-in continuity is `buildRunKickoff` carrying forward the _same task_'s previous-run summary, plus PR #306's `task_progress_entries` carrying forward _tracker/dependency-linked_ siblings' summaries across workspaces. Neither gives a human or an agent a single, readable artifact of "what happened on this task, across all its runs, in this workspace" — a user watching a sequence of workspace tasks has to reconstruct that by hand from separate run transcripts.
 
 This spec adds a Task File per workspace-scoped task: a markdown artifact, written and read entirely by the harness, holding a Task Goal, a Previous Tasks list, an append-only Task Notes log, a Task Outcome, and Handoff Notes. See `GLOSSARY.md` § Task Files for the vocabulary (Task File, Task State, Task Goal, Previous Tasks, Sibling Progress, Task Notes, Task Outcome, Handoff Notes) and ADR-0035 through ADR-0040 for the architectural decisions this design follows — this spec implements them rather than re-arguing them.
 
@@ -30,7 +30,7 @@ Migration v45 (re-verify before committing — see Existing System note above), 
 ALTER TABLE tasks ADD COLUMN task_file_path TEXT;
 ```
 
-`Task.taskFilePath: string | null` — the file's path, relative to `workspace.location`, set once on the task's first run and never recomputed (the filename's timestamp prefix is otherwise unrecoverable without it). This is the *only* new persisted field outside the file itself (ADR-0035) — it is a locator, never a content copy.
+`Task.taskFilePath: string | null` — the file's path, relative to `workspace.location`, set once on the task's first run and never recomputed (the filename's timestamp prefix is otherwise unrecoverable without it). This is the _only_ new persisted field outside the file itself (ADR-0035) — it is a locator, never a content copy.
 
 ### 2. `api/src/services/task-file.ts` (new)
 
@@ -39,14 +39,18 @@ The shared module every write/read site calls directly (ADR-0037 — no middlewa
 ```ts
 export interface TaskState {
   goal: string;
-  previousTasks: string[];      // one rendered one-liner per sibling, e.g. "<taskId>: <summary>"
-  notes: string[][];            // one array per run; notes[notes.length - 1] is the current run
+  previousTasks: string[]; // one rendered one-liner per sibling, e.g. "<taskId>: <summary>"
+  notes: string[][]; // one array per run; notes[notes.length - 1] is the current run
   outcome: string;
   handoff: string;
 }
 
 export const EMPTY_TASK_STATE: TaskState = {
-  goal: '', previousTasks: [], notes: [], outcome: '', handoff: '',
+  goal: '',
+  previousTasks: [],
+  notes: [],
+  outcome: '',
+  handoff: '',
 };
 
 export const TaskStateSchema = z.object({
@@ -103,9 +107,9 @@ Guard at the top: **a run only touches Task Files when `task.workspaceId` is set
 
 **Pre-run** (before the existing kickoff build at ~397-408):
 
-1. If `task.taskFilePath` is `null` (first-ever run), compute it — `path.join('.hashbrown', 'tasks', \`${formatTaskFileTimestamp(new Date())}-${task.id}.md\`)` relative to `workspace.location` — and persist via `store.patchTask(task.id, { taskFilePath })`.
+1. If `task.taskFilePath` is `null` (first-ever run), compute it — `path.join('.hashbrown', 'tasks', \`${formatTaskFileTimestamp(new Date())}-${task.id}.md\`)`relative to`workspace.location`— and persist via`store.patchTask(task.id, { taskFilePath })`.
 2. `{ state, historyGap } = await loadTaskState(absolutePath)`.
-3. `previousTasks = await listWorkspaceTaskFiles(workspace.location, task.id)`, rendered to one-liners of the form `"<taskId>: <entry.outcome>"` — the Previous Tasks list's one-sentence summaries are each sibling's Task Outcome (ADR-0038), not its Goal. (§6's workspace-chat manifest renders the same `listWorkspaceTaskFiles` result differently — by `goal` instead of `outcome` — because there the point is letting the user pick *which* task to ask about, not summarizing what already happened.)
+3. `previousTasks = await listWorkspaceTaskFiles(workspace.location, task.id)`, rendered to one-liners of the form `"<taskId>: <entry.outcome>"` — the Previous Tasks list's one-sentence summaries are each sibling's Task Outcome (ADR-0038), not its Goal. (§6's workspace-chat manifest renders the same `listWorkspaceTaskFiles` result differently — by `goal` instead of `outcome` — because there the point is letting the user pick _which_ task to ask about, not summarizing what already happened.)
 4. `goal = await generateTaskGoal({ task, previousTasks })` — a new, standalone LLM call outside the main agent loop, defined in a new `api/src/agents/task-file-generators.ts` alongside `generateHandoffNotes` (§3 Post-run), following the same "harness makes a one-off model call before/after the real run" shape already used by `POST /api/v1/tasks/generate-plan` (`api/src/agents/plan-generation.ts`). Reads title/description/outcome/plan plus `previousTasks`; returns a short first-person restatement of what the task is trying to do.
 5. `state.goal = goal; state.previousTasks = previousTasks;`
 6. If `isNewRun`, `state.notes.push([])` (a fresh segment for this run); a continuing run reuses `state.notes[state.notes.length - 1]`.
@@ -125,7 +129,7 @@ async function finishTaskFile(task, filePath, state, outcomeSummary) {
 }
 ```
 
-Called with whatever summary text that branch already produces: the model's `complete_task` summary (success), the fixed `stoppedSummary` string, `finishFailedRun`'s `summary` parameter, or the fixed cancel/take-over strings — reusing it verbatim (ADR-0036). `state` here is the *final* `taskState` read back from the agent invocation's result (standard `createAgent` behavior: the resolved state includes every custom field a bound middleware's `stateSchema` declared — see §4), not a separately-tracked copy. `recordTaskProgress`/`task_progress_entries` (PR #306, DB-backed) is untouched — cancel and take-over newly get a `finishTaskFile` call that `recordTaskProgress` still skips; that's an intentional divergence, not a bug (Round 3 of grilling, "extend file coverage to cancel/take-over too").
+Called with whatever summary text that branch already produces: the model's `complete_task` summary (success), the fixed `stoppedSummary` string, `finishFailedRun`'s `summary` parameter, or the fixed cancel/take-over strings — reusing it verbatim (ADR-0036). `state` here is the _final_ `taskState` read back from the agent invocation's result (standard `createAgent` behavior: the resolved state includes every custom field a bound middleware's `stateSchema` declared — see §4), not a separately-tracked copy. `recordTaskProgress`/`task_progress_entries` (PR #306, DB-backed) is untouched — cancel and take-over newly get a `finishTaskFile` call that `recordTaskProgress` still skips; that's an intentional divergence, not a bug (Round 3 of grilling, "extend file coverage to cancel/take-over too").
 
 ### 4. Graph state and the two new tools
 
@@ -183,7 +187,7 @@ Same "list everything, fetch content on demand" register as the existing summari
 - `task-file-generators.test.ts` (new): `generateTaskGoal`/`generateHandoffNotes` — stub the model call; assert the right fields are read from `task`/`previousTasks`/`state`, and that a model error degrades to an empty string rather than throwing.
 - `update-plan.tool.test.ts` (extended): asserts the new Task Notes entry + `writeTaskFile` call alongside the existing `patchTask`/`broadcast` assertions.
 - `write-task-note.tool.test.ts` / `read-task-notes.tool.test.ts` (new): note appended to the correct run segment; `read_task_notes` returns the current rendered state; both scoped to `taskId`.
-- `task-execution.test.ts` (extended): Task File steps run for a workspace-scoped, non-Sub-Agent-Task run and are skipped for an inbox task and a Sub-Agent Task; `historyGap` note appears when the file is missing; `finishTaskFile` is called with the right summary text for each of the five non-pause terminal branches (success, stopped-without-completing, generic fail, cancel, take-over) and *not* called for pause.
+- `task-execution.test.ts` (extended): Task File steps run for a workspace-scoped, non-Sub-Agent-Task run and are skipped for an inbox task and a Sub-Agent Task; `historyGap` note appears when the file is missing; `finishTaskFile` is called with the right summary text for each of the five non-pause terminal branches (success, stopped-without-completing, generic fail, cancel, take-over) and _not_ called for pause.
 - `workspace-provision.test.ts` (extended): `.gitignore` is created/appended correctly for both the clone and `git init` branches, and left alone when `git: false`.
 - `chat-agent.test.ts` (extended): `buildWorkspaceContextBlock`'s new task-files block renders the manifest and the shell_exec instruction.
 

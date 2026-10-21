@@ -351,6 +351,46 @@ describe('services/workspace-store', () => {
     });
   });
 
+  describe('Task File path (migration 45 — tasks.task_file_path)', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-store-task-file-path-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('a freshly created task reads taskFilePath as null', () => {
+      const task = store.createTask({ title: 't' });
+      expect(task.taskFilePath).to.equal(null);
+    });
+
+    it('patchTask persists taskFilePath and round-trips through getTask', () => {
+      const task = store.createTask({ title: 't' });
+
+      const patched = store.patchTask(task.id, {
+        taskFilePath: '.hashbrown/tasks/20261021000000-' + task.id + '.md',
+      })!;
+
+      expect(patched.taskFilePath).to.equal('.hashbrown/tasks/20261021000000-' + task.id + '.md');
+      expect(store.getTask(task.id)!.taskFilePath).to.equal(patched.taskFilePath);
+    });
+
+    it('patchTask can clear taskFilePath back to null', () => {
+      const task = store.createTask({ title: 't' });
+      store.patchTask(task.id, { taskFilePath: '.hashbrown/tasks/x-' + task.id + '.md' });
+
+      const cleared = store.patchTask(task.id, { taskFilePath: null })!;
+
+      expect(cleared.taskFilePath).to.equal(null);
+    });
+  });
+
   describe('project close process columns (migration 25)', () => {
     let store: WorkspaceStore;
     let dir: string;

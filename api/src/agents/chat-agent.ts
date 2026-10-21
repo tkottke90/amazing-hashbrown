@@ -57,7 +57,10 @@ import { makeCreateWorkspaceTool } from './tools/create-workspace.tool.js';
 import { makeCreateProjectTool } from './tools/create-project.tool.js';
 import { makeCompleteTaskTool, type CompleteTaskCall } from './tools/complete-task.tool.js';
 import { makeReadTaskRunTool } from './tools/read-task-run.tool.js';
-import { makeUpdatePlanTool } from './tools/update-plan.tool.js';
+import { makeUpdatePlanTool, type UpdatePlanTaskFile } from './tools/update-plan.tool.js';
+import { makeWriteTaskNoteTool } from './tools/write-task-note.tool.js';
+import { makeReadTaskNotesTool } from './tools/read-task-notes.tool.js';
+import { createTaskFileStateMiddleware } from './task-file-state.middleware.js';
 import { spawnSubAgentTool } from './tools/spawn-sub-agent.tool.js';
 import { makeCreateTasksTool } from './tools/create-tasks.tool.js';
 import { listTasksTool } from './tools/list-tasks.tool.js';
@@ -503,6 +506,14 @@ async function buildChatAgent(provider?: string, model?: string) {
         escalationMode: 'interrupt',
       }),
       createSkillExpansionMiddleware(globalSkills),
+      // Schema-only, no hooks (see its own header comment) — a no-op here
+      // and in buildWorkspaceChatAgent, since neither binds
+      // write_task_note/read_task_notes/a taskFile-aware update_plan. Rides
+      // along purely so ChatAgent's tuple type stays in lockstep across
+      // buildChatAgent/buildWorkspaceChatAgent/buildTaskAgent, the same
+      // reason attachmentAwarenessMiddleware/binaryContentFetchMiddleware
+      // ride along in buildTaskAgent despite being a no-op there.
+      createTaskFileStateMiddleware(),
       attachmentAwarenessMiddleware,
       binaryContentFetchMiddleware,
       toolSyntaxMiddleware,
@@ -644,6 +655,9 @@ async function buildWorkspaceChatAgent(
         escalationMode: 'interrupt',
       }),
       createSkillExpansionMiddleware(skills),
+      // Schema-only no-op here — see buildChatAgent's identical entry's
+      // header comment for why it rides along regardless.
+      createTaskFileStateMiddleware(),
       attachmentAwarenessMiddleware,
       binaryContentFetchMiddleware,
       toolSyntaxMiddleware,
@@ -753,6 +767,7 @@ export async function buildTaskAgent(
   workspaceScope?: TaskWorkspaceScope,
   hooks?: TaskAgentHooks,
   run?: TaskRunBinding,
+  taskFile?: UpdatePlanTaskFile,
 ): Promise<{ agent: ChatAgent; systemPrompt: string }> {
   const llm = createProvider(provider, model);
   const mcpTools = await loadMcpTools();
@@ -786,8 +801,11 @@ export async function buildTaskAgent(
         getPlan: () => getWorkspaceStore().getTask(task.id)?.plan ?? null,
         onAccepted: hooks?.onTaskComplete,
       }),
-      makeUpdatePlanTool(task.id),
+      makeUpdatePlanTool(task.id, undefined, taskFile),
       ...(run?.hasPreviousRun ? [makeReadTaskRunTool(task.id, run.runId)] : []),
+      ...(taskFile
+        ? [makeWriteTaskNoteTool(task.id, taskFile.filePath), makeReadTaskNotesTool(task.id)]
+        : []),
       ...mcpTools,
     ],
     systemPrompt,
@@ -802,6 +820,12 @@ export async function buildTaskAgent(
         taskId: task.id,
       }),
       createSkillExpansionMiddleware(skills),
+      // Schema-only — see its own header comment. Bound unconditionally
+      // (not just when taskFile is set) so buildTaskAgent's middleware
+      // tuple shape never depends on a runtime branch; the two tools that
+      // actually use it are still gated on taskFile above, so this is a
+      // harmless no-op when there's no Task File for this run.
+      createTaskFileStateMiddleware(),
       // Harmless no-op here (an automated task run never carries a chat
       // attachmentId, so pendingImageFetch never gets set either), but
       // buildTaskAgent's declared return type pins `agent` to the exact

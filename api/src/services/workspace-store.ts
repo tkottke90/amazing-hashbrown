@@ -185,6 +185,13 @@ export interface Task {
   // ADR-0033/ADR-0034. Only ever meaningful for a task currently in the
   // board's Done lane; rejects every board-move until unarchived.
   archivedAt: string | null;
+  // The Task File's own path, relative to workspace.location — set once on
+  // the task's first run (task-execution.ts) and never recomputed, so the
+  // filename's timestamp prefix stays recoverable. Null for a workspace-less
+  // task or a Sub-Agent Task (origin: 'agent'), which never get one. See
+  // docs/superpowers/specs/2026-10-21-workspace-task-files-design.md,
+  // GLOSSARY.md § Task Files, ADR-0035.
+  taskFilePath: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -311,6 +318,7 @@ export interface PatchTaskInput {
   blockedReason?: 'dependency_failed' | 'awaiting_children' | null;
   provider?: string | null;
   model?: string | null;
+  taskFilePath?: string | null;
 }
 
 // What started one run (task_queue row) of a task — drives run labels and,
@@ -419,6 +427,7 @@ interface RawTaskRow {
   provider: string | null;
   model: string | null;
   archived_at: string | null;
+  task_file_path: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -544,6 +553,7 @@ function mapTask(row: RawTaskRow): Task {
     provider: row.provider,
     model: row.model,
     archivedAt: row.archived_at,
+    taskFilePath: row.task_file_path,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -656,6 +666,9 @@ function mapQueueEntry(row: RawQueueRow): TaskQueueEntry {
 // docs/superpowers/specs/2026-10-20-thread-archiving-sidebar-retention-design.md).
 // 44=WorkspaceStore (tasks.archived_at — task archiving, see
 // docs/superpowers/specs/2026-10-21-task-archiving-done-lane-retention-design.md).
+// 45=WorkspaceStore (tasks.task_file_path — Task Files, see
+// docs/superpowers/specs/2026-10-21-workspace-task-files-design.md,
+// GLOSSARY.md § Task Files, ADR-0035).
 const MIGRATIONS: DbMigration[] = [
   {
     version: 18,
@@ -945,6 +958,16 @@ const MIGRATIONS: DbMigration[] = [
     // Nullable, no backfill — NULL means not archived. See archiveTask()/
     // unarchiveTask() below and ADR-0032/ADR-0033/ADR-0034.
     sql: `ALTER TABLE tasks ADD COLUMN archived_at TEXT`,
+  },
+  {
+    version: 45,
+    // Nullable, no backfill — NULL means no Task File yet (a workspace-less
+    // task, a Sub-Agent Task, or a workspace-scoped task that hasn't had its
+    // first run). Set once by task-execution.ts on a task's first run and
+    // never recomputed. See
+    // docs/superpowers/specs/2026-10-21-workspace-task-files-design.md,
+    // GLOSSARY.md § Task Files, ADR-0035.
+    sql: `ALTER TABLE tasks ADD COLUMN task_file_path TEXT`,
   },
 ];
 
@@ -1599,6 +1622,10 @@ export class WorkspaceStore extends BaseStore {
     if (patch.model !== undefined) {
       sets.push('model = ?');
       values.push(patch.model);
+    }
+    if (patch.taskFilePath !== undefined) {
+      sets.push('task_file_path = ?');
+      values.push(patch.taskFilePath);
     }
 
     if (sets.length === 0) return this.getTask(id);

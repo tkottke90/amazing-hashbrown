@@ -1,0 +1,184 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, it, before, after } from 'mocha';
+import { expect } from 'chai';
+import { openDatabase } from '@tkottke90/llm-common-types/db';
+import { FakeListChatModel } from '@langchain/core/utils/testing';
+import { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import { bootObservability, getObservabilityStore } from '../services/observability.js';
+import { configManager } from '../config/env.js';
+import { EMPTY_TASK_STATE, type TaskState } from '../services/task-file.js';
+import { generateHandoffNotes, generateTaskGoal } from './task-file-generators.js';
+
+class ThrowingChatModel extends BaseChatModel {
+  _llmType() {
+    return 'throwing-fake';
+  }
+  async _generate(): Promise<never> {
+    throw new Error('simulated provider failure');
+  }
+}
+
+describe('task-file-generators', () => {
+  let dir: string;
+
+  before(() => {
+    dir = mkdtempSync(join(tmpdir(), 'task-file-generators-test-'));
+    bootObservability(openDatabase(join(dir, 'observability.db')));
+    configManager.set('providers', [
+      {
+        name: 'local',
+        type: 'ollama',
+        baseUrl: 'http://localhost:11434',
+        defaultModel: 'default-model',
+      },
+    ]);
+    configManager.set('defaultProvider', 'local');
+  });
+
+  after(() => {
+    rmSync(dir, { recursive: true, force: true });
+    configManager.set('providers', []);
+    configManager.set('defaultProvider', '');
+  });
+
+  describe('generateTaskGoal', () => {
+    it('returns the model response, trimmed [unit]', async () => {
+      const model = new FakeListChatModel({ responses: ['  Fix the flaky test.  '] });
+
+      const goal = await generateTaskGoal(model, 'local', 'default-model', {
+        task: { title: 'Fix flaky test', description: null, outcome: null, plan: null },
+        previousTasks: [],
+      });
+
+      expect(goal).to.equal('Fix the flaky test.');
+    });
+
+    it('includes title/description/outcome/plan in the prompt [unit]', async () => {
+      let capturedPrompt = '';
+      class CapturingModel extends FakeListChatModel {
+        override async invoke(input: unknown, options?: unknown) {
+          capturedPrompt = String(input);
+          return super.invoke(input, options as never);
+        }
+      }
+      const model = new CapturingModel({ responses: ['A goal'] });
+
+      await generateTaskGoal(model, 'local', 'default-model', {
+        task: {
+          title: 'My Title',
+          description: 'My Description',
+          outcome: 'My Outcome',
+          plan: [{ step: 'Do a thing', done: false }],
+        },
+        previousTasks: [],
+      });
+
+      expect(capturedPrompt).to.include('My Title');
+      expect(capturedPrompt).to.include('My Description');
+      expect(capturedPrompt).to.include('My Outcome');
+      expect(capturedPrompt).to.include('Do a thing');
+    });
+
+    it('includes previousTasks in the prompt when present [unit]', async () => {
+      let capturedPrompt = '';
+      class CapturingModel extends FakeListChatModel {
+        override async invoke(input: unknown, options?: unknown) {
+          capturedPrompt = String(input);
+          return super.invoke(input, options as never);
+        }
+      }
+      const model = new CapturingModel({ responses: ['A goal'] });
+
+      await generateTaskGoal(model, 'local', 'default-model', {
+        task: { title: 'T', description: null, outcome: null, plan: null },
+        previousTasks: ['task-1: Did a thing'],
+      });
+
+      expect(capturedPrompt).to.include('task-1: Did a thing');
+    });
+
+    it('degrades to an empty string when the model throws, rather than rethrowing [unit]', async () => {
+      const model = new ThrowingChatModel({});
+
+      const goal = await generateTaskGoal(model, 'local', 'default-model', {
+        task: { title: 'T', description: null, outcome: null, plan: null },
+        previousTasks: [],
+      });
+
+      expect(goal).to.equal('');
+    });
+
+    it('saves an observability span with source=task-file-goal [orchestration]', async () => {
+      const before = getObservabilityStore().find({}).length;
+      const model = new FakeListChatModel({ responses: ['A goal'] });
+
+      await generateTaskGoal(model, 'local', 'default-model', {
+        task: { title: 'T', description: null, outcome: null, plan: null },
+        previousTasks: [],
+      });
+
+      const after = getObservabilityStore().find({}).length;
+      expect(after).to.equal(before + 1);
+    });
+  });
+
+  describe('generateHandoffNotes', () => {
+    const state: TaskState = { ...EMPTY_TASK_STATE, outcome: 'It worked.', notes: [['a note']] };
+
+    it('returns the model response, trimmed [unit]', async () => {
+      const model = new FakeListChatModel({ responses: ['  Watch the next CI run.  '] });
+
+      const notes = await generateHandoffNotes(model, 'local', 'default-model', {
+        task: { title: 'T', description: null, outcome: null, plan: null },
+        state,
+      });
+
+      expect(notes).to.equal('Watch the next CI run.');
+    });
+
+    it("includes the run's outcome and accumulated notes in the prompt [unit]", async () => {
+      let capturedPrompt = '';
+      class CapturingModel extends FakeListChatModel {
+        override async invoke(input: unknown, options?: unknown) {
+          capturedPrompt = String(input);
+          return super.invoke(input, options as never);
+        }
+      }
+      const model = new CapturingModel({ responses: ['Notes'] });
+
+      await generateHandoffNotes(model, 'local', 'default-model', {
+        task: { title: 'T', description: null, outcome: null, plan: null },
+        state,
+      });
+
+      expect(capturedPrompt).to.include('It worked.');
+      expect(capturedPrompt).to.include('a note');
+    });
+
+    it('degrades to an empty string when the model throws, rather than rethrowing [unit]', async () => {
+      const model = new ThrowingChatModel({});
+
+      const notes = await generateHandoffNotes(model, 'local', 'default-model', {
+        task: { title: 'T', description: null, outcome: null, plan: null },
+        state,
+      });
+
+      expect(notes).to.equal('');
+    });
+
+    it('saves an observability span with source=task-file-handoff [orchestration]', async () => {
+      const before = getObservabilityStore().find({}).length;
+      const model = new FakeListChatModel({ responses: ['Notes'] });
+
+      await generateHandoffNotes(model, 'local', 'default-model', {
+        task: { title: 'T', description: null, outcome: null, plan: null },
+        state,
+      });
+
+      const after = getObservabilityStore().find({}).length;
+      expect(after).to.equal(before + 1);
+    });
+  });
+});

@@ -127,6 +127,22 @@ export const TOOL_CATALOG: CatalogEntry[] = [
     alwaysOn: true,
   },
   {
+    toolId: 'write_task_note',
+    name: 'Write Task Note',
+    description:
+      "Append a freeform note to this task's Task File. Task runs only, and only for a workspace-scoped task.",
+    category: 'built-in',
+    alwaysOn: true,
+  },
+  {
+    toolId: 'read_task_notes',
+    name: 'Read Task Notes',
+    description:
+      "Read this task's full Task File content. Task runs only, and only for a workspace-scoped task.",
+    category: 'built-in',
+    alwaysOn: true,
+  },
+  {
     toolId: 'schedule_wakeup',
     name: 'Schedule Wake-up',
     description:

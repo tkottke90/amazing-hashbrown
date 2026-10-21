@@ -25,6 +25,10 @@ export const TraceSourceSchema = z.enum([
   'sub-agent-notification',
   // The loop guard's own reflection call (api/src/agents/loop-reflection.ts).
   'loop-guard',
+  // A Task File's own one-off Task Goal / Handoff Notes generation calls
+  // (api/src/agents/task-file-generators.ts).
+  'task-file-goal',
+  'task-file-handoff',
 ]);
 
 export const SpanRecordSchema = z.object({

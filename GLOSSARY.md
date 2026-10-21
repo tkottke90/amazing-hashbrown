@@ -275,7 +275,7 @@ A Task File's own restatement, in the task's own words, of what the Task is tryi
 _Avoid_: Objective, intent
 
 **Previous Tasks**:
-A Task File's list of the other Tasks in the *same Workspace* that already have their own Task File, shown chronologically with each one's Task Outcome as a one-sentence summary. Narrower than, and unrelated to, Sibling Progress — Previous Tasks never crosses a Workspace boundary and is read straight off the filesystem, never from a tracker or dependency link.
+A Task File's list of the other Tasks in the _same Workspace_ that already have their own Task File, shown chronologically with each one's Task Outcome as a one-sentence summary. Narrower than, and unrelated to, Sibling Progress — Previous Tasks never crosses a Workspace boundary and is read straight off the filesystem, never from a tracker or dependency link.
 _Avoid_: Sibling tasks, related tasks (ambiguous with Sibling Progress), history
 
 **Sibling Progress**:
