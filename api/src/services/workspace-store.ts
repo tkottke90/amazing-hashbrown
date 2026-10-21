@@ -1953,6 +1953,22 @@ export class WorkspaceStore extends BaseStore {
     return rows.map(mapTaskProgressEntry);
   }
 
+  // Newest first, across every tracker a workspace's tasks have ever used —
+  // listTaskProgressEntries() above is scoped to one (trackerType, trackerId)
+  // pair, which isn't enough for a workspace-wide rollup (the workspace
+  // retrospective report). workspace_id is denormalized onto every entry
+  // precisely for this kind of cross-tracker query — see insertTaskProgressEntry.
+  listTaskProgressEntriesForWorkspace(workspaceId: string): TaskProgressEntry[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM task_progress_entries
+         WHERE workspace_id = ?
+         ORDER BY completed_at DESC, id DESC`,
+      )
+      .all(workspaceId) as RawTaskProgressRow[];
+    return rows.map(mapTaskProgressEntry);
+  }
+
   // Called only from deleteWorkspace()'s own cascade — see that method.
   // deleteTask() deliberately does NOT call this (the entries survive an
   // individual task's deletion by design).

@@ -4,6 +4,7 @@ import type { ComponentChildren } from 'preact';
 
 import { ThemeToggle } from '@/components/theme-toggle';
 import { WorkspaceSettingsDrawer } from '@/pages/workspaces/workspace-settings-drawer';
+import { WorkspaceRetrospectiveButton } from '@/components/workspace-retrospective-button';
 import type { Workspace, Project } from '@/services/workspaces-api';
 
 function ActionRow({ children }: { children: ComponentChildren }) {
@@ -73,6 +74,11 @@ export function WorkspaceActionsSheet({
             </ActionRow>
           </>
         )}
+
+        <ActionRow>
+          <span class="text-sm font-medium">Retrospective report</span>
+          <WorkspaceRetrospectiveButton workspaceId={workspace.id} variant="action-row" />
+        </ActionRow>
 
         <ActionRow>
           <span class="text-sm font-medium">Delete workspace</span>

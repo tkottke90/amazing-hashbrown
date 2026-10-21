@@ -14,6 +14,7 @@ import { workspaceFilesRouter } from './workspace-files.route.js';
 import { workspaceGitRouter } from './workspace-git.route.js';
 import { workspaceChatRouter } from './workspace-chat.route.js';
 import { workspaceSkillsRouter } from './workspace-skills.route.js';
+import { workspaceRetrospectiveRouter } from './workspace-retrospective.route.js';
 
 export const workspacesRouter = Router();
 
@@ -88,3 +89,4 @@ workspacesRouter.use('/:id/files', workspaceFilesRouter);
 workspacesRouter.use('/:id/git', workspaceGitRouter);
 workspacesRouter.use('/:id/chat', workspaceChatRouter);
 workspacesRouter.use('/:id/skills', workspaceSkillsRouter);
+workspacesRouter.use('/:id/retrospective-report', workspaceRetrospectiveRouter);

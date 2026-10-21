@@ -30,6 +30,7 @@
     "@tkottke90/shell-executor": "*",
     "@tkottke90/skills-manager": "*",
     "@tkottke90/thread-reports": "*",
+    "@tkottke90/workspace-reports": "*",
     "@tkottke90/tools-manager": "*",
     "cors": "2.8.5",
     "cron-parser": "^5.10.1",
