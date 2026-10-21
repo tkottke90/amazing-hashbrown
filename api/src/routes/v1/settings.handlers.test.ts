@@ -578,7 +578,17 @@ describe('routes/v1/settings.handlers', () => {
       // persisted file.
       expect(result.ok).to.equal(true);
       const written = readYaml(tmpDir);
-      expect(written.chat).to.deep.equal({ showErrorMessages: false, codeBlockWrap: true });
+      // ChatSchema.partial() doesn't strip each field's own .default() — an
+      // omitted field re-applies its default rather than staying untouched.
+      // showErrorMessages/codeBlockWrap's defaults happen to match
+      // makeEnv()'s own values, so this was never visible before;
+      // sidebarRetentionDays's non-zero default (ADR-0030) makes the same
+      // pre-existing behavior show up here too.
+      expect(written.chat).to.deep.equal({
+        showErrorMessages: false,
+        codeBlockWrap: true,
+        sidebarRetentionDays: 7,
+      });
     });
 
     it('PATCH general returns the new GET response (includes updated logLevel) [unit]', async () => {
