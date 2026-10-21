@@ -18,13 +18,13 @@ This was reached through a full grilling (design-interview) pass with the repo o
 - `.hashbrown/summaries/*.md` (`workspace-summarizer.ts:106-113`) is the one existing on-disk precedent: ISO-timestamp filenames (colons/dots replaced with dashes) under `workspace.location`, written via plain `writeFile` (not atomic), read by `workspace-chat-stream-handler.ts:40-82`, injected into the workspace-chat system prompt by `buildWorkspaceContextBlock` (`chat-agent.ts:562-601`) as full content of the latest + a manifest of older ones, wired in at `chat-agent.ts:613-616`. The workspace-chat agent's own tool list (`chat-agent.ts:617-635`) already includes `makeShellExecTool(workspaceContext.location, ...)`.
 - A ready-made, generic frontmatter+body parse/serialize/atomic-write precedent already exists for a different feature (dashboard Widgets): `lib/amazing-hashbrown-widgets/src/internal/frontmatter.ts:13-22` (`parse`/`serialize` via `gray-matter`, operating on plain `Record<string, unknown>` + body string — not Widget-specific) and `lib/amazing-hashbrown-widgets/src/store.ts:186-189` (`writeFileAtomic`: write to `${filePath}.tmp`, then `fs.rename`). `gray-matter` is already an `api/package.json` dependency (`"gray-matter": "4.0.3"`). This feature writes its own equivalent in `api/src/services/task-file.ts` rather than depending on the widgets library (wrong semantic home for task data), but copies the same two small, proven patterns.
 - `provisionGitRepository` (`api/src/services/workspace-provision.ts:50-74`) is the one choke point for both the clone and the `git init` branch of workspace provisioning — the natural place to ensure a `.gitignore` entry.
-- Migration ledger: PR #306 landed as migration v42 (`workspace-store.ts:891-924`); next free version is **v43** (re-verify before committing, per this repo's existing convention).
+- Migration ledger: PR #306 landed as migration v42 (`workspace-store.ts:891-924`); `workspace-store.ts`'s own ledger has since added v44 (`archived_at`, ADR-0032–0034), and v43 is already claimed by `thread-store.ts:276` — version numbers are one global sequence shared by every `BaseStore` on the connection (per the existing convention noted at `workspace-store.ts:890-892`). Next free version is **v45** (re-verify against every `BaseStore`'s ledger before committing — this number drifts as other work lands).
 
 ## Design
 
 ### 1. Schema change
 
-Migration v43, `tasks` table:
+Migration v45 (re-verify before committing — see Existing System note above), `tasks` table:
 
 ```sql
 ALTER TABLE tasks ADD COLUMN task_file_path TEXT;
