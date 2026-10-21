@@ -229,3 +229,29 @@ _Avoid_: Close/Reopen, Lock/Unlock, Hide/Show (see Sidebar Retention Window)
 **Sidebar Retention Window**:
 The `chat.sidebarRetentionDays` config value: how many days since a chat thread's `updatedAt` before it's excluded from the sidebar's own thread list (see ADR-0027, ADR-0030). This is a live computation against `updatedAt`, not a persisted flag on the thread — unlike an Archived Thread, a thread this excludes carries no state of its own, stays fully usable, and reappears in the sidebar the moment it's continued and `updatedAt` moves forward again.
 _Avoid_: Stale thread, hidden thread, archived (not to be confused with Archived Thread, a real persisted state this one deliberately isn't)
+
+# Task Archiving & Done Lane Retention
+
+How a Done or Cancelled task leaves the Workspace board's Done lane and the Inbox's default view — permanently via Archiving, or temporarily via inactivity — without the task or its history ever being deleted. The same split this app already uses for Thread Archiving & Sidebar Visibility, applied to tasks instead of chat threads.
+
+## Language
+
+**Archived Task**:
+A task with a non-null archive timestamp. Hidden from the Done lane and the Inbox by default regardless of age; rejects reopen, rerun, and reschedule board-moves until Unarchived (see ADR-0032) — deleting it and editing its title/description/due date stay allowed. Shown with a distinguishing badge when revealed via the Show Archived toggle.
+_Avoid_: Closed task, locked task, dismissed task, hidden task (see Aged-Out Task, a related but different state)
+
+**Archive** / **Unarchive**:
+The two actions that set and clear a task's archive timestamp, reachable from a Done-lane card's own menu, an Inbox row's own action, or the Task Drawer. Unarchive also bumps the task's `updatedAt` (see ADR-0034), unlike the equivalent thread actions.
+_Avoid_: Close/Reopen, Dismiss/Restore, Hide/Show (see Aged-Out Task)
+
+**Aged-Out Task**:
+A task excluded from the Done lane and the Inbox's default view purely because the Done Lane Retention Window has passed since its `updatedAt`. Not a persisted state — carries no badge, stays fully interactive, and can be reopened or rerun directly without Unarchiving first (see ADR-0032). Reappears the moment anything bumps its `updatedAt`.
+_Avoid_: Archived (see Archived Task, a different and persisted state), stale task
+
+**Done Lane Retention Window**:
+The single global `tasks.doneRetentionDays` config value: how many days since a task's `updatedAt` before a task currently in the Done lane becomes an Aged-Out Task. Applies identically to the Workspace board and the Inbox's default fetch; the Show Archived toggle always bypasses it. Defaults to `5` (see ADR-0031).
+_Avoid_: Stale window, cleanup window
+
+**Show Archived** (toggle):
+The board/Inbox control that, toggled on, reveals both Archived Tasks and Aged-Out Tasks back into their normal view in one combined pass. Resets to off on every page load — never remembered across sessions, the same convention this app already uses for other page-level display toggles (e.g. Dashboard's Edit Mode).
+_Avoid_: View all, archive filter, done filter
