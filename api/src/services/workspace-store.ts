@@ -181,6 +181,10 @@ export interface Task {
   // 'running' or in a terminal status (patchTaskHandler).
   provider: string | null;
   model: string | null;
+  // Set by archiveTask(), cleared by unarchiveTask() — see ADR-0032/
+  // ADR-0033/ADR-0034. Only ever meaningful for a task currently in the
+  // board's Done lane; rejects every board-move until unarchived.
+  archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -414,6 +418,7 @@ interface RawTaskRow {
   cohort_of: string | null;
   provider: string | null;
   model: string | null;
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -538,6 +543,7 @@ function mapTask(row: RawTaskRow): Task {
     cohortOf: row.cohort_of,
     provider: row.provider,
     model: row.model,
+    archivedAt: row.archived_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -646,6 +652,10 @@ function mapQueueEntry(row: RawQueueRow): TaskQueueEntry {
 // (task_progress_entries table, for the shared task progress record
 // feature — see
 // docs/superpowers/specs/2026-10-15-shared-task-progress-record-design.md).
+// 43=threads (archived_at column — thread archiving, see
+// docs/superpowers/specs/2026-10-20-thread-archiving-sidebar-retention-design.md).
+// 44=WorkspaceStore (tasks.archived_at — task archiving, see
+// docs/superpowers/specs/2026-10-21-task-archiving-done-lane-retention-design.md).
 const MIGRATIONS: DbMigration[] = [
   {
     version: 18,
@@ -929,6 +939,12 @@ const MIGRATIONS: DbMigration[] = [
       CREATE INDEX IF NOT EXISTS idx_task_progress_tracker
         ON task_progress_entries(tracker_type, tracker_id);
     `,
+  },
+  {
+    version: 44,
+    // Nullable, no backfill — NULL means not archived. See archiveTask()/
+    // unarchiveTask() below and ADR-0032/ADR-0033/ADR-0034.
+    sql: `ALTER TABLE tasks ADD COLUMN archived_at TEXT`,
   },
 ];
 
@@ -1594,6 +1610,28 @@ export class WorkspaceStore extends BaseStore {
     const result = this.db
       .prepare(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`)
       .run(...values, id);
+    if (result.changes === 0) return null;
+    return this.getTask(id);
+  }
+
+  // Does NOT bump updated_at — archiving isn't activity on the task itself
+  // (same reasoning as thread-store.ts's archiveThread). Board-rules.ts
+  // rejects every move out of the Done lane while this is set (ADR-0032).
+  archiveTask(id: string): Task | null {
+    const result = this.db
+      .prepare(`UPDATE tasks SET archived_at = ? WHERE id = ?`)
+      .run(new Date().toISOString(), id);
+    if (result.changes === 0) return null;
+    return this.getTask(id);
+  }
+
+  // Unlike thread-store.ts's unarchiveThread, this DOES bump updated_at —
+  // see ADR-0034: a task has no "continue" action to do that work for it,
+  // so Unarchive gives it a fresh Done Lane Retention Window clock itself.
+  unarchiveTask(id: string): Task | null {
+    const result = this.db
+      .prepare(`UPDATE tasks SET archived_at = NULL, updated_at = ? WHERE id = ?`)
+      .run(new Date().toISOString(), id);
     if (result.changes === 0) return null;
     return this.getTask(id);
   }

@@ -9,7 +9,16 @@ import { ThreadStore } from '../../services/thread-store.js';
 import { recordHitlPrompt } from '../../agents/thread-message-writer.js';
 import { registerTaskAbort, getTaskAbort, clearTaskAbort } from '../../agents/active-task-abort.js';
 import { createTaskHandler } from './tasks.handlers.js';
-import { buildBoardContexts, moveTaskHandler, withBoards } from './tasks-board.handlers.js';
+import {
+  archiveTaskHandler,
+  buildBoardContexts,
+  filterHiddenDone,
+  moveTaskHandler,
+  unarchiveTaskHandler,
+  withBoard,
+  withBoards,
+  type BoardTaskResponse,
+} from './tasks-board.handlers.js';
 
 enum TestTypes {
   UNIT = '[unit]',
@@ -403,6 +412,146 @@ describe('routes/v1/tasks-board.handlers', () => {
         listDependencyEdgesForTasks: 1,
         failedRunStreaks: 1,
       });
+    });
+  });
+
+  describe('archiveTaskHandler / unarchiveTaskHandler', () => {
+    it(`404s archiving an unknown task ${TestTypes.UNIT}`, () => {
+      expect(archiveTaskHandler(store, threads, 'missing')).to.deep.include({
+        ok: false,
+        status: 404,
+      });
+    });
+
+    it(`404s unarchiving an unknown task ${TestTypes.UNIT}`, () => {
+      expect(unarchiveTaskHandler(store, threads, 'missing')).to.deep.include({
+        ok: false,
+        status: 404,
+      });
+    });
+
+    it(`400s archiving a task that isn't in the Done lane (ADR-0033) ${TestTypes.UNIT}`, () => {
+      const task = store.createTask({ title: 't' });
+      expect(archiveTaskHandler(store, threads, task.id)).to.deep.include({
+        ok: false,
+        status: 400,
+      });
+    });
+
+    it(`archives a Done-lane task, leaving it in the Done lane with no legal moves (ADR-0032) ${TestTypes.UNIT}`, () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      move(task, { to: 'done' });
+
+      const result = archiveTaskHandler(store, threads, task.id);
+
+      expect(result.ok).to.equal(true);
+      if (!result.ok) return;
+      expect(result.data.archivedAt).to.not.equal(null);
+      expect(result.data.board.lane).to.equal('done');
+      expect(result.data.board.moves).to.deep.equal([]);
+    });
+
+    it(`archives a schedule-finished cron task too, not just literal done/cancelled status (ADR-0033) ${TestTypes.UNIT}`, () => {
+      const result = createTaskHandler(store, {
+        title: 'Once',
+        triggerType: 'cron_once',
+        triggerConfig: { fireAt: inAnHour(), timezone: 'UTC' },
+      });
+      if (!result.ok) throw new Error(result.error);
+      const task = result.data!;
+      store.fireCronTask(task.id);
+      const entry = store.dequeueNext()!;
+      store.completeQueueEntry(entry.id, 'done');
+
+      const boarded = withBoard(store, threads, store.getTask(task.id)!);
+      expect(
+        boarded.board.lane,
+        'sanity: this task is in the Done lane while status is pending',
+      ).to.equal('done');
+
+      const archived = archiveTaskHandler(store, threads, task.id);
+      expect(archived.ok).to.equal(true);
+    });
+
+    it(`unarchives, clearing archivedAt and bumping updatedAt (ADR-0034) ${TestTypes.UNIT}`, async () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      move(task, { to: 'done' });
+      const archived = store.archiveTask(task.id)!;
+      // A real (small) delay, not a mocked clock — guards against the bump
+      // landing in the exact same millisecond as the move above, which
+      // would make a bare "greater than" comparison flaky rather than wrong.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+
+      const result = unarchiveTaskHandler(store, threads, task.id);
+
+      expect(result.ok).to.equal(true);
+      if (!result.ok) return;
+      expect(result.data.archivedAt).to.equal(null);
+      expect(new Date(result.data.updatedAt).getTime()).to.be.greaterThan(
+        new Date(archived.updatedAt).getTime(),
+      );
+    });
+
+    it(`unarchive needs no Done-lane guard — always legal ${TestTypes.UNIT}`, () => {
+      const task = store.createTask({ title: 't' });
+      expect(unarchiveTaskHandler(store, threads, task.id).ok).to.equal(true);
+    });
+
+    it(`an archived Done-lane task rejects every board-move until unarchived (ADR-0032) ${TestTypes.UNIT}`, () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      move(task, { to: 'done' });
+      store.archiveTask(task.id);
+
+      for (const to of ['backlog', 'scheduled', 'queue'] as const) {
+        const result = move(store.getTask(task.id)!, { to });
+        expect(result, `move to ${to}`).to.deep.include({ ok: false, status: 409 });
+      }
+    });
+  });
+
+  describe('filterHiddenDone', () => {
+    function boardedTask(overrides: {
+      lane: 'done' | 'backlog';
+      archivedAt?: string | null;
+      updatedAt?: string;
+    }): BoardTaskResponse {
+      return {
+        archivedAt: overrides.archivedAt ?? null,
+        updatedAt: overrides.updatedAt ?? new Date().toISOString(),
+        board: { lane: overrides.lane, moves: [] },
+      } as unknown as BoardTaskResponse;
+    }
+
+    const daysAgo = (n: number) => new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString();
+
+    it(`keeps a non-Done-lane task regardless of age or archive state ${TestTypes.UNIT}`, () => {
+      const tasks = [boardedTask({ lane: 'backlog', updatedAt: daysAgo(999) })];
+      expect(filterHiddenDone(tasks, 5)).to.have.length(1);
+    });
+
+    it(`keeps a fresh Done-lane task ${TestTypes.UNIT}`, () => {
+      const tasks = [boardedTask({ lane: 'done', updatedAt: daysAgo(1) })];
+      expect(filterHiddenDone(tasks, 5)).to.have.length(1);
+    });
+
+    it(`drops a Done-lane task older than the retention window ${TestTypes.UNIT}`, () => {
+      const tasks = [boardedTask({ lane: 'done', updatedAt: daysAgo(6) })];
+      expect(filterHiddenDone(tasks, 5)).to.have.length(0);
+    });
+
+    it(`drops an archived Done-lane task regardless of age ${TestTypes.UNIT}`, () => {
+      const tasks = [boardedTask({ lane: 'done', archivedAt: daysAgo(1), updatedAt: daysAgo(1) })];
+      expect(filterHiddenDone(tasks, 5)).to.have.length(0);
+    });
+
+    it(`doneRetentionDays: 0 disables age-based exclusion ${TestTypes.UNIT}`, () => {
+      const tasks = [boardedTask({ lane: 'done', updatedAt: daysAgo(999) })];
+      expect(filterHiddenDone(tasks, 0)).to.have.length(1);
+    });
+
+    it(`doneRetentionDays: 0 still drops an archived task ${TestTypes.UNIT}`, () => {
+      const tasks = [boardedTask({ lane: 'done', archivedAt: daysAgo(1), updatedAt: daysAgo(1) })];
+      expect(filterHiddenDone(tasks, 0)).to.have.length(0);
     });
   });
 });

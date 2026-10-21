@@ -333,3 +333,59 @@ export function moveTaskHandler(
 
   return { ok: true, data: withBoard(store, threadStore, store.getTask(taskId)!) };
 }
+
+// ---------------------------------------------------------------------------
+// POST /tasks/:id/archive, POST /tasks/:id/unarchive
+// ---------------------------------------------------------------------------
+
+// Only a task currently in the Done lane can be archived — keyed on the
+// same Board Lane computation the UI already uses (board.lane), not literal
+// status, so a schedule-finished cron task (still status 'pending') is
+// archivable too. See ADR-0032/ADR-0033.
+export function archiveTaskHandler(
+  store: WorkspaceStore,
+  threadStore: ThreadStore | null,
+  taskId: string,
+): HandlerResult<BoardTaskResponse> {
+  const task = store.getTask(taskId);
+  if (!task) return notFound(`Task ${taskId} not found`);
+  const { board } = withBoard(store, threadStore, task);
+  if (board.lane !== 'done') {
+    return badRequest('Only a Done-lane task can be archived.');
+  }
+  const archived = store.archiveTask(taskId);
+  if (!archived) return notFound(`Task ${taskId} not found`);
+  return { ok: true, data: withBoard(store, threadStore, archived) };
+}
+
+// No lane guard — Unarchive is always legal; it's board-moves on an
+// Archived task that are rejected (board-rules.ts's 'done' case), not the
+// other way around. See ADR-0032.
+export function unarchiveTaskHandler(
+  store: WorkspaceStore,
+  threadStore: ThreadStore | null,
+  taskId: string,
+): HandlerResult<BoardTaskResponse> {
+  const unarchived = store.unarchiveTask(taskId);
+  if (!unarchived) return notFound(`Task ${taskId} not found`);
+  return { ok: true, data: withBoard(store, threadStore, unarchived) };
+}
+
+// Hides a Done-lane task from the normal board/Inbox fetch when it's
+// Archived, or when it's been untouched past doneRetentionDays (the Done
+// Lane Retention Window) — the combined "Show archived" toggle's opposite.
+// Takes the retention value as a parameter rather than reading env directly
+// so it's independently unit-testable. See ADR-0031/ADR-0033.
+export function filterHiddenDone(
+  tasks: BoardTaskResponse[],
+  doneRetentionDays: number,
+): BoardTaskResponse[] {
+  const cutoff =
+    doneRetentionDays > 0 ? Date.now() - doneRetentionDays * 24 * 60 * 60 * 1000 : null;
+  return tasks.filter((t) => {
+    if (t.board.lane !== 'done') return true;
+    if (t.archivedAt) return false;
+    if (cutoff !== null && new Date(t.updatedAt).getTime() < cutoff) return false;
+    return true;
+  });
+}

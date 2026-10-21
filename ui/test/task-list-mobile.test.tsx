@@ -1,4 +1,5 @@
 import { render, screen, fireEvent, waitFor, within, cleanup } from '@testing-library/preact';
+import { signal } from '@preact/signals';
 
 const mockApiMoveTask = jest.fn();
 const mockApiCreateTask = jest.fn();
@@ -56,7 +57,7 @@ const scheduled = boardTask(
 );
 const done = boardTask({ id: 'd', title: 'Audit repo', status: 'done' }, { lane: 'done' });
 
-function renderList(taskList: Task[]) {
+function renderList(taskList: Task[], showArchived = signal(false)) {
   tasks.value = taskList;
   return render(
     <TaskListMobile
@@ -64,6 +65,7 @@ function renderList(taskList: Task[]) {
       taskList={taskList}
       onSaved={jest.fn()}
       onGoToChat={jest.fn()}
+      showArchived={showArchived}
     />,
   );
 }
@@ -178,6 +180,7 @@ describe('TaskListMobile', () => {
         taskList={[late]}
         onSaved={jest.fn()}
         onGoToChat={jest.fn()}
+        showArchived={signal(false)}
       />,
     );
 

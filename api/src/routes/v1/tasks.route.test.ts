@@ -134,4 +134,54 @@ describe('routes/v1/tasks.route — Kanban board', () => {
 
     expect(res.status).to.equal(400);
   });
+
+  it(`POST /:id/archive archives a Done-lane task ${TestTypes.ORCHESTRATION}`, async () => {
+    const task = getWorkspaceStore().createTask({ title: 't', assignedTo: 'agent' });
+    getWorkspaceStore().patchTask(task.id, { status: 'done' });
+
+    const res = await post(`/${task.id}/archive`, {});
+    const body = (await res.json()) as { archivedAt: string | null };
+
+    expect(res.status).to.equal(200);
+    expect(body.archivedAt).to.not.equal(null);
+  });
+
+  it(`POST /:id/archive 400s a task that isn't in the Done lane ${TestTypes.ORCHESTRATION}`, async () => {
+    const task = getWorkspaceStore().createTask({ title: 't', assignedTo: 'agent' });
+
+    const res = await post(`/${task.id}/archive`, {});
+
+    expect(res.status).to.equal(400);
+  });
+
+  it(`POST /:id/archive 404s an unknown task ${TestTypes.ORCHESTRATION}`, async () => {
+    const res = await post('/missing/archive', {});
+    expect(res.status).to.equal(404);
+  });
+
+  it(`POST /:id/unarchive clears archivedAt ${TestTypes.ORCHESTRATION}`, async () => {
+    const task = getWorkspaceStore().createTask({ title: 't', assignedTo: 'agent' });
+    getWorkspaceStore().patchTask(task.id, { status: 'done' });
+    getWorkspaceStore().archiveTask(task.id);
+
+    const res = await post(`/${task.id}/unarchive`, {});
+    const body = (await res.json()) as { archivedAt: string | null };
+
+    expect(res.status).to.equal(200);
+    expect(body.archivedAt).to.equal(null);
+  });
+
+  it(`GET / hides a Done-lane task by default, and reveals it with exclude_hidden_done=false ${TestTypes.ORCHESTRATION}`, async () => {
+    const task = getWorkspaceStore().createTask({ title: 't', assignedTo: 'agent' });
+    getWorkspaceStore().patchTask(task.id, { status: 'done' });
+    getWorkspaceStore().archiveTask(task.id);
+
+    const hidden = (await (await fetch(`${baseUrl}/`)).json()) as Array<{ id: string }>;
+    expect(hidden.find((t) => t.id === task.id)).to.equal(undefined);
+
+    const shown = (await (await fetch(`${baseUrl}/?exclude_hidden_done=false`)).json()) as Array<{
+      id: string;
+    }>;
+    expect(shown.find((t) => t.id === task.id)).to.not.equal(undefined);
+  });
 });

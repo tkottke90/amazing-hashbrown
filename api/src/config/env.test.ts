@@ -6,6 +6,7 @@ import {
   LoopGuardSchema,
   ModelConfigSchema,
   SkillsConfigSchema,
+  TaskBoardSchema,
   parseFavoriteModels,
   parseProviders,
   resolveServerTimezone,
@@ -26,6 +27,21 @@ describe('config/env', () => {
     it('rejects a non-positive scriptTimeoutMs', () => {
       expect(() => SkillsConfigSchema.parse({ scriptTimeoutMs: 0 })).to.throw();
       expect(() => SkillsConfigSchema.parse({ scriptTimeoutMs: -1 })).to.throw();
+    });
+  });
+
+  describe('TaskBoardSchema', () => {
+    it('defaults doneRetentionDays to 5, not disabled (ADR-0031)', () => {
+      expect(TaskBoardSchema.parse({}).doneRetentionDays).to.equal(5);
+    });
+
+    it('accepts 0, which disables the Done Lane Retention Window', () => {
+      expect(TaskBoardSchema.parse({ doneRetentionDays: 0 }).doneRetentionDays).to.equal(0);
+    });
+
+    it('rejects a negative or non-integer doneRetentionDays', () => {
+      expect(() => TaskBoardSchema.parse({ doneRetentionDays: -1 })).to.throw();
+      expect(() => TaskBoardSchema.parse({ doneRetentionDays: 1.5 })).to.throw();
     });
   });
 

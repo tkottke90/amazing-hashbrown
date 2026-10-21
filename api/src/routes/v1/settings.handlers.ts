@@ -8,6 +8,7 @@ import {
   AfterAgentSchema,
   UpdatesSchema,
   ChatSchema,
+  TaskBoardSchema,
   EmbeddingsSchema,
   RLMConfigSchema,
   WebFetchConfigSchema,
@@ -75,6 +76,7 @@ export interface EnvAccessor {
   afterAgent: z.infer<typeof AfterAgentSchema>;
   updates: z.infer<typeof UpdatesSchema>;
   chat: z.infer<typeof ChatSchema>;
+  taskBoard: z.infer<typeof TaskBoardSchema>;
   embeddings: z.infer<typeof EmbeddingsSchema>;
   webFetch: z.infer<typeof WebFetchConfigSchema>;
   rlm: RLMConfig;
@@ -439,23 +441,27 @@ const SLUG_MAP: Record<string, SlugDef> = {
     get: (env) => ({
       afterAgent: env.afterAgent,
       chat: env.chat,
+      taskBoard: env.taskBoard,
       observability: env.observability,
     }),
     patchSchema: z.object({
       afterAgent: AfterAgentSchema.partial().optional(),
       chat: ChatSchema.partial().optional(),
+      taskBoard: TaskBoardSchema.partial().optional(),
       observability: ObservabilitySchema.partial().optional(),
     }),
     write: (v, configDir, env) => {
       const data = v as {
         afterAgent?: Partial<z.infer<typeof AfterAgentSchema>>;
         chat?: Partial<z.infer<typeof ChatSchema>>;
+        taskBoard?: Partial<z.infer<typeof TaskBoardSchema>>;
         observability?: Partial<z.infer<typeof ObservabilitySchema>>;
       };
       const updates: Record<string, unknown> = {};
       if (data.afterAgent !== undefined)
         updates.afterAgent = { ...env.afterAgent, ...data.afterAgent };
       if (data.chat !== undefined) updates.chat = { ...env.chat, ...data.chat };
+      if (data.taskBoard !== undefined) updates.taskBoard = { ...env.taskBoard, ...data.taskBoard };
       if (data.observability !== undefined)
         updates.observability = { ...env.observability, ...data.observability };
       mergeConfigYaml(configDir, updates);

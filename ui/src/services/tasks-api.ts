@@ -142,6 +142,10 @@ export interface Task {
   // isn't running or in a terminal status.
   provider: string | null;
   model: string | null;
+  // Set once this task has been explicitly Archived — rejects reopen/rerun/
+  // reschedule board-moves until Unarchived (see GLOSSARY.md "Task
+  // Archiving & Done Lane Retention").
+  archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
   // Present on cron tasks only.
@@ -205,6 +209,9 @@ export interface CreateTaskInput {
 export interface TaskFilters {
   workspace_id?: string | null;
   status?: TaskStatus;
+  // The "Show Archived" toggle — reveals both Archived and Aged-Out
+  // Done-lane tasks. Omitted/false keeps the normal, decluttered view.
+  showArchived?: boolean;
 }
 
 export async function fetchTasks(filters: TaskFilters = {}): Promise<Task[]> {
@@ -214,6 +221,9 @@ export async function fetchTasks(filters: TaskFilters = {}): Promise<Task[]> {
   }
   if (filters.status !== undefined) {
     params.set('status', filters.status);
+  }
+  if (filters.showArchived) {
+    params.set('exclude_hidden_done', 'false');
   }
   const qs = params.toString();
   return request<Task[]>(`/api/v1/tasks${qs ? `?${qs}` : ''}`);
@@ -289,6 +299,14 @@ export async function pauseTask(id: string): Promise<Task> {
 
 export async function takeOverTask(id: string): Promise<Task> {
   return request<Task>(`/api/v1/tasks/${id}/take-over`, { method: 'POST' });
+}
+
+export async function archiveTask(id: string): Promise<Task> {
+  return request<Task>(`/api/v1/tasks/${id}/archive`, { method: 'POST' });
+}
+
+export async function unarchiveTask(id: string): Promise<Task> {
+  return request<Task>(`/api/v1/tasks/${id}/unarchive`, { method: 'POST' });
 }
 
 export async function fetchTask(id: string): Promise<Task> {

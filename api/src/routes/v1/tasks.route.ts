@@ -7,7 +7,15 @@ import { getCronRegistry } from '../../services/cron-registry.js';
 import { createProvider } from '../../services/provider-factory.js';
 import { getThreadStore } from '../../services/thread-store.js';
 import type { Task } from '../../services/workspace-store.js';
-import { moveTaskHandler, withBoard, withBoards } from './tasks-board.handlers.js';
+import { env } from '../../config/env.js';
+import {
+  archiveTaskHandler,
+  filterHiddenDone,
+  moveTaskHandler,
+  unarchiveTaskHandler,
+  withBoard,
+  withBoards,
+} from './tasks-board.handlers.js';
 import {
   listTasksHandler,
   getTaskHandler,
@@ -46,7 +54,11 @@ tasksRouter.get('/queue', (_req: Request, res: Response) => {
 });
 
 tasksRouter.get('/', (req: Request, res: Response) => {
-  const { workspace_id, status } = req.query as { workspace_id?: string; status?: string };
+  const { workspace_id, status, exclude_hidden_done } = req.query as {
+    workspace_id?: string;
+    status?: string;
+    exclude_hidden_done?: string;
+  };
   const filters: TaskListFilters = {};
   if (workspace_id !== undefined) {
     filters.workspaceId = workspace_id === 'null' ? null : workspace_id;
@@ -59,7 +71,17 @@ tasksRouter.get('/', (req: Request, res: Response) => {
     res.status(result.status).json({ error: result.error });
     return;
   }
-  res.json(withBoards(getWorkspaceStore(), getThreadStore(), result.data));
+  const boardedTasks = withBoards(getWorkspaceStore(), getThreadStore(), result.data);
+  // Defaults true: the normal fetch hides both Archived and Aged-Out
+  // Done-lane tasks; only an explicit exclude_hidden_done=false (the "Show
+  // archived" toggle) reveals them. See the design doc's "Show Archived"
+  // and ADR-0031/ADR-0033.
+  const excludeHiddenDone = exclude_hidden_done !== 'false';
+  res.json(
+    excludeHiddenDone
+      ? filterHiddenDone(boardedTasks, env.taskBoard.doneRetentionDays)
+      : boardedTasks,
+  );
 });
 
 tasksRouter.post('/', (req: Request, res: Response) => {
@@ -203,6 +225,34 @@ tasksRouter.post('/:id/take-over', (req: Request, res: Response) => {
   getTaskScheduler().wake();
   getCronRegistry().sync(req.params['id'] as string);
   res.status(200).json(result.data ? boarded(result.data) : result.data);
+});
+
+// Archiving/unarchiving never changes status, trigger or queue state, so
+// unlike the routes above it needs no scheduler wake or cron resync.
+tasksRouter.post('/:id/archive', (req: Request, res: Response) => {
+  const result = archiveTaskHandler(
+    getWorkspaceStore(),
+    getThreadStore(),
+    req.params['id'] as string,
+  );
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(result.data);
+});
+
+tasksRouter.post('/:id/unarchive', (req: Request, res: Response) => {
+  const result = unarchiveTaskHandler(
+    getWorkspaceStore(),
+    getThreadStore(),
+    req.params['id'] as string,
+  );
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(result.data);
 });
 
 // Moves a task to a Kanban lane — see tasks-board.handlers.ts. The move may

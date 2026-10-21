@@ -19,6 +19,8 @@ import {
   cancelTask as apiCancelTask,
   pauseTask as apiPauseTask,
   takeOverTask as apiTakeOverTask,
+  archiveTask as apiArchiveTask,
+  unarchiveTask as apiUnarchiveTask,
   resumeTask as apiResumeTask,
   generatePlan as apiGeneratePlan,
   generatePlanForNewTask as apiGeneratePlanForNewTask,
@@ -128,6 +130,20 @@ export async function takeOverTask(id: string): Promise<Task> {
   const updated = await apiTakeOverTask(id);
   tasks.value = tasks.value.map((t) => (t.id === id ? updated : t));
   await refreshQueue();
+  return updated;
+}
+
+// Archiving/unarchiving never changes status, trigger or queue state, so
+// unlike the mutations above this never needs a refreshQueue() call.
+export async function archiveTask(id: string): Promise<Task> {
+  const updated = await apiArchiveTask(id);
+  replaceTask(updated);
+  return updated;
+}
+
+export async function unarchiveTask(id: string): Promise<Task> {
+  const updated = await apiUnarchiveTask(id);
+  replaceTask(updated);
   return updated;
 }
 

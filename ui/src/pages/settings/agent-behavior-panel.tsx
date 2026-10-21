@@ -11,6 +11,7 @@ import { FormLayout } from '@/components/form-layout';
 interface AgentBehaviorSettings {
   afterAgent: { enabled: boolean };
   chat: { showErrorMessages: boolean; codeBlockWrap: boolean; sidebarRetentionDays: number };
+  taskBoard: { doneRetentionDays: number };
   observability: { enabled: boolean; spanOutputPreviewChars: number };
 }
 
@@ -113,6 +114,39 @@ export function AgentBehaviorPanel() {
                 />
               </div>
               <FieldError errors={fieldErrors.value['chat']} />
+            </FormLayout>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Task board</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <FormLayout>
+              <div class="space-y-1.5">
+                <Label htmlFor="taskBoard-doneRetentionDays">
+                  Hide Done tasks from the board and Inbox after (days)
+                </Label>
+                <p class="text-xs text-muted-foreground">
+                  0 disables this — Done tasks never leave the board or Inbox due to inactivity.
+                  Hidden tasks aren't deleted — they stay available via the Show Archived toggle,
+                  and touching one again brings it back.
+                </p>
+                <Input
+                  id="taskBoard-doneRetentionDays"
+                  type="number"
+                  min={0}
+                  value={String(form.value.taskBoard?.doneRetentionDays ?? 5)}
+                  onInput={(e) =>
+                    setField(
+                      'taskBoard.doneRetentionDays',
+                      Number((e.target as HTMLInputElement).value),
+                    )
+                  }
+                />
+              </div>
+              <FieldError errors={fieldErrors.value['taskBoard']} />
             </FormLayout>
           </CardContent>
         </Card>
