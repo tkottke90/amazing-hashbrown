@@ -3,6 +3,7 @@ import { Markdown } from '@/components/markdown';
 import { Button } from '@/components/ui/button';
 import { showToast } from '@/lib/toast';
 import { deleteWidget } from '@/services/dashboard-api';
+import { PieChart } from './pie-chart';
 import { WidgetCard, type DragHandleProps } from './widget-card';
 import { WidgetHeader } from './widget-header';
 import { WidgetContent } from './widget-content';
@@ -51,9 +52,14 @@ function SystemWidgetValue({ widget }: { widget: SystemWidgetData }) {
           <Markdown>{widget.resolved.content}</Markdown>
         </div>
       );
-    // Pie/Line Graph Metrics don't exist yet (follow-up issues #326/#328) —
-    // no renderer for them here until one does.
     case 'pie-graph':
+      return (
+        <div data-testid="system-widget-value">
+          <PieChart labels={widget.resolved.labels} values={widget.resolved.values} />
+        </div>
+      );
+    // Line Graph Metrics don't exist yet (follow-up issue #328) — no
+    // renderer for them here until one does.
     case 'line-graph':
       return <span className="text-sm text-muted-foreground">—</span>;
   }

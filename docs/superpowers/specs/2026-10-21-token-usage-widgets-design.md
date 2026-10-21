@@ -12,10 +12,10 @@ Domain model: `GLOSSARY.md` (System Widget, Metric, Metric Registry, LLM Usage T
 
 Both read from `CostStore.queryUsage()` (the `v_usage` view) — the same `EPOCH_FLOOR` → today, all-time range `total-inference-spend` already uses (`api/src/services/metrics/total-inference-spend.metric.ts`). `v_usage` already sums `input_tokens`/`output_tokens` per date/provider/model from `observability_traces`/`observability_spans`, so neither Metric needs a new store method or a direct trace/span query — reusing the one source every other usage-facing surface in this app (`usage.route.ts`, `total-inference-spend`) already reads from.
 
-| id | label | groups rows by | pie-slice label | row count | sort |
-| --- | --- | --- | --- | --- | --- |
-| `usage-by-provider-tokens` | Token Usage by Provider | `provider` | `<provider>` | one per distinct provider, no cap | descending by tokens |
-| `usage-by-model-tokens` | Token Usage by Model | `(model, provider)` | `<model> (<provider>)` | one per distinct model+provider pair, no cap | descending by tokens |
+| id                         | label                   | groups rows by      | pie-slice label        | row count                                    | sort                 |
+| -------------------------- | ----------------------- | ------------------- | ---------------------- | -------------------------------------------- | -------------------- |
+| `usage-by-provider-tokens` | Token Usage by Provider | `provider`          | `<provider>`           | one per distinct provider, no cap            | descending by tokens |
+| `usage-by-model-tokens`    | Token Usage by Model    | `(model, provider)` | `<model> (<provider>)` | one per distinct model+provider pair, no cap | descending by tokens |
 
 "Tokens" means `inputTokens + outputTokens` summed per group — the same definition `usage.route.ts`'s own totals reduce already uses. Each resolver:
 

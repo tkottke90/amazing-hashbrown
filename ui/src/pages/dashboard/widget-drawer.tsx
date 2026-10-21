@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Markdown } from '@/components/markdown';
+import { PieChart } from './pie-chart';
 import { CodeEditor } from '@/pages/workspaces/code-editor';
 import {
   createWidget,
@@ -683,6 +684,14 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
                   !metricPreviewError.value &&
                   metricPreview.value?.displayType === 'markdown' && (
                     <Markdown>{metricPreview.value.content}</Markdown>
+                  )}
+                {!metricPreviewLoading.value &&
+                  !metricPreviewError.value &&
+                  metricPreview.value?.displayType === 'pie-graph' && (
+                    <PieChart
+                      labels={metricPreview.value.labels}
+                      values={metricPreview.value.values}
+                    />
                   )}
               </div>
               <p className="text-xs text-muted-foreground">
