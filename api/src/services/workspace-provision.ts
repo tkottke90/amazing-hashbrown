@@ -1,8 +1,11 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { env } from '../config/env.js';
 import { buildGitAuthArgs } from './git-credentials.js';
 import { translateGitAuthError } from './workspace-git.js';
+import { logger, serializeError } from '../config/logger.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -43,6 +46,47 @@ export async function provisionDependencyIsolation(
   }
 }
 
+const HASHBROWN_GITIGNORE_LINE = '.hashbrown/';
+
+// Ensures `.hashbrown/` is excluded from the workspace's own git history —
+// closes a pre-existing gap where `.hashbrown/summaries/*.md`
+// (workspace-summarizer.ts) could already end up untracked/stageable in a
+// user's real project, and the new `.hashbrown/tasks/*.md` (Task Files)
+// doubles that generated-file footprint. Mechanical: the user and agent
+// never have to think about it (ADR-0040). Creates a fresh one-line
+// `.gitignore` if none exists; otherwise appends only if not already
+// covered, never overwriting what's there. A failure here is logged and
+// swallowed — it's a hygiene nicety, not a reason to fail provisioning.
+async function ensureHashbrownGitignore(location: string): Promise<void> {
+  const gitignorePath = path.join(location, '.gitignore');
+  try {
+    let existing: string | null = null;
+    try {
+      existing = await readFile(gitignorePath, 'utf8');
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    }
+
+    if (existing === null) {
+      await writeFile(gitignorePath, `${HASHBROWN_GITIGNORE_LINE}\n`, 'utf8');
+      return;
+    }
+
+    const alreadyCovered = existing
+      .split('\n')
+      .some((line) => line.trim() === HASHBROWN_GITIGNORE_LINE || line.trim() === '.hashbrown');
+    if (alreadyCovered) return;
+
+    const separator = existing.length > 0 && !existing.endsWith('\n') ? '\n' : '';
+    await writeFile(gitignorePath, `${existing}${separator}${HASHBROWN_GITIGNORE_LINE}\n`, 'utf8');
+  } catch (err) {
+    logger.warn('workspace-provision: failed to ensure .hashbrown/ is gitignored', {
+      location,
+      err: serializeError(err),
+    });
+  }
+}
+
 // Provisions the git repository implied by a workspace's git flag/remoteUrl,
 // before any dependency isolation runs (git clone requires an empty target
 // directory). remoteUrl is passed after `--` so a malformed/malicious value
@@ -71,4 +115,6 @@ export async function provisionGitRepository(
   } else {
     await execFileFn('git', ['init'], { cwd: location, timeout: GIT_INIT_TIMEOUT_MS });
   }
+
+  await ensureHashbrownGitignore(location);
 }

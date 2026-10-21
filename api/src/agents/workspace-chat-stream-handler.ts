@@ -26,6 +26,7 @@ import { getWorkspaceStore, type Workspace } from '../services/workspace-store.j
 import { resolveTurnModel, startTurnObservability } from './turn-observability.js';
 import { getObservabilityStore } from '../services/observability.js';
 import { maybeSummarizeWorkspace } from './workspace-summarizer.js';
+import { listWorkspaceTaskFiles } from '../services/task-file.js';
 import { markArtifactReferenced } from '../artifacts/artifact-store.js';
 import { resolveAttachmentsForTurn, buildAttachmentSpan } from './attachment-resolution.js';
 import {
@@ -99,6 +100,15 @@ export async function buildWorkspaceContext(workspace: Workspace): Promise<Works
     }
   }
   const { latestSummary, olderSummaries } = await loadWorkspaceSummaries(workspace);
+  // '' as excludeTaskId — this call site wants every Task File in the
+  // workspace (listWorkspaceTaskFiles' signature takes a required string,
+  // and '' never matches a real task id), unlike task-execution.ts's own
+  // call which excludes the currently-running task.
+  const taskFiles = (await listWorkspaceTaskFiles(workspace.location, '')).map((f) => ({
+    taskId: f.taskId,
+    goal: f.goal,
+    createdAt: f.createdAt,
+  }));
   return {
     name: workspace.name,
     goal: workspace.goal,
@@ -109,6 +119,7 @@ export async function buildWorkspaceContext(workspace: Workspace): Promise<Works
     wikiDomain,
     latestSummary,
     olderSummaries,
+    taskFiles,
     autoApproveShell: workspace.autoApproveShell,
   };
 }

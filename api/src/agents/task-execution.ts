@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import path from 'node:path';
 import { Command } from '@langchain/langgraph';
 import { logger, serializeError } from '../config/logger.js';
 import { env, type AnyProviderConfig } from '../config/env.js';
@@ -24,8 +25,16 @@ import { classifyChatError } from './error-classification.js';
 import { buildTaskAgent, type WorkspaceChatContext, type ChatAgent } from './chat-agent.js';
 import type { StagnationLimitError } from './recursion-guard.middleware.js';
 import { getProviderQueue } from '../services/provider-queue.js';
-import { resolveProviderConfig } from '../services/provider-factory.js';
+import { resolveProviderConfig, createProvider } from '../services/provider-factory.js';
 import { buildWorkspaceContext } from './workspace-chat-stream-handler.js';
+import {
+  loadTaskState,
+  writeTaskFile,
+  listWorkspaceTaskFiles,
+  formatTaskFileTimestamp,
+  type TaskState,
+} from '../services/task-file.js';
+import { generateTaskGoal, generateHandoffNotes } from './task-file-generators.js';
 import {
   recordAssistantStart,
   finalizeAssistant,
@@ -109,11 +118,85 @@ function ensureWorkspaceChatThread(
   return threadId;
 }
 
+// Closes out a run's Task File: reads back the final taskState from the
+// graph's own checkpoint (identical to the pre-run state by construction
+// whenever no mutation happened, and the up-to-date one otherwise), records
+// this run's already-decided outcome summary (reused verbatim — ADR-0036,
+// no new LLM call for Task Outcome), generates Handoff Notes (a genuinely
+// new call — ADR-0036), and writes the result. Called from every terminal
+// branch except pause (which isn't terminal). Every step here is wrapped so
+// a failure never surfaces as a run failure — same posture as
+// recordTaskProgress's own "never block the task's own completion". See
+// docs/superpowers/specs/2026-10-21-workspace-task-files-design.md §3.
+export async function finishTaskFile(
+  task: Task,
+  agentForState: { agent?: ChatAgent; config?: { configurable: { thread_id: string } } },
+  filePath: string,
+  fallbackState: TaskState,
+  outcomeSummary: string,
+  provider: string | undefined,
+  model: string | undefined,
+): Promise<void> {
+  try {
+    let state = fallbackState;
+    if (agentForState.agent && agentForState.config) {
+      try {
+        const graphState = await agentForState.agent.graph.getState(agentForState.config);
+        const fromGraph = (graphState.values as { taskState?: TaskState }).taskState;
+        if (fromGraph) state = fromGraph;
+      } catch (err) {
+        logger.warn('task-execution: failed to read back taskState from graph checkpoint', {
+          taskId: task.id,
+          err: serializeError(err),
+        });
+      }
+    }
+
+    state = { ...state, outcome: outcomeSummary };
+
+    const taskContext = {
+      title: task.title,
+      description: task.description,
+      outcome: task.outcome,
+      plan: task.plan,
+    };
+    try {
+      const handoffModel = createProvider(provider, model);
+      const resolvedProvider = provider ?? env.defaultProvider;
+      const resolvedModel = model ?? '';
+      state = {
+        ...state,
+        handoff: await generateHandoffNotes(handoffModel, resolvedProvider, resolvedModel, {
+          task: taskContext,
+          state,
+        }),
+      };
+    } catch (err) {
+      logger.warn('task-execution: failed to build a model for Handoff Notes generation', {
+        taskId: task.id,
+        err: serializeError(err),
+      });
+    }
+
+    await writeTaskFile(filePath, state, { taskId: task.id, title: task.title });
+  } catch (err) {
+    logger.warn('task-execution: failed to finish Task File', {
+      taskId: task.id,
+      filePath,
+      err: serializeError(err),
+    });
+  }
+}
+
 export interface ExecuteTaskDeps {
   // Test-only seam — buildTaskAgent() calls the real createProvider()/
   // createAgent() machinery, which a unit test driving a fake event stream
   // cannot exercise directly. Defaults to the real implementation.
   buildTaskAgent?: typeof buildTaskAgent;
+  // Test-only seam — finishTaskFile() makes a real createProvider()/model
+  // call (Handoff Notes generation) a unit test driving a fake event stream
+  // cannot exercise directly. Defaults to the real implementation.
+  finishTaskFile?: typeof finishTaskFile;
 }
 
 // Runs one automated task to completion (or to a waiting_on_user pause).
@@ -125,6 +208,22 @@ export async function executeTask(
   deps: ExecuteTaskDeps = {},
 ): Promise<void> {
   const buildAgent = deps.buildTaskAgent ?? buildTaskAgent;
+  const finishFileImpl = deps.finishTaskFile ?? finishTaskFile;
+  // The real finishTaskFile already catches everything internally, but a
+  // test (or any future caller) injecting a different implementation via
+  // ExecuteTaskDeps.finishTaskFile must not be able to break that guarantee
+  // — closing out a Task File is always best-effort, never something that
+  // can fail the run it's attached to.
+  const finishFile: typeof finishTaskFile = async (...args) => {
+    try {
+      await finishFileImpl(...args);
+    } catch (err) {
+      logger.warn('task-execution: finishTaskFile threw, ignoring', {
+        taskId: args[0].id,
+        err: serializeError(err),
+      });
+    }
+  };
   const { task } = entry;
   const store = getWorkspaceStore();
   const threadStore = getThreadStore();
@@ -187,6 +286,16 @@ export async function executeTask(
     clearTaskAbort(entry.id);
     return;
   }
+
+  // A Task File only exists for a workspace-scoped task — a workspace-less
+  // ("inbox") task has no workspace.location to write one into — and never
+  // for a Sub-Agent Task (origin: 'agent'), which is explicitly excluded
+  // both from getting its own file and from appearing in any other task's
+  // Previous Tasks list (the latter falls out automatically, since
+  // listWorkspaceTaskFiles only ever sees files that exist on disk). See
+  // docs/superpowers/specs/2026-10-21-workspace-task-files-design.md,
+  // GLOSSARY.md § Task Files.
+  const taskFileEligible = Boolean(workspaceScope) && task.origin !== 'agent';
 
   // Everything below claims threadId's per-thread mutex (active-sse-writer.ts)
   // and actually streams — wrapped in a closure and run via
@@ -291,6 +400,16 @@ export async function executeTask(
     // branch the run ends in.
     let turnObs: TurnObservability | undefined;
     let traceError: string | null = null;
+    // This run's Task File, if taskFileEligible — set just before buildAgent
+    // is called below, and read back by finishTaskFile() in every terminal
+    // branch (hoisted here, not declared inside the try, for the same
+    // reason agent/config are: the catch block needs it too).
+    let taskFileScope: { filePath: string; state: TaskState } | undefined;
+    // Also hoisted (see above) — finishTaskFile() in the catch block's
+    // branches needs these to build its own Handoff Notes model, the same
+    // provider/model this run's own agent was built with.
+    let provider: string | undefined;
+    let model: string | undefined;
 
     try {
       recordMarker('start');
@@ -320,8 +439,6 @@ export async function executeTask(
       // in which case that takes precedence. A pin naming a provider no
       // longer configured falls back to the default rather than failing
       // the run — same handling a legacy task with no pin gets.
-      let provider: string;
-      let model: string;
       if (task.provider && task.model) {
         try {
           ({ provider, model } = resolveTurnModel(task.provider, task.model));
@@ -337,6 +454,64 @@ export async function executeTask(
         ({ provider, model } = resolveTurnModel(env.defaultProvider));
       }
 
+      if (taskFileEligible) {
+        const relPath =
+          runTask.taskFilePath ??
+          path.join('.hashbrown', 'tasks', `${formatTaskFileTimestamp(new Date())}-${task.id}.md`);
+        if (!runTask.taskFilePath) {
+          runTask = store.patchTask(task.id, { taskFilePath: relPath }) ?? runTask;
+        }
+        const absPath = path.join(workspaceScope!.workspace.location, relPath);
+
+        const { state, historyGap } = await loadTaskState(absPath);
+        const previousTasks = (
+          await listWorkspaceTaskFiles(workspaceScope!.workspace.location, task.id)
+        ).map((t) => `${t.taskId}: ${t.outcome}`);
+        state.previousTasks = previousTasks;
+
+        try {
+          const goalModel = createProvider(provider, model);
+          state.goal = await generateTaskGoal(goalModel, provider, model, {
+            task: {
+              title: task.title,
+              description: task.description,
+              outcome: task.outcome,
+              plan: task.plan,
+            },
+            previousTasks,
+          });
+        } catch (err) {
+          logger.warn('task-execution: failed to build a model for Task Goal generation', {
+            taskId: task.id,
+            err: serializeError(err),
+          });
+        }
+
+        // A genuinely new run always gets its own fresh segment; a
+        // continuing run reuses its last one — unless there isn't one yet
+        // (e.g. a history gap on a continuing run), in which case it still
+        // needs somewhere to record that gap.
+        if (isNewRun || state.notes.length === 0) state.notes.push([]);
+        const segment = state.notes[state.notes.length - 1]!;
+        if (historyGap) {
+          segment.push(
+            'History could not be read — the previous Task File was missing or unreadable.',
+          );
+        }
+
+        try {
+          await writeTaskFile(absPath, state, { taskId: task.id, title: task.title });
+        } catch (err) {
+          logger.warn('task-execution: failed to write Task File before run start', {
+            taskId: task.id,
+            filePath: absPath,
+            err: serializeError(err),
+          });
+        }
+
+        taskFileScope = { filePath: absPath, state };
+      }
+
       const built = await buildAgent(
         runTask,
         provider,
@@ -348,6 +523,7 @@ export async function executeTask(
           },
         },
         { runId: entry.id, hasPreviousRun: previousRuns.length > 0 },
+        taskFileScope ? { filePath: taskFileScope.filePath } : undefined,
       );
       agent = built.agent;
       turnObs = startTurnObservability({
@@ -403,9 +579,17 @@ export async function executeTask(
         scheduledFor: entry.scheduledFor,
         previousRuns,
       });
+      // A resumed run's Command({ resume }) continues the exact interrupted
+      // checkpoint, which already has this run's correct taskState from
+      // before the pause (every mutation writes through immediately) — no
+      // need to re-seed it there. The plain-message branch seeds it
+      // explicitly since that's a fresh top-level invoke() input.
       const input = resumeAnswer
         ? new Command({ resume: resumeAnswer })
-        : { messages: [{ role: 'human', content: kickoff }] };
+        : {
+            messages: [{ role: 'human', content: kickoff }],
+            ...(taskFileScope ? { taskState: taskFileScope.state } : {}),
+          };
 
       // Local consts — msgId/turnSentAt/agent/config are outer `let`s just
       // assigned above, but TS can't carry that narrowing into an async
@@ -501,6 +685,17 @@ export async function executeTask(
             completeTaskBox.current.summary,
           );
         }
+        if (taskFileScope) {
+          await finishFile(
+            task,
+            { agent, config },
+            taskFileScope.filePath,
+            taskFileScope.state,
+            completeTaskBox.current.summary,
+            provider,
+            model,
+          );
+        }
       } else if (interrupted) {
         // Unreachable for origin='agent' rows in practice — a sub-agent's
         // tool list never includes ask_user (see buildSubAgentAgent), so it
@@ -537,6 +732,17 @@ export async function executeTask(
         }
         if (task.origin === 'agent') {
           await deliverSubAgentCompletion(task, 'failed', stoppedSummary);
+        }
+        if (taskFileScope) {
+          await finishFile(
+            task,
+            { agent, config },
+            taskFileScope.filePath,
+            taskFileScope.state,
+            stoppedSummary,
+            provider,
+            model,
+          );
         }
       }
     } catch (err) {
@@ -577,6 +783,17 @@ export async function executeTask(
         if (task.origin === 'agent') {
           await deliverSubAgentCompletion(task, 'failed', notifyMessage);
         }
+        if (taskFileScope) {
+          await finishFile(
+            task,
+            { agent, config },
+            taskFileScope.filePath,
+            taskFileScope.state,
+            summary,
+            provider,
+            model,
+          );
+        }
       };
 
       // Same string interactive chat closes an aborted turn's trace with.
@@ -594,6 +811,20 @@ export async function executeTask(
         if (task.origin === 'agent') {
           await deliverSubAgentCompletion(task, 'cancelled');
         }
+        // Cancel and take-over (below) both extend Task File coverage
+        // beyond what recordTaskProgress tracks today (it skips both) — a
+        // deliberate divergence from the grilling session, not a bug.
+        if (taskFileScope) {
+          await finishFile(
+            task,
+            { agent, config },
+            taskFileScope.filePath,
+            taskFileScope.state,
+            'Run cancelled by the user.',
+            provider,
+            model,
+          );
+        }
       } else if (intent === 'pause') {
         logger.info('task-execution: run paused', { taskId: task.id });
         finalOutcome = 'blocked';
@@ -603,6 +834,17 @@ export async function executeTask(
         finalOutcome = 'cancelled';
         store.setQueueEntrySummary(entry.id, 'Run taken over by the user.');
         store.detachQueueEntry(entry.id);
+        if (taskFileScope) {
+          await finishFile(
+            task,
+            { agent, config },
+            taskFileScope.filePath,
+            taskFileScope.state,
+            'Run taken over by the user.',
+            provider,
+            model,
+          );
+        }
       } else if ((err as Error).name === 'GraphInterrupt') {
         // The graceful (non-throwing) path handles an interrupt by reading it
         // off state returned from pipeEvents/finalizeTurn — but LangGraph can
