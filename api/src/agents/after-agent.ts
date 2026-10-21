@@ -299,7 +299,9 @@ export async function invokeStructured<T extends z.ZodTypeAny>(
   handler: ObservabilityCallbackHandler,
   runName: string,
 ): Promise<z.infer<T>> {
-  const chain = llm.withStructuredOutput(schema).withRetry({ stopAfterAttempt: 3 });
+  const chain = llm
+    .withStructuredOutput(schema, { method: 'jsonSchema' })
+    .withRetry({ stopAfterAttempt: 3 });
   // RunnableConfig's runName only labels the outer chain run, not the inner
   // LLM call this handler actually observes — see setNextSpanName()'s doc.
   handler.setNextSpanName(runName);

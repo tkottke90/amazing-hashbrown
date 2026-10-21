@@ -119,6 +119,23 @@ function drainBuffer(sink: SseWriter, msgId: string, state: ParseState): void {
   }
 }
 
+// evt.data.chunk.content from @langchain/anthropic is a plain string only
+// when no tools/documents/thinking/compaction are in the request. This agent
+// always binds tools, so every real turn gets an array of content blocks
+// instead — text deltas AND tool-argument deltas interleaved, distinguished
+// only by block.type. Only 'text' blocks are ever meant to reach the visible
+// chat text; anything else (input_json_delta, thinking, signature_delta,
+// ...) is a different content stream entirely and must never be
+// concatenated in.
+export function extractStreamText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .filter((block): block is { type: string; text: string } => block?.type === 'text')
+    .map((block) => block.text ?? '')
+    .join('');
+}
+
 // ---- LangGraph event → SSE (+ thread_messages persistence) ----
 
 // Thrown when the LangGraph event stream itself throws mid-turn. Carries
@@ -257,8 +274,8 @@ export async function pipeEvents(
     for await (const evt of eventStream) {
       switch (evt.event) {
         case 'on_chat_model_stream': {
-          const content = evt.data?.chunk?.content;
-          if (typeof content === 'string' && content.length > 0) {
+          const content = extractStreamText(evt.data?.chunk?.content);
+          if (content.length > 0) {
             if (toolCallPendingSinceLastText && parse.content.length > 0) {
               // flushDelta withholds a SAFE_MARGIN-sized tail in parse.buf in
               // case it's a split tag boundary — drain it (using the OLD

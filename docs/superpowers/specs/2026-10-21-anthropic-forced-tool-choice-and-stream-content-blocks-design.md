@@ -33,8 +33,11 @@ tools in the reported trace). Traced into the installed package
 (`utils/message_outputs.js`):
 
 ```js
-const coerceContentToString = !_toolsInParams(payload) && !_documentsInParams(payload)
-  && !_thinkingInParams(payload) && !_compactionInParams(payload);
+const coerceContentToString =
+  !_toolsInParams(payload) &&
+  !_documentsInParams(payload) &&
+  !_thinkingInParams(payload) &&
+  !_compactionInParams(payload);
 ```
 
 `_toolsInParams` is `tools.length > 0`. With tools bound, every
@@ -63,7 +66,7 @@ of tool binding. No existing test in `stream-handler.test.ts` feeds
 exercised against the real Anthropic+tools shape.
 
 **A real hazard in the content-block array, not just a missing case:** when
-tools are bound, the *same* `on_chat_model_stream` stream interleaves text
+tools are bound, the _same_ `on_chat_model_stream` stream interleaves text
 deltas (`{type: 'text', text: ...}`) and tool-argument deltas (`{type:
 'input_json_delta', ...}`), distinguished only by `block.type`. A fix that
 naively stringifies the whole array would leak raw tool-call JSON fragments
@@ -113,10 +116,11 @@ identical and already understood.
 ## Scope
 
 **In scope — all in one PR:**
+
 - `api/src/agents/stream-handler.ts` — new `extractStreamText()` helper +
   one call-site change in `pipeEvents`'s `on_chat_model_stream` case
 - `api/src/agents/after-agent.ts` — `withStructuredOutput(schema, { method:
-  'jsonSchema' })` in `invokeStructured()`
+'jsonSchema' })` in `invokeStructured()`
 - `api/src/services/rlm-adapter.ts` — same `{ method: 'jsonSchema' }` change
   in `LangChainInferenceAdapter.invoke()`
 - New/updated tests adjacent to each (per `api/AGENTS.md`'s convention)
@@ -125,6 +129,7 @@ identical and already understood.
 `after-agent.ts` fix via the shared helper).
 
 **Out of scope (explicit decisions, not oversights):**
+
 - `api/src/agents/content-block-sanitizer.middleware.ts` and the bug it fixes
   (raw `input_json_delta` fragments leaking into persisted LangGraph
   checkpoint messages, breaking a later provider switch) — a separate,
@@ -145,7 +150,9 @@ Identical one-line shape in both files:
 
 ```ts
 // after-agent.ts:302
-const chain = llm.withStructuredOutput(schema, { method: 'jsonSchema' }).withRetry({ stopAfterAttempt: 3 });
+const chain = llm
+  .withStructuredOutput(schema, { method: 'jsonSchema' })
+  .withRetry({ stopAfterAttempt: 3 });
 ```
 
 ```ts
@@ -227,6 +234,7 @@ uniformly across every turn runner that shares `pipeEvents`.
 ## Testing
 
 **`stream-handler.test.ts` (Bug 1):**
+
 - Unit tests for `extractStreamText` in isolation: string passthrough; a
   single `{type:'text', text:...}` block; multiple text blocks concatenated
   in order; a mix of `'text'` and `'input_json_delta'` (or other non-text)
