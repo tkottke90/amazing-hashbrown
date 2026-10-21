@@ -1,0 +1,50 @@
+{
+  "skill_name": "capture-doc-screenshot",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "We need a screenshot in the chat configuration docs showing the model picker dropdown open with the available models listed. Can you capture that and add it to docs-site/content/docs/configuration/003-chat.md?",
+      "expected_output": "A real screenshot of the provider/model picker dropdown open (from the running app, not a mockup), saved under docs-site/content/assets/, with >=16px padding around the dropdown, wired into 003-chat.md inside an HTML <figure><img><figcaption> block.",
+      "files": [],
+      "expectations": [
+        "New PNG saved under docs-site/content/assets/",
+        "Doc contains <figure><img>...<figcaption>...</figure> wrapper, not a bare markdown image",
+        "img src resolves to /assets/<file>.png via the url filter (not /images/)",
+        "alt text is specific and non-empty (not generic like 'screenshot')",
+        "npx eleventy build succeeds and built HTML's <img> tag resolves to the new file",
+        "Captured subject has clear, uncropped space (>=16px) on all sides, not touching any edge",
+        "Dropdown is actually open with model options visible, not just the closed picker button"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Add a screenshot of the dark mode toggle button to the docs, showing it in the header. Put it in docs-site/content/docs/001-overview.md wherever it fits best.",
+      "expected_output": "A real screenshot of the theme toggle button in dark mode, saved under docs-site/content/assets/, with >=16px padding, wired into 001-overview.md inside an HTML <figure><img><figcaption> block.",
+      "files": [],
+      "expectations": [
+        "New PNG saved under docs-site/content/assets/",
+        "Doc contains <figure><img>...<figcaption>...</figure> wrapper, not a bare markdown image",
+        "img src resolves to /assets/<file>.png via the url filter (not /images/)",
+        "alt text is specific and non-empty (not generic like 'screenshot')",
+        "npx eleventy build succeeds and built HTML's <img> tag resolves to the new file",
+        "Captured subject has clear, uncropped space (>=16px) on all sides, not touching any edge",
+        "Toggle button is captured in its dark-mode state (not the light-mode default)"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "There's a screenshot needed comment in docs-site/content/docs/configuration/000-configuration.md — can you fill it in?",
+      "expected_output": "The '<!-- Screenshot Needed: Settings page with a provider configured -->' placeholder in 000-configuration.md is replaced with a real screenshot of the Settings > Model Providers page (/settings?section=model-providers) showing a configured provider, saved under docs-site/content/assets/, with >=16px padding, inside an HTML <figure><img><figcaption> block.",
+      "files": [],
+      "expectations": [
+        "New PNG saved under docs-site/content/assets/",
+        "Doc contains <figure><img>...<figcaption>...</figure> wrapper, not a bare markdown image",
+        "img src resolves to /assets/<file>.png via the url filter (not /images/)",
+        "alt text is specific and non-empty (not generic like 'screenshot')",
+        "npx eleventy build succeeds and built HTML's <img> tag resolves to the new file",
+        "Captured subject has clear, uncropped space (>=16px) on all sides, not touching any edge",
+        "Placeholder comment is fully removed, and image shows the real configured 'local'/'ollama' provider (not an empty state)"
+      ]
+    }
+  ]
+}

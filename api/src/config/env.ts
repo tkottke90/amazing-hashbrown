@@ -466,6 +466,7 @@ export const WorkspacesSchema = z.object({
 
 const AppConfigSchema = z.object({
   port: z.number().default(3000),
+  host: z.string().default('0.0.0.0'),
   logLevel: z.string().default('info'),
   wikiRoot: z.string().default('./wiki'),
   dashboardRoot: z.string().default('./dashboard'),

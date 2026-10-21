@@ -9,7 +9,9 @@
   },
   "dependencies": {
     "@11ty/eleventy": "3.1.6",
-    "@11ty/eleventy-plugin-syntaxhighlight": "5.0.2"
+    "@11ty/eleventy-plugin-syntaxhighlight": "5.0.2",
+    "markdown-it": "14.3.1",
+    "markdown-it-admon": "1.0.1"
   },
   "devDependencies": {
     "@tailwindcss/cli": "4.3.3",
