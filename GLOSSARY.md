@@ -303,3 +303,13 @@ _Avoid_: Result, summary (too generic — collides with a Run's own summary)
 **Handoff Notes**:
 A Task File's note to whichever Run comes next, written fresh at the end of each Run specifically to carry forward what that next Run should know or follow up on. Distinct from Task Outcome, which looks back at what happened; Handoff Notes looks forward at what to do about it.
 _Avoid_: Next steps, follow-up notes
+
+# Chat Turns & Context Trimming
+
+How a chat agent's message history is kept under its configured token budget as a thread grows, and the unit that budget is ultimately spent against.
+
+## Language
+
+**Turn**:
+One Human message through every intermediate AIMessage/ToolMessage pair the agent generates while acting on it, up to (and including) the agent's next plain-text reply. A Turn can span many tool calls; it is the smallest unit `boundaryAwareTrim`'s `startOn: 'human'` trimming can anchor on without splitting an AIMessage from its ToolMessage results.
+_Avoid_: Step (a single LLM call within a Turn, not the Turn itself), request, message
