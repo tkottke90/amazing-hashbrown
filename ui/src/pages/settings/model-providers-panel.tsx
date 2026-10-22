@@ -127,9 +127,11 @@ export function ModelProvidersPanel() {
   async function handleSave() {
     // Sequential, not parallel — the two sections are independent PATCHes,
     // but keeping this order is what keeps the model-providers PATCH the
-    // first call a caller/test observes.
+    // first call a caller/test observes. agentSave() is silent on success —
+    // this page shows one "Settings saved" toast for the combined save, not
+    // one per underlying section.
     await save();
-    await agentSave();
+    await agentSave({ silentSuccess: true });
     // Chat reads favorites from the cached /api/v1/providers response —
     // drop the cache so the change shows up there without the 60s wait.
     invalidateProviders();

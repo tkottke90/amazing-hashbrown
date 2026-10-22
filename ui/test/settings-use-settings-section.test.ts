@@ -101,6 +101,33 @@ describe('useSettingsSection', () => {
     expect(mockShowToast).toHaveBeenCalledWith('success', 'Settings saved');
   });
 
+  it('save({ silentSuccess: true }) still persists but skips the success toast', async () => {
+    const updated: TestData = { logLevel: 'warn', port: 3000 };
+    mockPatch.mockResolvedValue(updated);
+
+    const { result } = renderHook(() => useSettingsSection<TestData>('general'));
+    await waitFor(() => expect(result.current.form.value).not.toBeNull());
+
+    act(() => result.current.setField('logLevel', 'warn'));
+    await act(async () => result.current.save({ silentSuccess: true }));
+
+    expect(result.current.data.value).toEqual(updated);
+    expect(result.current.isDirty.value).toBe(false);
+    expect(mockShowToast).not.toHaveBeenCalledWith('success', 'Settings saved');
+  });
+
+  it('save({ silentSuccess: true }) still shows the error toast on a 500', async () => {
+    mockPatch.mockRejectedValue(new Error('Server error'));
+
+    const { result } = renderHook(() => useSettingsSection<TestData>('general'));
+    await waitFor(() => expect(result.current.form.value).not.toBeNull());
+
+    act(() => result.current.setField('logLevel', 'warn'));
+    await act(async () => result.current.save({ silentSuccess: true }));
+
+    expect(mockShowToast).toHaveBeenCalledWith('error', 'Server error');
+  });
+
   it('save with 400 populates fieldErrors and shows error toast', async () => {
     const { SettingsValidationError } = await import('@/services/settings-api');
     const ve = new SettingsValidationError({ logLevel: ['Invalid value'] });

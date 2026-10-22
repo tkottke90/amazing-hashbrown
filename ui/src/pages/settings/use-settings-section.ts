@@ -60,7 +60,7 @@ export function useSettingsSection<T extends object>(
     fieldErrors.value = {};
   }
 
-  async function save() {
+  async function save(saveOptions?: { silentSuccess?: boolean }) {
     if (!form.value) return;
     isSaving.value = true;
     try {
@@ -68,7 +68,9 @@ export function useSettingsSection<T extends object>(
       data.value = result;
       form.value = JSON.parse(JSON.stringify(result));
       fieldErrors.value = {};
-      showToast('success', 'Settings saved');
+      if (!saveOptions?.silentSuccess) {
+        showToast('success', 'Settings saved');
+      }
     } catch (err) {
       if (err instanceof SettingsValidationError) {
         const fe =
