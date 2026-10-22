@@ -1393,6 +1393,28 @@ describe('agents/task-execution', () => {
       expect(markers).to.have.length(1);
       expect((markers[0]!.payload as Record<string, unknown>).outcome).to.equal('failed');
     });
+
+    it('delivers a failed-outcome notification with its own message, not a generic "Run failed:"-prefixed one, when the agent throws ContextBudgetExceededError', async () => {
+      const entry = makeSubAgentEntry({ parentThreadId: 'parent-f', dispatchGroupId: 'group-f' });
+      const contextBudgetError = Object.assign(
+        new Error(
+          'Turn Overflow: even fully truncated tool output does not fit the configured context budget.',
+        ),
+        { name: 'ContextBudgetExceededError' },
+      );
+      const agent = fakeThrowingAgent([], contextBudgetError);
+
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+      expect(store.getTask(entry.task.id)!.status).to.equal('failed');
+      const markers = completionMarkers('parent-f');
+      expect(markers).to.have.length(1);
+      expect((markers[0]!.payload as Record<string, unknown>).outcome).to.equal('failed');
+      // This is the actual regression this test guards: falling through to
+      // the generic catch-all would run classifyChatError and prefix the
+      // summary with "Run failed: ", losing the error's own message.
+      expect(store.getQueueEntry(entry.id)!.summary).to.equal(contextBudgetError.message);
+    });
   });
 
   describe('StagnationLimitError on a non-sub-agent task (defensive case)', () => {

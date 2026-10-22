@@ -1,12 +1,14 @@
 import { describe, it } from 'mocha';
 import { expect } from 'chai';
-import { HumanMessage, AIMessage, trimMessages } from '@langchain/core/messages';
+import { HumanMessage, AIMessage, ToolMessage, trimMessages } from '@langchain/core/messages';
 import type { BaseMessage } from '@langchain/core/messages';
 import {
   createSummaryBoundaryMessage,
   isSummaryBoundary,
   boundaryAwareTrim,
+  ContextBudgetExceededError,
 } from './summary-boundary.js';
+import { getToolContent } from '../services/tool-content-store.js';
 
 // A simple, deterministic counter — character length stands in for tokens,
 // same spirit as chat-agent.test.ts's makeLongMessageHistory (repeated text
@@ -126,6 +128,128 @@ describe('agents/summary-boundary', () => {
       const trimmed = await boundaryAwareTrim(messages, budget, charCount, true);
 
       expect(trimmed).to.deep.equal(sinceSecond);
+    });
+  });
+
+  describe('boundaryAwareTrim() — Turn Overflow recovery', () => {
+    // One Turn: a Human ask, an AIMessage requesting two tool calls, and
+    // their two ToolMessage results — one tiny, one huge. Sized so the
+    // whole Turn overflows a 600-char budget, but overflows it only
+    // because of the huge result; everything else easily fits once it's
+    // truncated.
+    function makeOverflowingTurn() {
+      const human = new HumanMessage('Please summarize this page');
+      const ai = new AIMessage({
+        content: '',
+        tool_calls: [
+          { name: 'tool_small', args: {}, id: 'call_small' },
+          { name: 'tool_huge', args: {}, id: 'call_huge' },
+        ],
+      });
+      const smallResult = new ToolMessage({
+        content: 'small',
+        tool_call_id: 'call_small',
+        name: 'tool_small',
+      });
+      const hugeContent = 'x'.repeat(5000);
+      const hugeResult = new ToolMessage({
+        content: hugeContent,
+        tool_call_id: 'call_huge',
+        name: 'tool_huge',
+      });
+      return {
+        human,
+        ai,
+        smallResult,
+        hugeResult,
+        hugeContent,
+        messages: [human, ai, smallResult, hugeResult],
+      };
+    }
+
+    it('truncates the largest ToolMessage first and stops once the Turn fits', async () => {
+      const { messages, hugeResult } = makeOverflowingTurn();
+      const budget = 600;
+      expect(charCount(messages)).to.be.greaterThan(budget);
+
+      const trimmed = await boundaryAwareTrim(
+        messages,
+        budget,
+        charCount,
+        false,
+        'thread-largest-first',
+      );
+
+      expect(charCount(trimmed)).to.be.at.most(budget);
+      const truncated = trimmed.find(
+        (m) => (m as ToolMessage).tool_call_id === 'call_huge',
+      ) as ToolMessage;
+      expect(truncated.content).to.not.equal(hugeResult.content);
+      expect(String(truncated.content)).to.include('CONTENT OFFLOADED');
+      // The small result was never touched — only the oversized one needed it.
+      const untouched = trimmed.find(
+        (m) => (m as ToolMessage).tool_call_id === 'call_small',
+      ) as ToolMessage;
+      expect(untouched.content).to.equal('small');
+    });
+
+    it('offloads the truncated content so it is still retrievable via the same threadId/toolKey', async () => {
+      const { messages, hugeContent } = makeOverflowingTurn();
+      const threadId = 'thread-round-trip';
+
+      const trimmed = await boundaryAwareTrim(messages, 600, charCount, false, threadId);
+
+      const truncated = trimmed.find(
+        (m) => (m as ToolMessage).tool_call_id === 'call_huge',
+      ) as ToolMessage;
+      const keyMatch = String(truncated.content).match(/^key:\s*(\S+)/m);
+      expect(keyMatch, 'stub should advertise a toolKey').to.not.equal(null);
+      const stored = getToolContent(threadId, keyMatch![1]!);
+      expect(stored).to.equal(hugeContent);
+    });
+
+    it('preserves tool_call_id and name on a truncated ToolMessage', async () => {
+      const { messages } = makeOverflowingTurn();
+
+      const trimmed = await boundaryAwareTrim(
+        messages,
+        600,
+        charCount,
+        false,
+        'thread-preserve-fields',
+      );
+
+      const truncated = trimmed.find(
+        (m) => (m as ToolMessage).tool_call_id === 'call_huge',
+      ) as ToolMessage;
+      expect(truncated.tool_call_id).to.equal('call_huge');
+      expect(truncated.name).to.equal('tool_huge');
+    });
+
+    it('throws ContextBudgetExceededError when even fully-truncated content does not fit', async () => {
+      const { messages } = makeOverflowingTurn();
+
+      let caught: unknown;
+      try {
+        await boundaryAwareTrim(messages, 1, charCount, false, 'thread-unrecoverable');
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).to.be.instanceOf(ContextBudgetExceededError);
+    });
+
+    it('falls back to a plain non-retrievable marker when no threadId is given', async () => {
+      const { messages, hugeContent } = makeOverflowingTurn();
+
+      const trimmed = await boundaryAwareTrim(messages, 600, charCount, false);
+
+      const truncated = trimmed.find(
+        (m) => (m as ToolMessage).tool_call_id === 'call_huge',
+      ) as ToolMessage;
+      expect(truncated.content).to.equal(
+        `[${hugeContent.length} chars omitted — no thread to offload to]`,
+      );
     });
   });
 });

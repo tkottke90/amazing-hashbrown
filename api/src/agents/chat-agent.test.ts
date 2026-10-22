@@ -19,10 +19,12 @@ import {
   type WorkspaceChatContext,
 } from './chat-agent.js';
 import { formatRunTime } from './task-context.js';
-import { env } from '../config/env.js';
+import { env, configManager } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import type { RegisteredTool } from '@tkottke90/tools-manager';
 import { makeMcpTool } from '@/tests/fixtures/registered-tool.fixture.js';
+import { getToolContent } from '../services/tool-content-store.js';
+import { STUB_THRESHOLD_CHARS } from './tools/tool-stub.js';
 
 // Monkey-patches one logger method to record calls while forwarding to the
 // real implementation — no mocking library needed (this repo uses mocha +
@@ -190,6 +192,55 @@ describe('agents/chat-agent', () => {
       );
       await lc.invoke({ x: 'hello' });
       expect(captured).to.deep.equal({ x: 'hello' });
+    });
+
+    it('stubs a result over STUB_THRESHOLD_CHARS, offloading it the same way web_fetch does', async () => {
+      const bigResult = 'x'.repeat(STUB_THRESHOLD_CHARS + 1);
+      const lc = mcpToolToLangChain(
+        makeMcpTool({ boundName: 'gateway__big_fetch', execute: async () => bigResult }),
+      );
+
+      const result = (await lc.invoke(
+        {},
+        { configurable: { thread_id: 'mcp-stub-thread' } },
+      )) as string;
+
+      expect(result).to.include('CONTENT OFFLOADED');
+      expect(result.length).to.be.lessThan(bigResult.length);
+      const keyMatch = result.match(/^key:\s*(\S+)/m);
+      expect(keyMatch, 'stub should advertise a toolKey').to.not.equal(null);
+      expect(getToolContent('mcp-stub-thread', keyMatch![1]!)).to.equal(bigResult);
+    });
+
+    it('passes a result at or under STUB_THRESHOLD_CHARS through unchanged', async () => {
+      const smallResult = 'x'.repeat(STUB_THRESHOLD_CHARS);
+      const lc = mcpToolToLangChain(makeMcpTool({ execute: async () => smallResult }));
+
+      const result = await lc.invoke({}, { configurable: { thread_id: 'mcp-stub-thread-2' } });
+
+      expect(result).to.equal(smallResult);
+    });
+
+    it('passes a large result through unchanged when no thread_id is available', async () => {
+      const bigResult = 'x'.repeat(STUB_THRESHOLD_CHARS + 1);
+      const lc = mcpToolToLangChain(makeMcpTool({ execute: async () => bigResult }));
+
+      const result = await lc.invoke({});
+
+      expect(result).to.equal(bigResult);
+    });
+
+    it('passes a large result through unchanged when mcpToolStub.enabled is false', async () => {
+      const bigResult = 'x'.repeat(STUB_THRESHOLD_CHARS + 1);
+      const lc = mcpToolToLangChain(makeMcpTool({ execute: async () => bigResult }));
+      configManager.set('chat', { mcpToolStub: { enabled: false } });
+
+      try {
+        const result = await lc.invoke({}, { configurable: { thread_id: 'mcp-stub-thread-3' } });
+        expect(result).to.equal(bigResult);
+      } finally {
+        configManager.set('chat', {});
+      }
     });
   });
 

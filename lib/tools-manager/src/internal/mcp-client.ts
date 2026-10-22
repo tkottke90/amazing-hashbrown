@@ -117,7 +117,7 @@ function fromLangChain(tool: LangChainTool, serverName: string): RegisteredTool 
     // this, the outer tool's own .invoke() and this inner one both fire
     // their own handleToolStart/handleToolEnd against the ambient trace
     // context, producing two spans for one real execution — see issue #353
-    // and docs/adr/0041-mcp-tool-invoke-suppresses-nested-callbacks.md.
+    // and docs/adr/0043-mcp-tool-invoke-suppresses-nested-callbacks.md.
     execute: (args) => tool.invoke(args, { callbacks: [] }),
   };
 }

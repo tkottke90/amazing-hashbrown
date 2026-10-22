@@ -20,7 +20,7 @@ This also rules out the two other mechanisms considered during investigation: La
 
 In `fromLangChain()`, change the inner call from `tool.invoke(args)` to `tool.invoke(args, { callbacks: [] })`, so it stops inheriting the ambient callback manager and no longer fires its own `handleToolStart`/`handleToolEnd` pair, while keeping `.invoke()`'s input validation and error normalization.
 
-See `docs/adr/0041-mcp-tool-invoke-suppresses-nested-callbacks.md` for why this approach was chosen over bypassing `.invoke()` entirely or adding a dedup/coalescing layer.
+See `docs/adr/0043-mcp-tool-invoke-suppresses-nested-callbacks.md` for why this approach was chosen over bypassing `.invoke()` entirely or adding a dedup/coalescing layer.
 
 ## Testing
 
@@ -37,4 +37,4 @@ Add a case to `lib/tools-manager/test/internal/mcp-client.test.ts` (External Orc
 
 - Issue: [#353](https://github.com/tkottke90/amazing-hashbrown/issues/353)
 - `GLOSSARY.md` § MCP Tooling (MCP Server, Bound Name)
-- `docs/adr/0041-mcp-tool-invoke-suppresses-nested-callbacks.md`
+- `docs/adr/0043-mcp-tool-invoke-suppresses-nested-callbacks.md`

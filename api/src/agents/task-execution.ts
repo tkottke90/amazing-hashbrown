@@ -923,6 +923,19 @@ export async function executeTask(
         });
         traceError = (err as StagnationLimitError).summary;
         await finishFailedRun((err as StagnationLimitError).summary);
+      } else if ((err as Error).name === 'ContextBudgetExceededError') {
+        // Thrown by boundaryAwareTrim's Turn Overflow recovery
+        // (summary-boundary.ts) when even fully truncating the current
+        // turn's tool output still doesn't fit the configured budget —
+        // the sub-agent-run analogue of StagnationLimitError just above.
+        // Must not fall through to the generic branch below: that one
+        // runs classifyChatError and prefixes the summary with "Run
+        // failed: ", losing this error's own distinct message.
+        logger.info('task-execution: run stopped — context budget exceeded even after truncation', {
+          taskId: task.id,
+        });
+        traceError = (err as Error).message;
+        await finishFailedRun((err as Error).message);
       } else {
         finalOutcome = 'failed';
         const outOfSteps = (err as Error).name === 'GraphRecursionError';
