@@ -265,3 +265,41 @@ How many tokens an LLM call consumes, and what that costs — tracked per provid
 **LLM Usage Token**:
 One unit of input or output text a single LLM call consumes or produces, counted per provider and model and the basis for every cost estimate this app computes. Unrelated to Access Token's bearer credential, despite the shared word "token."
 _Avoid_: Token (see Access Token — different concept, same word)
+
+# Task Files
+
+How a workspace-scoped Task keeps a durable, human- and agent-readable record of itself on disk, so a new Run doesn't have to rediscover what earlier Runs already learned.
+
+## Language
+
+**Task File**:
+One markdown file per workspace-scoped Task, created on its first Run and updated in place across every later Run — the durable artifact letting a user or agent see what happened on a Task without reopening every past Run's own conversation. Never created for a workspace-less Task, and never created for a Sub-Agent Task.
+_Avoid_: Task note file, task log, task artifact
+
+**Task State**:
+The five fields a Task File holds — Task Goal, Previous Tasks, Task Notes, Task Outcome, Handoff Notes — stored as the file's YAML frontmatter, its only durable copy. The markdown body beneath the frontmatter is a rendering of this same State, not a second copy with its own meaning.
+_Avoid_: Frontmatter (too generic — doesn't say what it holds), task metadata
+
+**Task Goal**:
+A Task File's own restatement, in the task's own words, of what the Task is trying to do. Regenerated at the start of every Run from the Task's title/description/outcome/plan and its Previous Tasks, and overwritten each time — it reflects the Task as currently understood, not a history of how that understanding changed.
+_Avoid_: Objective, intent
+
+**Previous Tasks**:
+A Task File's list of the other Tasks in the _same Workspace_ that already have their own Task File, shown chronologically with each one's Task Outcome as a one-sentence summary. Narrower than, and unrelated to, Sibling Progress — Previous Tasks never crosses a Workspace boundary and is read straight off the filesystem, never from a tracker or dependency link.
+_Avoid_: Sibling tasks, related tasks (ambiguous with Sibling Progress), history
+
+**Sibling Progress**:
+The existing cross-Workspace record of Tasks related by a shared tracker link or a direct dependency edge, persisted in `task_progress_entries` and surfaced into a Run's opening message. Not read from or written to a Task File — a separate mechanism answering a separate question ("what else is this tied to," vs. Previous Tasks' "what already happened here").
+_Avoid_: Previous tasks, related tasks
+
+**Task Notes**:
+A Task File's append-only log, grouped under one heading per Run, combining freeform notes an agent records mid-Run with mechanical entries describing each plan-step change. The only part of a Task File that keeps a full history rather than just the latest value.
+_Avoid_: Agent notes, scratchpad, task log
+
+**Task Outcome**:
+A Task File's record of what happened on its most recent Run and whether it succeeded — holding exactly the summary text that Run's own ending already produced, never a separate telling of the same event.
+_Avoid_: Result, summary (too generic — collides with a Run's own summary)
+
+**Handoff Notes**:
+A Task File's note to whichever Run comes next, written fresh at the end of each Run specifically to carry forward what that next Run should know or follow up on. Distinct from Task Outcome, which looks back at what happened; Handoff Notes looks forward at what to do about it.
+_Avoid_: Next steps, follow-up notes

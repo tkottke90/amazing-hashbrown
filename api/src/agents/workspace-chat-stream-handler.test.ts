@@ -791,4 +791,43 @@ describe('agents/workspace-chat-stream-handler — buildWorkspaceContext() summa
     expect(ctx.description).to.equal('A workspace for testing.');
     expect(ctx.createdAt).to.equal(described.createdAt);
   });
+
+  it('populates taskFiles from every Task File in the workspace, via listWorkspaceTaskFiles', async () => {
+    const { writeTaskFile, EMPTY_TASK_STATE } = await import('../services/task-file.js');
+    const tasksDir = join(workspace.location, '.hashbrown', 'tasks');
+    await writeTaskFile(
+      join(tasksDir, '20260901000000-task-a.md'),
+      {
+        ...EMPTY_TASK_STATE,
+        goal: 'Fix the flaky test',
+      },
+      { taskId: 'task-a', title: 'A' },
+    );
+    await writeTaskFile(
+      join(tasksDir, '20260902000000-task-b.md'),
+      {
+        ...EMPTY_TASK_STATE,
+        goal: 'Write the docs',
+      },
+      { taskId: 'task-b', title: 'B' },
+    );
+
+    const ctx = await buildWorkspaceContext(workspace);
+
+    expect(ctx.taskFiles).to.deep.equal([
+      { taskId: 'task-a', goal: 'Fix the flaky test', createdAt: '20260901000000' },
+      { taskId: 'task-b', goal: 'Write the docs', createdAt: '20260902000000' },
+    ]);
+  });
+
+  it('returns an empty taskFiles list with no warning when .hashbrown/tasks does not exist', async () => {
+    const log = captureLogCalls('warn');
+    try {
+      const ctx = await buildWorkspaceContext(workspace);
+      expect(ctx.taskFiles).to.deep.equal([]);
+      expect(log.calls).to.have.length(0);
+    } finally {
+      log.restore();
+    }
+  });
 });

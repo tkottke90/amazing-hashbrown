@@ -1,4 +1,7 @@
-import { describe, it } from 'mocha';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, it, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import {
   provisionDependencyIsolation,
@@ -203,6 +206,86 @@ describe('services/workspace-provision', () => {
         error = err as Error;
       }
       expect(error?.message).to.equal('git not found');
+    });
+  });
+
+  describe('provisionGitRepository() — .hashbrown/ gitignore (ADR-0040)', () => {
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-provision-gitignore-test-'));
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('creates a fresh .gitignore covering .hashbrown/ after git init, when none existed', async () => {
+      const { stub } = makeStub();
+      await provisionGitRepository(dir, { git: true }, stub);
+
+      expect(readFileSync(join(dir, '.gitignore'), 'utf8')).to.equal('.hashbrown/\n');
+    });
+
+    it('appends a .hashbrown/ line to an existing .gitignore that does not already cover it', async () => {
+      writeFileSync(join(dir, '.gitignore'), 'node_modules/\n');
+      const { stub } = makeStub();
+
+      await provisionGitRepository(dir, { git: true }, stub);
+
+      expect(readFileSync(join(dir, '.gitignore'), 'utf8')).to.equal(
+        'node_modules/\n.hashbrown/\n',
+      );
+    });
+
+    it('adds a newline before appending when the existing file does not end in one', async () => {
+      writeFileSync(join(dir, '.gitignore'), 'node_modules/');
+      const { stub } = makeStub();
+
+      await provisionGitRepository(dir, { git: true }, stub);
+
+      expect(readFileSync(join(dir, '.gitignore'), 'utf8')).to.equal(
+        'node_modules/\n.hashbrown/\n',
+      );
+    });
+
+    it('leaves a .gitignore that already covers .hashbrown/ byte-for-byte unchanged (idempotent)', async () => {
+      const original = 'node_modules/\n.hashbrown/\n';
+      writeFileSync(join(dir, '.gitignore'), original);
+      const { stub } = makeStub();
+
+      await provisionGitRepository(dir, { git: true }, stub);
+
+      expect(readFileSync(join(dir, '.gitignore'), 'utf8')).to.equal(original);
+    });
+
+    it('also recognizes a bare ".hashbrown" (no trailing slash) as already covering it', async () => {
+      const original = '.hashbrown\n';
+      writeFileSync(join(dir, '.gitignore'), original);
+      const { stub } = makeStub();
+
+      await provisionGitRepository(dir, { git: true }, stub);
+
+      expect(readFileSync(join(dir, '.gitignore'), 'utf8')).to.equal(original);
+    });
+
+    it('does nothing when git is false', async () => {
+      const { stub } = makeStub();
+      await provisionGitRepository(dir, { git: false }, stub);
+
+      const { existsSync } = await import('node:fs');
+      expect(existsSync(join(dir, '.gitignore'))).to.equal(false);
+    });
+
+    it('also runs after a clone (remoteUrl set), not just git init', async () => {
+      const { stub } = makeStub();
+      await provisionGitRepository(
+        dir,
+        { git: true, remoteUrl: 'https://example.com/org/repo.git' },
+        stub,
+      );
+
+      expect(readFileSync(join(dir, '.gitignore'), 'utf8')).to.equal('.hashbrown/\n');
     });
   });
 });

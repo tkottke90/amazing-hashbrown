@@ -1,0 +1,3 @@
+# Previous Tasks is a separate, narrower grouping than Sibling Progress
+
+PR #306's Sibling Progress groups Tasks across Workspaces by a shared tracker link or a direct dependency edge, specifically to feed a Run's opening message. Previous Tasks, a Task File's own list of what else happened, deliberately doesn't reuse that grouping — it's scoped to the _same Workspace only_, ordered chronologically, and built by reading which other Tasks already have a Task File on disk, not by querying a tracker or dependency link. The two answer different questions ("what else is this tied to" vs. "what already happened here") and would give confusing, inconsistent results if merged into one.

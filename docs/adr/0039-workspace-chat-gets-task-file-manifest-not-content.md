@@ -1,0 +1,3 @@
+# Workspace chat sees a manifest of Task Files, not their full content
+
+The existing `.hashbrown/summaries/` context injection shows the single latest summary's full content plus a manifest of older ones, because there's always exactly one "most relevant" summary to spend context on. Task Files have no equivalent single most-relevant file — any past Task could be the one a user asks about — so workspace chat instead gets a manifest only (task id, Task Goal, timestamp) for every Task File in the workspace, with an instruction to read a specific file via `shell_exec` (already scoped to the workspace directory) only when the user asks about that Task in detail.

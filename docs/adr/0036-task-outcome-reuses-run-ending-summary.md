@@ -1,0 +1,3 @@
+# Task Outcome reuses the Run's own ending summary instead of a new LLM call
+
+A Run that calls `complete_task` already produces a model-authored summary; a Run that stops without completing, fails, is cancelled, or is taken over already gets a fixed, harness-authored summary string for the same purpose. We decided Task Outcome should hold exactly that text rather than asking the model to narrate the same event a second time. This keeps the mechanic uniform and free across every terminal path, at the cost of Task Outcome never being richer or differently framed than whatever the Run's own ending already said.

@@ -22,7 +22,8 @@ import {
 } from './active-sse-writer.js';
 import { getTaskAbort, setAbortIntent, type AbortIntent } from './active-task-abort.js';
 import { drainPendingTurns } from './pending-thread-turns.js';
-import { executeTask, type QueueEntryWithTask } from './task-execution.js';
+import { executeTask, finishTaskFile, type QueueEntryWithTask } from './task-execution.js';
+import { loadTaskState, listWorkspaceTaskFiles, EMPTY_TASK_STATE } from '../services/task-file.js';
 import type { buildTaskAgent, TaskAgentHooks } from './chat-agent.js';
 import { makeCompleteTaskTool } from './tools/complete-task.tool.js';
 import { registerBroadcastClient, unregisterBroadcastClient } from '../services/broadcast.js';
@@ -1941,6 +1942,206 @@ describe('agents/task-execution', () => {
       expect(input.messages[0].content).to.include('Related work on this feature');
       expect(input.messages[0].content).to.include('"First task"');
       expect(input.messages[0].content).to.include('Wrote the page.');
+    });
+  });
+
+  describe('Task Files (workspace-task-files design)', () => {
+    let workspaceDir: string;
+
+    beforeEach(() => {
+      workspaceDir = mkdtempSync(join(tmpdir(), 'task-files-workspace-'));
+    });
+
+    afterEach(() => {
+      rmSync(workspaceDir, { recursive: true, force: true });
+    });
+
+    function makeFileEligibleEntry(
+      opts: { title?: string; origin?: 'user' | 'agent' } = {},
+    ): QueueEntryWithTask {
+      const workspace = store.createWorkspace({ name: 'W', location: workspaceDir });
+      const task = store.createTask({
+        title: opts.title ?? 'Task File task',
+        assignedTo: 'agent',
+        workspaceId: workspace.id,
+        origin: opts.origin,
+      });
+      store.patchTask(task.id, { status: 'ready' });
+      store.enqueueTask(task.id);
+      return store.dequeueNext()! as QueueEntryWithTask;
+    }
+
+    it("creates a Task File, persists taskFilePath, and reuses complete_task's summary as Task Outcome", async () => {
+      const entry = makeFileEligibleEntry();
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      });
+
+      const task = store.getTask(entry.task.id)!;
+      expect(task.taskFilePath).to.be.a('string');
+      expect(task.taskFilePath).to.match(/^\.hashbrown\/tasks\/\d{14}-.+\.md$/);
+
+      const { state, historyGap } = await loadTaskState(join(workspaceDir, task.taskFilePath!));
+      expect(historyGap).to.equal(false);
+      expect(state.outcome).to.equal('Wrote the page.');
+    });
+
+    it('is skipped entirely for an Inbox (no-workspace) task', async () => {
+      const entry = makeGlobalEntry();
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      });
+
+      expect(store.getTask(entry.task.id)!.taskFilePath).to.equal(null);
+    });
+
+    it("is skipped entirely for a Sub-Agent Task (origin: 'agent'), even though it has a workspace", async () => {
+      const entry = makeFileEligibleEntry({ origin: 'agent' });
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      });
+
+      expect(store.getTask(entry.task.id)!.taskFilePath).to.equal(null);
+    });
+
+    it("never appears in another task's Previous Tasks list (origin: 'agent')", async () => {
+      const subAgentEntry = makeFileEligibleEntry({ title: 'Helper', origin: 'agent' });
+      await executeTask(subAgentEntry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      });
+      const workspace = store.getWorkspace(subAgentEntry.task.workspaceId!)!;
+
+      const task = store.createTask({
+        title: 'Real task',
+        assignedTo: 'agent',
+        workspaceId: workspace.id,
+      });
+      store.patchTask(task.id, { status: 'ready' });
+      store.enqueueTask(task.id);
+      await executeTask(store.dequeueNext()! as QueueEntryWithTask, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      });
+
+      const files = await listWorkspaceTaskFiles(workspaceDir, task.id);
+      expect(files.map((f) => f.taskId)).to.not.include(subAgentEntry.task.id);
+    });
+
+    it('records a visible history-gap note when an existing taskFilePath no longer resolves to a real file', async () => {
+      const workspace = store.createWorkspace({ name: 'W', location: workspaceDir });
+      const task = store.createTask({
+        title: 'Has a stale path',
+        assignedTo: 'agent',
+        workspaceId: workspace.id,
+      });
+      store.patchTask(task.id, {
+        status: 'ready',
+        taskFilePath: '.hashbrown/tasks/20200101000000-missing.md',
+      });
+      store.enqueueTask(task.id);
+      const entry = store.dequeueNext()! as QueueEntryWithTask;
+
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      });
+
+      const { state } = await loadTaskState(
+        join(workspaceDir, '.hashbrown/tasks/20200101000000-missing.md'),
+      );
+      expect(state.notes.flat()).to.include(
+        'History could not be read — the previous Task File was missing or unreadable.',
+      );
+    });
+
+    it('calls finishTaskFile for each of the five non-pause terminal branches, with the right summary, and not for pause', async () => {
+      const calls: { outcomeSummary: string }[] = [];
+      const finishTaskFileSpy = async (
+        _task: Task,
+        _agentForState: unknown,
+        _filePath: string,
+        _fallbackState: unknown,
+        outcomeSummary: string,
+      ) => {
+        calls.push({ outcomeSummary });
+      };
+
+      // complete_task success
+      await executeTask(makeFileEligibleEntry({ title: 'A' }), {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        finishTaskFile: finishTaskFileSpy as any,
+      });
+      // stopped without completing
+      await executeTask(makeFileEligibleEntry({ title: 'B' }), {
+        buildTaskAgent: fakeBuildTaskAgent(
+          fakeAgent([{ event: 'on_chat_model_stream', data: { chunk: { content: 'hmm' } } }]),
+        ),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        finishTaskFile: finishTaskFileSpy as any,
+      });
+      // generic catch-all (finishFailedRun)
+      await executeTask(makeFileEligibleEntry({ title: 'C' }), {
+        buildTaskAgent: fakeBuildTaskAgent(fakeThrowingAgent([])),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        finishTaskFile: finishTaskFileSpy as any,
+      });
+      // cancel
+      const cancelEntry = makeFileEligibleEntry({ title: 'D' });
+      await executeTask(cancelEntry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAbortingAgent(cancelEntry.id, 'cancel')),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        finishTaskFile: finishTaskFileSpy as any,
+      });
+      // take-over
+      const takeOverEntry = makeFileEligibleEntry({ title: 'E' });
+      await executeTask(takeOverEntry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAbortingAgent(takeOverEntry.id, 'take-over')),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        finishTaskFile: finishTaskFileSpy as any,
+      });
+      // pause — must NOT call finishTaskFile
+      const pauseEntry = makeFileEligibleEntry({ title: 'F' });
+      await executeTask(pauseEntry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAbortingAgent(pauseEntry.id, 'pause')),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        finishTaskFile: finishTaskFileSpy as any,
+      });
+
+      expect(calls).to.have.length(5);
+      expect(calls[0]!.outcomeSummary).to.equal('Wrote the page.');
+      expect(calls[1]!.outcomeSummary).to.match(/^Stopped without completing/);
+      expect(calls[3]!.outcomeSummary).to.equal('Run cancelled by the user.');
+      expect(calls[4]!.outcomeSummary).to.equal('Run taken over by the user.');
+    });
+
+    it('a finishTaskFile failure never changes the run outcome or fails the run', async () => {
+      const entry = makeFileEligibleEntry();
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+        finishTaskFile: async () => {
+          throw new Error('simulated finishTaskFile failure');
+        },
+      });
+
+      expect(store.getTask(entry.task.id)!.status).to.equal('done');
+    });
+
+    it('the real finishTaskFile degrades gracefully (Handoff Notes empty) when no model is reachable', async () => {
+      const task = store.createTask({ title: 'T' });
+      const filePath = join(workspaceDir, '.hashbrown', 'tasks', `20261021000000-${task.id}.md`);
+
+      await finishTaskFile(
+        task,
+        {},
+        filePath,
+        { ...EMPTY_TASK_STATE, notes: [] },
+        'It worked.',
+        TEST_PROVIDER,
+        TEST_MODEL,
+      );
+
+      const { state } = await loadTaskState(filePath);
+      expect(state.outcome).to.equal('It worked.');
+      expect(state.handoff).to.equal('');
     });
   });
 });

@@ -3,11 +3,48 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
+import Database from 'better-sqlite3';
+import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite';
+import { createAgent } from 'langchain';
+import { AIMessage, type BaseMessage } from '@langchain/core/messages';
+import { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import type { ChatResult } from '@langchain/core/outputs';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import type { AppBroadcastEvent } from '@tkottke90/llm-common-types/chat';
 import { WorkspaceStore, type PlanStep } from '../../services/workspace-store.js';
 import { registerBroadcastClient, unregisterBroadcastClient } from '../../services/broadcast.js';
+import { loadTaskState } from '../../services/task-file.js';
+import { createTaskFileStateMiddleware } from '../task-file-state.middleware.js';
 import { makeUpdatePlanTool } from './update-plan.tool.js';
+
+class ScriptedChatModel extends BaseChatModel {
+  _llmType() {
+    return 'scripted-fake';
+  }
+  bindTools() {
+    return this;
+  }
+  async _generate(messages: BaseMessage[]): Promise<ChatResult> {
+    const last = messages[messages.length - 1]!;
+    if (last.getType() === 'tool') {
+      const text = String(last.content);
+      return { generations: [{ message: new AIMessage(text), text }] };
+    }
+    return {
+      generations: [
+        {
+          message: new AIMessage({
+            content: '',
+            tool_calls: [
+              { id: 'call_1', name: 'update_plan', args: { updates: [{ step: 2, done: true }] } },
+            ],
+          }),
+          text: '',
+        },
+      ],
+    };
+  }
+}
 
 const PLAN: PlanStep[] = [
   { step: 'Scaffold the route', done: false },
@@ -148,5 +185,42 @@ describe('agents/tools/update-plan', () => {
     });
 
     expect(result).to.include('not found');
+  });
+
+  describe('with a Task File (taskFile argument present)', () => {
+    let fsDir: string;
+
+    beforeEach(() => {
+      fsDir = mkdtempSync(join(tmpdir(), 'update-plan-task-file-test-'));
+    });
+
+    afterEach(() => {
+      rmSync(fsDir, { recursive: true, force: true });
+    });
+
+    it('appends a mechanical note and writes the Task File, alongside the existing plan patch [orchestration]', async () => {
+      const task = makeTask();
+      const filePath = join(fsDir, `t-${task.id}.md`);
+      const checkpointer = new SqliteSaver(new Database(join(fsDir, 'checkpoints.db')));
+      const agent = createAgent({
+        model: new ScriptedChatModel({}),
+        tools: [makeUpdatePlanTool(task.id, store, { filePath })],
+        middleware: [createTaskFileStateMiddleware()],
+        checkpointer,
+      });
+      const config = { configurable: { thread_id: 'thread-1' } };
+
+      await agent.invoke({ messages: [{ role: 'human', content: 'check off step 2' }] }, config);
+
+      // The existing plan patch + broadcast still happen exactly as before.
+      expect(store.getTask(task.id)!.plan!.map((s) => s.done)).to.deep.equal([false, true, false]);
+      expect(received).to.have.length(1);
+
+      const state = await agent.getState(config);
+      expect(state.values.taskState.notes).to.deep.equal([['Step 2 marked done.']]);
+
+      const { state: fileState } = await loadTaskState(filePath);
+      expect(fileState.notes).to.deep.equal([['Step 2 marked done.']]);
+    });
   });
 });
