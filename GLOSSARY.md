@@ -304,6 +304,20 @@ _Avoid_: Result, summary (too generic — collides with a Run's own summary)
 A Task File's note to whichever Run comes next, written fresh at the end of each Run specifically to carry forward what that next Run should know or follow up on. Distinct from Task Outcome, which looks back at what happened; Handoff Notes looks forward at what to do about it.
 _Avoid_: Next steps, follow-up notes
 
+# MCP Tooling
+
+How this app discovers and names tools exposed by a configured MCP server, so one server's tool can never collide with another's and the model always sees a single, unambiguous name.
+
+## Language
+
+**MCP Server**:
+One entry in `config/mcp.json`, identified only by the name the user gave it when adding it — a single MCP endpoint this app connects to. That endpoint may itself be an aggregator/hub proxying many backend tools (e.g. mcphub), entirely opaque to this app, which only ever sees one flat tool list per entry.
+_Avoid_: MCP gateway (a server's own chosen name, e.g. "gateway," is not a role this app recognizes — don't read significance into it)
+
+**Bound Name**:
+The server-qualified form of an MCP tool's name (`{slugified server name}__{tool name}`) that this app actually binds to the model and dispatches tool calls on — chosen specifically so two servers exposing an identically-named tool can't collide. Never the tool's own bare `name`, which is not guaranteed unique across servers and is never itself bound to a model.
+_Avoid_: Tool name, qualified name
+
 # Chat Turns & Context Trimming
 
 How a chat agent's message history is kept under its configured token budget as a thread grows, and the unit that budget is ultimately spent against.
