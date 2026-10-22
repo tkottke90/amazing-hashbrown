@@ -2,6 +2,7 @@ import { useEffect } from 'preact/hooks';
 import { Trash2 } from 'lucide-preact';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -11,6 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useTitle } from '@/hooks/use-title';
+import { activeGuard } from '@/hooks/use-settings-guard';
 import { useSettingsSection } from './use-settings-section';
 import { SaveDiscardBar } from './save-discard-bar';
 import { FieldError } from './field-error';
@@ -32,6 +34,20 @@ interface ModelProvidersSettings {
   favoriteModels: FavoriteModel[];
 }
 
+// Just the slice of the agent-behavior section this page's Default
+// Provider card also edits — the context budget (chat.contextWindow),
+// kept near where the user picks a provider since the right budget
+// depends on which model/provider is active. See ADR-0042.
+interface AgentBehaviorChatSlice {
+  chat?: {
+    contextWindow?: {
+      maxTokens?: number;
+    };
+  };
+}
+
+const DEFAULT_MAX_TOKENS = 32000;
+
 const TYPE_LABELS: Record<string, string> = {
   ollama: 'Ollama',
   openai: 'OpenAI',
@@ -43,6 +59,19 @@ export function ModelProvidersPanel() {
   useTitle('Settings - Model providers');
   const { form, isDirty, isSaving, fetchError, fieldErrors, setField, save, discard } =
     useSettingsSection<ModelProvidersSettings>('model-providers');
+  // A second, independent settings section — the context budget actually
+  // lives under agent-behavior/chat.contextWindow (see ADR-0042), not here.
+  // registerGuard: false since this page's own combined effect below owns
+  // the nav-away guard for both sections at once.
+  const {
+    form: agentForm,
+    isDirty: agentIsDirty,
+    isSaving: agentIsSaving,
+    fieldErrors: agentFieldErrors,
+    setField: agentSetField,
+    save: agentSave,
+    discard: agentDiscard,
+  } = useSettingsSection<AgentBehaviorChatSlice>('agent-behavior', { registerGuard: false });
 
   // Live model lists (GET /api/v1/providers) — power the Add-favorite picker
   // and the Unavailable badge on favorites that no longer resolve.
@@ -50,11 +79,24 @@ export function ModelProvidersPanel() {
     void fetchProviders();
   }, []);
 
+  useEffect(() => {
+    activeGuard.value = {
+      isDirty: isDirty.value || agentIsDirty.value,
+      discard: () => {
+        discard();
+        agentDiscard();
+      },
+    };
+    return () => {
+      activeGuard.value = null;
+    };
+  }, [isDirty.value, agentIsDirty.value]);
+
   if (fetchError.value) {
     return <div class="p-6 text-sm text-destructive">{fetchError.value}</div>;
   }
 
-  if (!form.value) {
+  if (!form.value || !agentForm.value) {
     return <div class="p-6 text-sm text-muted-foreground">Loading…</div>;
   }
 
@@ -83,7 +125,11 @@ export function ModelProvidersPanel() {
   }
 
   async function handleSave() {
+    // Sequential, not parallel — the two sections are independent PATCHes,
+    // but keeping this order is what keeps the model-providers PATCH the
+    // first call a caller/test observes.
     await save();
+    await agentSave();
     // Chat reads favorites from the cached /api/v1/providers response —
     // drop the cache so the change shows up there without the 60s wait.
     invalidateProviders();
@@ -281,16 +327,41 @@ export function ModelProvidersPanel() {
                 </Select>
                 <FieldError errors={fieldErrors.value['defaultProvider']} />
               </div>
+              <div class="space-y-1.5">
+                <Label htmlFor="model-providers-max-tokens">Context budget (tokens)</Label>
+                <p class="text-xs text-muted-foreground">
+                  How much of a chat turn's history the model sees at once. Lower this for a smaller
+                  local model; raise it for a larger cloud model.
+                </p>
+                <Input
+                  id="model-providers-max-tokens"
+                  type="number"
+                  min={4000}
+                  value={String(
+                    agentForm.value?.chat?.contextWindow?.maxTokens ?? DEFAULT_MAX_TOKENS,
+                  )}
+                  onInput={(e) =>
+                    agentSetField(
+                      'chat.contextWindow.maxTokens',
+                      Number((e.target as HTMLInputElement).value),
+                    )
+                  }
+                />
+                <FieldError errors={agentFieldErrors.value['chat']} />
+              </div>
             </FormLayout>
           </CardContent>
         </Card>
       </div>
 
       <SaveDiscardBar
-        isDirty={isDirty.value}
-        isSaving={isSaving.value}
+        isDirty={isDirty.value || agentIsDirty.value}
+        isSaving={isSaving.value || agentIsSaving.value}
         onSave={handleSave}
-        onDiscard={discard}
+        onDiscard={() => {
+          discard();
+          agentDiscard();
+        }}
       />
     </div>
   );

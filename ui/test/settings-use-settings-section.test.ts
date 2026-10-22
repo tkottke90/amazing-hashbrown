@@ -213,4 +213,16 @@ describe('useSettingsSection', () => {
 
     expect(activeGuard.value).toBeNull();
   });
+
+  it('registerGuard: false never writes to activeGuard, even once dirty', async () => {
+    const { result } = renderHook(() =>
+      useSettingsSection<TestData>('general', { registerGuard: false }),
+    );
+    await waitFor(() => expect(result.current.form.value).not.toBeNull());
+    expect(activeGuard.value).toBeNull();
+
+    act(() => result.current.setField('logLevel', 'debug'));
+
+    expect(activeGuard.value).toBeNull();
+  });
 });

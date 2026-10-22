@@ -26,8 +26,10 @@ export const getToolKeyTool = tool(
     name: 'get_tool_key',
     description:
       'Read back content that was offloaded to the KV store — by web_fetch, when its result was too ' +
-      'large to return inline, by a large text file the user attached to their message, or by an ' +
-      'image the user attached earlier in this conversation — because you need the actual text, or ' +
+      'large to return inline, by an MCP tool call whose result was too large, by the context-window ' +
+      'trimmer when a tool result in the current turn had to be truncated to fit, by a large text ' +
+      'file the user attached to their message, or by an image the user attached earlier in this ' +
+      'conversation — because you need the actual text, or ' +
       'want to look at the image again, for something other than saving it to the wiki. Requires a ' +
       "real threadId and toolKey copied verbatim from that stub's frontmatter (the block starting " +
       '\'── CONTENT OFFLOADED ──\') or from a "(You can re-fetch this image later via get_tool_key(...))" ' +

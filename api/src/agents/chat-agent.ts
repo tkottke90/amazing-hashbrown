@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { tool } from '@langchain/core/tools';
 import type { ServerTool, ClientTool } from '@langchain/core/tools';
 import type { BaseMessage } from '@langchain/core/messages';
@@ -14,6 +15,7 @@ import type { RoleConfig } from '../config/env.js';
 import { logger, serializeError } from '../config/logger.js';
 import { createProvider } from '../services/provider-factory.js';
 import { toolsManager } from '../services/tools-manager.js';
+import { storeToolContent } from '../services/tool-content-store.js';
 import { askUserTool } from './tools/ask-user.tool.js';
 import { makeShellExecTool } from './tools/shell-exec.tool.js';
 import { scheduleWakeupTool } from './tools/schedule-wakeup.tool.js';
@@ -34,6 +36,7 @@ import { makeSearchSkillsTool } from './tools/search-skills.tool.js';
 import { searchConversationTool } from './tools/search-conversation.tool.js';
 import { webFetchTool } from './tools/web-fetch.tool.js';
 import { getToolKeyTool } from './tools/get-tool-key.tool.js';
+import { toolStub, STUB_THRESHOLD_CHARS } from './tools/tool-stub.js';
 import { makeUpdateWidgetContentTool } from './tools/update-widget-content.tool.js';
 import { getAfterAgentContextSchema, runAfterAgentPipeline } from './after-agent.js';
 import { buildSystemPrompt } from './system-prompt.js';
@@ -206,7 +209,7 @@ export function estimateToolsTokens(tools: (ServerTool | ClientTool)[]): number 
 export function createContextWindowMiddleware(cfg?: ContextWindowConfig) {
   return createMiddleware({
     name: 'ContextWindowMiddleware',
-    beforeModel: async (state) => {
+    beforeModel: async (state, runtime) => {
       // Enabled by default; only skip if explicitly set to false.
       if (cfg?.enabled === false) return undefined;
 
@@ -215,6 +218,7 @@ export function createContextWindowMiddleware(cfg?: ContextWindowConfig) {
         cfg?.maxTokens ?? 32000,
         estimateTokens,
         true,
+        runtime?.configurable?.thread_id,
       );
       if (trimmed.length === state.messages.length) return undefined;
 
@@ -248,6 +252,7 @@ export function createContextWindowMiddleware(cfg?: ContextWindowConfig) {
         budget,
         estimateTokens,
         false, // system already counted separately above
+        request.runtime?.configurable?.thread_id,
       );
       if (trimmed.length !== request.messages.length) {
         logger.debug('contextWindow: trimmed at wrapModelCall (tool-schema-aware)', {
@@ -272,9 +277,27 @@ const skillGatedToolsMiddleware = createSkillGatedToolsMiddleware(GATED_SKILL_RE
 // RegisteredTool) that's actually safe to give the model as a tool name.
 export function mcpToolToLangChain(t: RegisteredTool) {
   return tool(
-    async (args: Record<string, unknown>) => {
+    async (args: Record<string, unknown>, config) => {
       const result = await t.execute(args);
-      return typeof result === 'string' ? result : JSON.stringify(result);
+      const text = typeof result === 'string' ? result : JSON.stringify(result);
+
+      // Same offload treatment web_fetch.tool.ts already gives its own
+      // oversized results — large MCP tool output (a full page fetch, a
+      // JSON dump) shouldn't sit in message history uncapped. See #354.
+      const threadId = config?.configurable?.thread_id as string | undefined;
+      if (
+        env.chat?.mcpToolStub?.enabled !== false &&
+        text.length > STUB_THRESHOLD_CHARS &&
+        threadId
+      ) {
+        const toolKey = `kv_${randomBytes(4).toString('hex')}`;
+        storeToolContent(threadId, toolKey, text);
+        return toolStub({ tool: t.boundName, chars: text.length, key: toolKey, threadId }, [
+          { name: 'preview', content: text.slice(0, 1000) },
+        ]);
+      }
+
+      return text;
     },
     {
       name: t.boundName,

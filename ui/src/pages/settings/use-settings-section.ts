@@ -21,7 +21,11 @@ function setNestedPath(obj: Record<string, unknown>, dotPath: string, value: unk
   cursor[parts[parts.length - 1]!] = value;
 }
 
-export function useSettingsSection<T extends object>(slug: string) {
+export function useSettingsSection<T extends object>(
+  slug: string,
+  options?: { registerGuard?: boolean },
+) {
+  const { registerGuard = true } = options ?? {};
   const data = useSignal<T | null>(null);
   const form = useSignal<T | null>(null);
   const isSaving = useSignal(false);
@@ -87,11 +91,12 @@ export function useSettingsSection<T extends object>(slug: string) {
   }
 
   useEffect(() => {
+    if (!registerGuard) return;
     activeGuard.value = { isDirty: isDirty.value, discard };
     return () => {
       activeGuard.value = null;
     };
-  }, [isDirty.value]);
+  }, [isDirty.value, registerGuard]);
 
   return { data, form, isDirty, isSaving, fetchError, fieldErrors, setField, save, discard };
 }

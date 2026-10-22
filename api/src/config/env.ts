@@ -267,7 +267,11 @@ export const UpdatesSchema = z.object({
 
 export const ContextWindowSchema = z.object({
   enabled: z.boolean().default(true),
-  maxTokens: z.number().default(32000),
+  // Floored well above MIN_BUDGET_FLOOR (chat-agent.ts) — a value this low
+  // would leave the Turn Overflow recovery path (summary-boundary.ts) with
+  // no realistic budget to recover into, making the feature this bounds
+  // unusable rather than just conservative.
+  maxTokens: z.number().min(4000).default(32000),
   // Fraction of maxTokens the trimmer actually targets — absorbs the char/4
   // estimator's systematic undercount on dense structured content (tool
   // schemas) without a second, separately-tuned calibration knob. See
@@ -285,12 +289,20 @@ export const WorkspaceSummarySchema = z.object({
   messageThreshold: z.number().default(40),
 });
 
+// Whether an MCP tool's result that's too large to return inline gets the
+// same toolStub/storeToolContent offload treatment web_fetch already gives
+// its own oversized results — see #354.
+export const McpToolStubSchema = z.object({
+  enabled: z.boolean().default(true),
+});
+
 export const ChatSchema = z.object({
   showErrorMessages: z.boolean().default(false),
   codeBlockWrap: z.boolean().default(false),
   contextWindow: ContextWindowSchema.optional(),
   conversationSearch: ConversationSearchSchema.optional(),
   workspaceSummary: WorkspaceSummarySchema.optional(),
+  mcpToolStub: McpToolStubSchema.optional(),
   // How many days since a chat thread's updatedAt before it's excluded from
   // the sidebar's own thread list (the Sidebar Retention Window — see
   // GLOSSARY.md). 0 disables this. Deliberately defaults to a non-zero

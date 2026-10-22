@@ -86,6 +86,19 @@ function classifyNetworkError(err: unknown): ChatErrorCategory | null {
   return null;
 }
 
+// Thrown by boundaryAwareTrim's Turn Overflow recovery (summary-boundary.ts)
+// when even truncating every tool result in the current turn still doesn't
+// fit the configured budget. Provider-agnostic — checked before any
+// provider-specific matcher, same as the two checks above — and
+// name-string-checked rather than `instanceof` for the same reason
+// task-execution.ts checks StagnationLimitError by name: a thrown error can
+// get rewrapped and lose its prototype chain before it's classified.
+function classifyContextBudgetError(err: unknown): ChatErrorCategory | null {
+  const e = err as LooseApiError;
+  if (e?.name === 'ContextBudgetExceededError') return 'context_length';
+  return null;
+}
+
 // Anthropic's APIError normalizes the response body's `error.type` onto the
 // error instance itself (e.g. 'rate_limit_error', 'billing_error') — see
 // @anthropic-ai/sdk's error.d.ts/resources/shared.d.ts ErrorType union.
@@ -155,6 +168,8 @@ export function classifyChatError(
   if (frameworkAbortCategory) return { category: frameworkAbortCategory, message };
   const networkCategory = classifyNetworkError(source);
   if (networkCategory) return { category: networkCategory, message };
+  const contextBudgetCategory = classifyContextBudgetError(source);
+  if (contextBudgetCategory) return { category: contextBudgetCategory, message };
 
   switch (providerType) {
     case 'anthropic':

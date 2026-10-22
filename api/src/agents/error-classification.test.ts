@@ -336,6 +336,24 @@ describe('agents/error-classification', () => {
     });
   });
 
+  describe('classifyChatError — shared context-budget check (runs before any provider matcher)', () => {
+    it('classifies a ContextBudgetExceededError as context_length', () => {
+      const err = Object.assign(
+        new Error('Turn Overflow: even fully truncated tool output does not fit'),
+        {
+          name: 'ContextBudgetExceededError',
+        },
+      );
+      expect(classifyChatError(err, 'anthropic').category).to.equal('context_length');
+    });
+
+    it('classifies it as context_length regardless of providerType, including undefined', () => {
+      const err = Object.assign(new Error('Turn Overflow'), { name: 'ContextBudgetExceededError' });
+      expect(classifyChatError(err, undefined).category).to.equal('context_length');
+      expect(classifyChatError(err, 'ollama').category).to.equal('context_length');
+    });
+  });
+
   describe('classifyChatError — fallback behavior', () => {
     it('resolves to unknown for an unrecognized error shape', () => {
       const result = classifyChatError(new Error('something odd'), 'anthropic');

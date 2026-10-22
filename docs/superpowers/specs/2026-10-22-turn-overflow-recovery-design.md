@@ -29,7 +29,14 @@ This is called from two places, both exposed to the same failure:
 When the existing fallback (`trimMessages(...)`) returns a result with no Human-type message, that signals Turn Overflow. `boundaryAwareTrim` then recovers from the **original, untrimmed** `messages`, not the anchorless result:
 
 ```ts
-const trimmed = await trimMessages({ maxTokens, strategy: 'last', tokenCounter, includeSystem, allowPartial: false, startOn: 'human' }).invoke(messages);
+const trimmed = await trimMessages({
+  maxTokens,
+  strategy: 'last',
+  tokenCounter,
+  includeSystem,
+  allowPartial: false,
+  startOn: 'human',
+}).invoke(messages);
 
 if (hasHumanAnchor(trimmed)) return trimmed;
 
@@ -41,7 +48,7 @@ return recoverTurnOverflow(messages, maxTokens, tokenCounter, threadId);
 
 1. Slices `messages` to the current Turn — from the last Human message to the end.
 2. While the Turn's token count exceeds `maxTokens`: finds the largest `ToolMessage` by content size (ties broken by position — oldest first), offloads its full content via the same `storeToolContent`/`toolStub` mechanism `web_fetch` already uses (`api/src/agents/tools/tool-stub.ts`, `api/src/services/tool-content-store.ts`), and replaces that message's `content` with a `toolStub()`-formatted stub carrying the real `threadId`/`toolKey` — so `get_tool_key` can still retrieve it in full. Never drops a whole message (would orphan an `AIMessage`'s `tool_calls` entry).
-3. Stops as soon as the Turn fits, or when every `ToolMessage` in the Turn has already been reduced to its minimal stub size and it *still* doesn't fit — the same tier of problem `MIN_BUDGET_FLOOR` already treats as a misconfiguration today (tool-schema + system overhead alone exceeds the ceiling). That case throws a new `ContextBudgetExceededError` (lives in `summary-boundary.ts`, alongside where it's detected — not a reason/variant of `StagnationLimitError`, which is specifically about loop/stagnation semantics).
+3. Stops as soon as the Turn fits, or when every `ToolMessage` in the Turn has already been reduced to its minimal stub size and it _still_ doesn't fit — the same tier of problem `MIN_BUDGET_FLOOR` already treats as a misconfiguration today (tool-schema + system overhead alone exceeds the ceiling). That case throws a new `ContextBudgetExceededError` (lives in `summary-boundary.ts`, alongside where it's detected — not a reason/variant of `StagnationLimitError`, which is specifically about loop/stagnation semantics).
 
 `boundaryAwareTrim` gains a `threadId?: string` parameter (both call sites already have `thread_id` on `runtime.configurable`, the same place `model-input-snapshot.middleware.ts` and `recursion-guard.middleware.ts` already read it from). Without a `threadId` (defensive — shouldn't happen in production), recovery still truncates but with a plain, non-retrievable `[N chars omitted — no thread to offload to]` marker instead of a real stub.
 
@@ -94,7 +101,7 @@ Unlike `web_fetch`, a generic MCP tool result carries no title/description/outli
 `model-providers-panel.tsx` gains:
 
 - A `maxTokens` number field in the Default Provider card, backed by a **second, independent call to the existing `useSettingsSection('agent-behavior')` hook** (`ui/src/pages/settings/use-settings-section.ts`) inside `model-providers-panel.tsx` — alongside its existing `useSettingsSection('model-providers')` call for the rest of the page. `setField('contextWindow.maxTokens', value)` and that hook's own `save()` are used exactly as `agent-behavior-panel.tsx` already uses them for its sibling `chat.*` fields.
-- **Why this matters, not just where:** `agent-behavior`'s backend `write()` (`settings.handlers.ts:463`) merges `chat` only one level deep — `{ ...env.chat, ...data.chat }`. A PATCH body carrying only `{ chat: { contextWindow: { maxTokens } } }` would replace the *entire* `contextWindow` object, silently resetting `enabled`/`safetyMarginPct` to their schema defaults. `useSettingsSection` avoids this by construction — `save()` always PATCHes the full current section state (fetched whole, mutated via a deep-cloned `setField`), never a single isolated leaf — so this is only a risk if a future change hand-rolls a one-off fetch/PATCH for just this field instead of reusing the hook.
+- **Why this matters, not just where:** `agent-behavior`'s backend `write()` (`settings.handlers.ts:463`) merges `chat` only one level deep — `{ ...env.chat, ...data.chat }`. A PATCH body carrying only `{ chat: { contextWindow: { maxTokens } } }` would replace the _entire_ `contextWindow` object, silently resetting `enabled`/`safetyMarginPct` to their schema defaults. `useSettingsSection` avoids this by construction — `save()` always PATCHes the full current section state (fetched whole, mutated via a deep-cloned `setField`), never a single isolated leaf — so this is only a risk if a future change hand-rolls a one-off fetch/PATCH for just this field instead of reusing the hook.
 - `safetyMarginPct` and `enabled` are **not** exposed in this UI — they stay config-file-only (calibration/escape-hatch knobs, not something a user tunes day to day).
 
 `ContextWindowSchema.maxTokens` gains a `.min(4000)` validation floor (double `MIN_BUDGET_FLOOR`, leaving headroom for a small tool set) — rejecting a value that would make this feature unable to do anything useful, enforced both client-side (immediate feedback) and server-side (the existing Zod `patchSchema` validation in `settings.handlers.ts`, which already rejects invalid PATCH bodies with field errors).
