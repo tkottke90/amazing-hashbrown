@@ -21,6 +21,7 @@ COPY lib/shell-executor/package.json ./lib/shell-executor/package.json
 COPY lib/skills-manager/package.json ./lib/skills-manager/package.json
 COPY lib/thread-reports/package.json ./lib/thread-reports/package.json
 COPY lib/tools-manager/package.json ./lib/tools-manager/package.json
+COPY lib/workspace-reports/package.json ./lib/workspace-reports/package.json
 COPY .agents/skills/auto-update-baseline/package.json ./.agents/skills/auto-update-baseline/package.json
 
 # Copy the template file into the image
@@ -104,6 +105,9 @@ COPY --chown=appuser:appuser lib/thread-reports/dist ./lib/thread-reports/dist
 COPY --chown=appuser:appuser lib/thread-reports/templates ./lib/thread-reports/templates
 COPY --chown=appuser:appuser lib/tools-manager/package.json ./lib/tools-manager/package.json
 COPY --chown=appuser:appuser lib/tools-manager/dist ./lib/tools-manager/dist
+COPY --chown=appuser:appuser lib/workspace-reports/package.json ./lib/workspace-reports/package.json
+COPY --chown=appuser:appuser lib/workspace-reports/dist ./lib/workspace-reports/dist
+COPY --chown=appuser:appuser lib/workspace-reports/templates ./lib/workspace-reports/templates
 
 USER appuser
 EXPOSE 3000
