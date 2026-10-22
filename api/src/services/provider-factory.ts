@@ -7,7 +7,7 @@ import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 import { env, type AnyProviderConfig } from '../config/env.js';
 import { logger } from '../config/logger.js';
-import { getAzureTokenCache, type AzureTokenCache } from './azure-token-cache.js';
+import { getOidcTokenCache, type OidcTokenCache, type OidcAuthConfig } from './oidc-token-cache.js';
 
 // Temporary diagnostic instrumentation for investigating a suspected
 // tool-call extraction bug against a local OpenAI-compatible server
@@ -39,6 +39,37 @@ async function loggingFetch(input: string | URL | Request, init?: RequestInit): 
 }
 
 /**
+ * Bridges the OpenAI-Compatible Provider's `oidc` auth mode onto plain
+ * `ChatOpenAI`/the `openai` SDK, which (unlike `AzureChatOpenAI`'s lazy
+ * `azureADTokenProvider` callback) has no concept of an async token
+ * provider — `apiKey` is a static string fixed at construction. Passed as
+ * `configuration.fetch`, this wrapper awaits a (possibly cached) Access
+ * Token immediately before each request and overwrites the Authorization
+ * header the SDK already set from the harmless placeholder apiKey (see the
+ * 'oidc-managed' literal in createProviderFromConfig below) with the real
+ * bearer token.
+ *
+ * `next` is the actual fetch to delegate to once the header is set —
+ * defaults to the real global `fetch`, but the factory passes `loggingFetch`
+ * here when DEBUG_LLM_HTTP=1, so the two don't have to be mutually
+ * exclusive.
+ */
+export function createOidcAuthenticatingFetch(
+  tokenCache: Pick<OidcTokenCache, 'getToken'>,
+  config: OidcAuthConfig,
+  next: typeof fetch = fetch,
+): typeof fetch {
+  return async (input, init) => {
+    const token = await tokenCache.getToken(config);
+    const headers = new Headers(
+      init?.headers ?? (input instanceof Request ? input.headers : undefined),
+    );
+    headers.set('Authorization', `Bearer ${token}`);
+    return next(input, { ...init, headers });
+  };
+}
+
+/**
  * The sampling fields a provider/model pair will actually run with, after
  * resolving a model's own override (if any) against its provider's default.
  * `numCtx`/`topK`/`repeatPenalty` are Ollama-only — see ModelConfigSchema.
@@ -67,10 +98,11 @@ export function resolveEffectiveSampling(
   modelId: string,
 ): EffectiveSampling {
   const modelEntry = config.models?.find((m) => m.id === modelId);
-  // numCtx/topK/repeatPenalty don't exist on the Azure OpenAI Provider
-  // schema at all (see ADR-0024) — resolve them only for the three provider
-  // types that still carry them.
-  const ollamaOnlyFields = config.type === 'azure-openai' ? undefined : config;
+  // numCtx/topK/repeatPenalty don't exist on the Azure OpenAI Provider or
+  // OpenAI-Compatible Provider schemas at all (see ADR-0024) — resolve them
+  // only for the provider types that still carry them.
+  const ollamaOnlyFields =
+    config.type === 'azure-openai' || config.type === 'openai-compatible' ? undefined : config;
   return {
     temperature: modelEntry?.temperature ?? config.temperature,
     topP: modelEntry?.topP ?? config.topP,
@@ -83,8 +115,9 @@ export function resolveEffectiveSampling(
 
 export interface CreateProviderDeps {
   // Injected so tests can stub the Access Token fetch instead of making a
-  // real HTTP call. Defaults to the shared process-wide cache.
-  tokenCache?: Pick<AzureTokenCache, 'getToken'>;
+  // real HTTP call. Defaults to the shared process-wide cache. Shared by the
+  // Azure OpenAI Provider and the OpenAI-Compatible Provider's oidc mode.
+  tokenCache?: Pick<OidcTokenCache, 'getToken'>;
 }
 
 /**
@@ -107,7 +140,7 @@ export function createProviderFromConfig(
   const sampling = resolveEffectiveSampling(config, resolvedModel);
 
   if (config.type === 'azure-openai') {
-    const tokenCache = deps.tokenCache ?? getAzureTokenCache();
+    const tokenCache = deps.tokenCache ?? getOidcTokenCache();
     // Access Token acquisition/refresh is handled entirely inside this
     // lazy callback (ADR-0025) — AzureChatOpenAI calls it itself whenever
     // it's about to make a request, so this factory stays synchronous.
@@ -183,6 +216,56 @@ export function createProviderFromConfig(
         // actually lives.
         clientOptions: { timeout: config.timeoutMs, defaultHeaders: config.headers },
       });
+    case 'openai-compatible': {
+      const debugFetch = process.env.DEBUG_LLM_HTTP === '1' ? loggingFetch : undefined;
+      if (config.authMode === 'oidc') {
+        // `config.auth` is required by the schema's `.refine()` whenever
+        // authMode is 'oidc', but Zod's `.refine()` doesn't narrow the
+        // inferred static type — the `!` below is safe given that
+        // invariant (see OpenAiCompatibleProviderSchema in env.ts).
+        const tokenCache = deps.tokenCache ?? getOidcTokenCache();
+        return new ChatOpenAI({
+          model: resolvedModel,
+          // Never actually sent — the authenticating fetch wrapper below
+          // overwrites the Authorization header on every request. A
+          // non-empty placeholder is required only to satisfy the
+          // underlying SDK's "an apiKey (or OPENAI_API_KEY) must be set"
+          // construction check.
+          apiKey: 'oidc-managed',
+          timeout: config.timeoutMs,
+          temperature: sampling.temperature,
+          topP: sampling.topP,
+          modelKwargs: sampling.seed === undefined ? undefined : { seed: sampling.seed },
+          configuration: {
+            baseURL: config.baseUrl,
+            fetch: createOidcAuthenticatingFetch(
+              tokenCache,
+              { name: config.name, auth: config.auth! },
+              debugFetch ?? fetch,
+            ),
+            defaultHeaders: config.headers,
+          },
+        });
+      }
+      if (!config.apiKey) {
+        logger.warn(
+          `Provider "${config.name}" has no apiKey — will rely on OPENAI_API_KEY environment variable`,
+        );
+      }
+      return new ChatOpenAI({
+        model: resolvedModel,
+        apiKey: config.apiKey,
+        timeout: config.timeoutMs,
+        temperature: sampling.temperature,
+        topP: sampling.topP,
+        modelKwargs: sampling.seed === undefined ? undefined : { seed: sampling.seed },
+        configuration: {
+          baseURL: config.baseUrl,
+          fetch: debugFetch,
+          defaultHeaders: config.headers,
+        },
+      });
+    }
   }
 }
 
@@ -217,9 +300,10 @@ export function applyEvalDeterminism(
   seed: number,
   options: { temperature?: number } = {},
 ): AnyProviderConfig {
-  // azure-openai falls into the same else-branch as ollama/openai below —
-  // it has no seed-concept difference from openai (both use the generic
-  // modelKwargs seed passthrough), so no special-casing is needed here.
+  // azure-openai and openai-compatible both fall into the same else-branch
+  // as ollama/openai below — neither has a seed-concept difference from
+  // openai (all use the generic modelKwargs seed passthrough), so no
+  // special-casing is needed here.
   const models = config.models?.map(({ temperature: _temperature, seed: _seed, ...rest }) => rest);
   const base = { ...config, ...(models ? { models } : {}) };
 
@@ -245,7 +329,14 @@ export function describeSampling(config: AnyProviderConfig): string {
   return parts.join(', ');
 }
 
-async function fetchModelIds(provider: AnyProviderConfig): Promise<string[]> {
+interface FetchModelIdsDeps {
+  tokenCache?: Pick<OidcTokenCache, 'getToken'>;
+}
+
+async function fetchModelIds(
+  provider: AnyProviderConfig,
+  deps: FetchModelIdsDeps = {},
+): Promise<string[]> {
   // Azure OpenAI is deployment-scoped, not model-id-scoped — there is no
   // live /models call to make; the Deployment Name is the one "model"
   // (see GLOSSARY.md "Deployment Name", design doc §4.4).
@@ -268,6 +359,21 @@ async function fetchModelIds(provider: AnyProviderConfig): Promise<string[]> {
       const response = await client.models.list();
       return response.data.map((m) => m.id);
     }
+    case 'openai-compatible': {
+      // Unlike createProviderFromConfig's chat path, this function is
+      // already async, so there's no static-apiKey/lazy-token mismatch to
+      // work around here — just await the token first.
+      const apiKey =
+        provider.authMode === 'oidc'
+          ? await (deps.tokenCache ?? getOidcTokenCache()).getToken({
+              name: provider.name,
+              auth: provider.auth!,
+            })
+          : provider.apiKey;
+      const client = new OpenAI({ baseURL: provider.baseUrl, apiKey });
+      const response = await client.models.list();
+      return response.data.map((m) => m.id);
+    }
   }
 }
 
@@ -283,20 +389,31 @@ export interface RawModelDetails {
 }
 
 /**
- * Raw /models entries for openai-type providers — same client.models.list()
- * call fetchModelIds()'s openai branch already makes, but keeping the full
- * entry instead of mapping straight to `.id` so extra fields like `labels`
- * (duck-typed, since the openai SDK's response type won't declare them) are
- * available to callers like resolveVisionCapabilityFromConfig(). Best-
- * effort, matching listModels()'s convention: any failure (network error,
- * bad key, provider down) degrades to an empty array rather than throwing.
- * Returns [] immediately for any non-openai provider type, since only
- * openai-type /models responses are known to carry this extra data.
+ * Raw /models entries for openai-type and openai-compatible providers —
+ * same client.models.list() call fetchModelIds()'s openai branch already
+ * makes, but keeping the full entry instead of mapping straight to `.id` so
+ * extra fields like `labels` (duck-typed, since the openai SDK's response
+ * type won't declare them) are available to callers like
+ * resolveVisionCapabilityFromConfig(). Best-effort, matching listModels()'s
+ * convention: any failure (network error, bad key, provider down) degrades
+ * to an empty array rather than throwing. Returns [] immediately for any
+ * other provider type, since only these two providers' /models responses
+ * are known to carry this extra data.
  */
-export async function fetchModelDetails(provider: AnyProviderConfig): Promise<RawModelDetails[]> {
-  if (provider.type !== 'openai') return [];
+export async function fetchModelDetails(
+  provider: AnyProviderConfig,
+  deps: FetchModelIdsDeps = {},
+): Promise<RawModelDetails[]> {
+  if (provider.type !== 'openai' && provider.type !== 'openai-compatible') return [];
   try {
-    const client = new OpenAI({ baseURL: provider.baseUrl, apiKey: provider.apiKey });
+    const apiKey =
+      provider.type === 'openai-compatible' && provider.authMode === 'oidc'
+        ? await (deps.tokenCache ?? getOidcTokenCache()).getToken({
+            name: provider.name,
+            auth: provider.auth!,
+          })
+        : provider.apiKey;
+    const client = new OpenAI({ baseURL: provider.baseUrl, apiKey });
     const response = await client.models.list();
     return response.data as RawModelDetails[];
   } catch {
@@ -310,9 +427,12 @@ export async function fetchModelDetails(provider: AnyProviderConfig): Promise<Ra
  * specific error to the user (e.g. the chat model picker's background
  * refresh via GET /api/v1/providers).
  */
-export async function listModels(provider: AnyProviderConfig): Promise<string[]> {
+export async function listModels(
+  provider: AnyProviderConfig,
+  deps: FetchModelIdsDeps = {},
+): Promise<string[]> {
   try {
-    return await fetchModelIds(provider);
+    return await fetchModelIds(provider, deps);
   } catch {
     return [];
   }
@@ -323,8 +443,11 @@ export async function listModels(provider: AnyProviderConfig): Promise<string[]>
  * the real failure — used by POST /api/v1/providers/models, where the
  * caller (the provider modal) needs to show the user why listing failed.
  */
-export async function listModelsOrThrow(provider: AnyProviderConfig): Promise<string[]> {
-  return fetchModelIds(provider);
+export async function listModelsOrThrow(
+  provider: AnyProviderConfig,
+  deps: FetchModelIdsDeps = {},
+): Promise<string[]> {
+  return fetchModelIds(provider, deps);
 }
 
 /**
@@ -345,8 +468,11 @@ export async function listModelsOrThrow(provider: AnyProviderConfig): Promise<st
  * ("embed" appears in the id), which covers real OpenAI's embedding
  * models and every embedding model observed from Lemonade's catalog.
  */
-export async function listEmbeddingModels(provider: AnyProviderConfig): Promise<string[]> {
-  const allModels = await fetchModelIds(provider);
+export async function listEmbeddingModels(
+  provider: AnyProviderConfig,
+  deps: FetchModelIdsDeps = {},
+): Promise<string[]> {
+  const allModels = await fetchModelIds(provider, deps);
 
   // Unreachable from anywhere real in the app today — the Embeddings
   // settings panel is driven by env.embeddings.type (a separate 2-value
@@ -367,7 +493,7 @@ export async function listEmbeddingModels(provider: AnyProviderConfig): Promise<
     return allModels.filter((_, i) => isEmbedding[i]);
   }
 
-  if (provider.type === 'openai') {
+  if (provider.type === 'openai' || provider.type === 'openai-compatible') {
     return allModels.filter((id) => id.toLowerCase().includes('embed'));
   }
 
@@ -432,6 +558,7 @@ export const FALLBACK_VISION_CAPABILITIES: Record<
   openai: {},
   anthropic: {},
   'azure-openai': {},
+  'openai-compatible': {},
 };
 
 /**
@@ -462,8 +589,9 @@ export async function resolveVisionCapabilityFromConfig(
     return hasOllamaVisionCapability(client, modelId);
   }
 
-  // azure-openai falls into this same SDK-profile-based check as
-  // openai/anthropic — AzureChatOpenAI shares the same `.profile` mechanism.
+  // azure-openai and openai-compatible both fall into this same
+  // SDK-profile-based check as openai/anthropic — AzureChatOpenAI and
+  // ChatOpenAI both share the same `.profile` mechanism.
   try {
     const llm = createProviderFromConfig(providerConfig, modelId);
     return (
@@ -482,8 +610,9 @@ export async function resolveVisionCapabilityFromConfig(
  * provider name against the live env config, same fallback chain as
  * createProvider()) accepts image input. See
  * resolveVisionCapabilityFromConfig() for the actual logic. For an
- * openai-type provider, does its own one-off fetchModelDetails() call to
- * find the model's raw labels — proportionate here since this only runs
+ * openai-type or openai-compatible-type provider, does its own one-off
+ * fetchModelDetails() call to find the model's raw labels — proportionate
+ * here since this only runs
  * once per attachment-bearing turn, unlike GET /api/v1/providers's listing
  * loop (providers.route.ts), which fetches details once per provider up
  * front and passes them in directly to avoid refetching per model.
@@ -500,7 +629,7 @@ export async function resolveVisionCapability(
   }
 
   let rawDetails: RawModelDetails | undefined;
-  if (providerConfig.type === 'openai') {
+  if (providerConfig.type === 'openai' || providerConfig.type === 'openai-compatible') {
     const details = await fetchModelDetails(providerConfig);
     rawDetails = details.find((d) => d.id === modelId);
   }

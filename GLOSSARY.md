@@ -176,40 +176,44 @@ _Avoid_: Artifact manifest, script list
 
 # Provider Authentication
 
-How a configured LLM Provider authenticates its outbound requests, and the Azure OpenAI Provider's OIDC-specific credential lifecycle.
+How a configured LLM Provider authenticates its outbound requests, and the OIDC credential lifecycle shared by the Azure OpenAI Provider and the OpenAI-Compatible Provider.
 
 ## Language
 
 **Provider**:
-One configured LLM backend (`providers[]` entry) — a `name`, a `type` that selects its client implementation (`ollama`, `openai`, `anthropic`, or Azure OpenAI Provider), and whatever connection/auth fields that `type` needs.
+One configured LLM backend (`providers[]` entry) — a `name`, a `type` that selects its client implementation (`ollama`, `openai`, `anthropic`, Azure OpenAI Provider, or OpenAI-Compatible Provider), and whatever connection/auth fields that `type` needs.
 _Avoid_: Model provider, backend
 
 **Azure OpenAI Provider**:
-A Provider `type` authenticated only via OIDC/OAuth2 Client Credentials Flow rather than a static API key — the one Provider `type` this app supports OIDC for. Identified by an `endpoint`, a Deployment Name, and an `apiVersion` rather than a live model catalog.
+A Provider `type` authenticated only via OIDC/OAuth2 Client Credentials Flow rather than a static API key, and Azure-native on the wire (its requests use Azure's deployment-scoped URL shape). Identified by an `endpoint`, a Deployment Name, and an `apiVersion` rather than a live model catalog.
 _Avoid_: OIDC provider, Azure provider
 
+**OpenAI-Compatible Provider**:
+A Provider `type` using the same OpenAI-wire-compatible request shape as the plain `openai` Provider (`baseUrl` + body-level model) but — unlike `openai` — selectable between a static API key and OIDC/OAuth2 Client Credentials Flow auth via its `authMode` field. Distinct from the Azure OpenAI Provider, which is Azure-native on the wire and OIDC-only; exists for a gateway that is OIDC-authenticated without being Azure-native (e.g. an in-house LLM gateway).
+_Avoid_: generic provider, custom provider
+
 **Deployment Name**:
-An Azure OpenAI Provider's single selectable "model." Azure OpenAI is deployment-scoped rather than model-id-scoped, so this is shown as-is in place of a live model list, and doubles as the key for any per-model pricing/sampling override.
-_Avoid_: Model, model id (for this Provider type)
+An Azure OpenAI Provider's single selectable "model." Azure OpenAI is deployment-scoped rather than model-id-scoped, so this is shown as-is in place of a live model list, and doubles as the key for any per-model pricing/sampling override. The OpenAI-Compatible Provider has no Deployment Name — it uses an ordinary `defaultModel` and live model list, same as the plain `openai` Provider.
+_Avoid_: Model, model id (for the Azure OpenAI Provider)
 
 **Client Credentials**:
-The `tokenUrl`, `clientId`, `clientSecret`, `scope`, and `grantType` an Azure OpenAI Provider is registered with — distinct from the Access Token they're exchanged for.
+The `tokenUrl`, `clientId`, `clientSecret`, `scope`, and `grantType` an OIDC-authenticated Provider (the Azure OpenAI Provider, or an OpenAI-Compatible Provider in oidc mode) is registered with — distinct from the Access Token they're exchanged for.
 _Avoid_: OIDC config, credentials (ambiguous with Access Token)
 
 **Access Token**:
-The short-lived bearer credential an Azure OpenAI Provider's Client Credentials are exchanged for. Held in memory only, keyed by Provider name, never written to disk; refreshed proactively before it would be handed out expired or near-expiry.
+The short-lived bearer credential an OIDC-authenticated Provider's Client Credentials are exchanged for. Held in memory only, keyed by Provider name, never written to disk; refreshed proactively before it would be handed out expired or near-expiry. Shared by the Azure OpenAI Provider and the OpenAI-Compatible Provider in oidc mode.
 _Avoid_: Token, credential (see Client Credentials; for LLM input/output counts, see LLM Usage Token — an unrelated concept despite the shared word)
 
 **Revoke**:
-Clearing an Azure OpenAI Provider's cached Access Token without touching its stored Client Credentials, forcing re-authentication on the next use. Not a call to an IdP revocation endpoint — a client-credentials Access Token has no standard one.
+Clearing an OIDC-authenticated Provider's cached Access Token without touching its stored Client Credentials, forcing re-authentication on the next use. Not a call to an IdP revocation endpoint — a client-credentials Access Token has no standard one.
 _Avoid_: Logout, disconnect, Refresh
 
 **Rotate**:
-Replacing an Azure OpenAI Provider's `clientId`/`clientSecret` (its `tokenUrl`/`scope`/`grantType` stay as-is), validated by fetching a fresh Access Token with the new values before the change is persisted — a failed fetch rejects the whole write.
+Replacing an OIDC-authenticated Provider's `clientId`/`clientSecret` (its `tokenUrl`/`scope`/`grantType` stay as-is), validated by fetching a fresh Access Token with the new values before the change is persisted — a failed fetch rejects the whole write.
 _Avoid_: Reset, Refresh (Refresh is the automatic proactive renewal of an already-registered Access Token; Rotate is the user-initiated replacement of the Client Credentials themselves)
 
 **Custom Headers**:
-An optional, per-Provider map of static HTTP headers sent with every one of that Provider's requests, merged on top of whatever its auth sets. Applies to every Provider type, not just the Azure OpenAI Provider.
+An optional, per-Provider map of static HTTP headers sent with every one of that Provider's requests, merged on top of whatever its auth sets. Applies to every Provider type, not just the OIDC-authenticated ones.
 _Avoid_: Default headers, request headers
 
 # Thread Archiving & Sidebar Visibility

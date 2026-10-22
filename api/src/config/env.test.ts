@@ -299,6 +299,104 @@ describe('config/env', () => {
         },
       ]);
     });
+
+    it('preserves a well-formed openai-compatible/apiKey provider unchanged [unit]', () => {
+      const raw = [
+        {
+          name: 'in-house-gateway',
+          type: 'openai-compatible',
+          baseUrl: 'https://api.example.com/1.0/openai/v1',
+          defaultModel: 'gpt-5.4-mini',
+          authMode: 'apiKey',
+          apiKey: 'sk-test',
+        },
+      ];
+      expect(parseProviders(raw)).to.deep.equal(raw);
+    });
+
+    it('preserves a well-formed openai-compatible/oidc provider unchanged [unit]', () => {
+      const raw = [
+        {
+          name: 'in-house-gateway',
+          type: 'openai-compatible',
+          baseUrl: 'https://api.example.com/1.0/openai/v1',
+          defaultModel: 'gpt-5.4-mini',
+          authMode: 'oidc',
+          auth: {
+            tokenUrl: 'https://login.example.com/token',
+            clientId: 'client-id',
+            clientSecret: 'client-secret',
+            scope: 'https://api.example.com/.default',
+            grantType: 'client_credentials',
+          },
+        },
+      ];
+      expect(parseProviders(raw)).to.deep.equal(raw);
+    });
+
+    it("defaults authMode to 'apiKey' when omitted [unit]", () => {
+      const raw = [
+        {
+          name: 'in-house-gateway',
+          type: 'openai-compatible',
+          baseUrl: 'https://api.example.com/1.0/openai/v1',
+          apiKey: 'sk-test',
+        },
+      ];
+      expect(parseProviders(raw)).to.deep.equal([{ ...raw[0], authMode: 'apiKey' }]);
+    });
+
+    it("drops an openai-compatible provider with authMode 'apiKey' and no apiKey, keeping the rest of the list [unit]", () => {
+      const raw = [
+        {
+          name: 'in-house-gateway',
+          type: 'openai-compatible',
+          baseUrl: 'https://api.example.com/1.0/openai/v1',
+          authMode: 'apiKey',
+        },
+        { name: 'anthropic', type: 'anthropic' },
+      ];
+      expect(parseProviders(raw)).to.deep.equal([{ name: 'anthropic', type: 'anthropic' }]);
+    });
+
+    it("drops an openai-compatible provider with authMode 'oidc' and no auth, keeping the rest of the list [unit]", () => {
+      const raw = [
+        {
+          name: 'in-house-gateway',
+          type: 'openai-compatible',
+          baseUrl: 'https://api.example.com/1.0/openai/v1',
+          authMode: 'oidc',
+        },
+        { name: 'anthropic', type: 'anthropic' },
+      ];
+      expect(parseProviders(raw)).to.deep.equal([{ name: 'anthropic', type: 'anthropic' }]);
+    });
+
+    it('drops only the malformed model entry under an openai-compatible provider, keeping its other models [unit]', () => {
+      const raw = [
+        {
+          name: 'in-house-gateway',
+          type: 'openai-compatible',
+          baseUrl: 'https://api.example.com/1.0/openai/v1',
+          authMode: 'apiKey',
+          apiKey: 'sk-test',
+          models: [
+            { id: 'gpt-5.4-mini', temperature: 'hot' },
+            { id: 'gpt-5.4-mini', temperature: 1 },
+          ],
+        },
+      ];
+      expect(parseProviders(raw)).to.deep.equal([
+        {
+          name: 'in-house-gateway',
+          type: 'openai-compatible',
+          baseUrl: 'https://api.example.com/1.0/openai/v1',
+          authMode: 'apiKey',
+          apiKey: 'sk-test',
+          models: [{ id: 'gpt-5.4-mini', temperature: 1 }],
+        },
+      ]);
+    });
   });
 
   describe('resolveServerTimezone', () => {

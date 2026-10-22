@@ -259,6 +259,47 @@ describe('agents/error-classification', () => {
     });
   });
 
+  // The OpenAI-Compatible Provider also arrives in the same `openai` SDK
+  // wire shape, in both its apiKey and oidc auth modes — these mirror the
+  // 'openai'/'azure-openai' blocks above exactly, just dispatched via the
+  // new 'openai-compatible' provider type.
+  describe('classifyChatError — openai-compatible', () => {
+    it('classifies a 401 as auth', () => {
+      const err = new OpenAIAPIError(
+        401,
+        { code: 'invalid_api_key' },
+        'Incorrect API key',
+        new Headers(),
+      );
+      expect(classifyChatError(err, 'openai-compatible').category).to.equal('auth');
+    });
+
+    it('classifies a 429 with code insufficient_quota as billing', () => {
+      const err = new OpenAIAPIError(
+        429,
+        { code: 'insufficient_quota' },
+        'You exceeded your current quota',
+        new Headers(),
+      );
+      expect(classifyChatError(err, 'openai-compatible').category).to.equal('billing');
+    });
+
+    it('classifies a 400 with code context_length_exceeded as context_length', () => {
+      const err = new OpenAIAPIError(
+        400,
+        { code: 'context_length_exceeded' },
+        "This model's maximum context length is 8192 tokens",
+        new Headers(),
+      );
+      expect(classifyChatError(err, 'openai-compatible').category).to.equal('context_length');
+    });
+
+    it('classifies a 500 as unavailable', () => {
+      const err = new OpenAIAPIError(500, {}, 'internal error', new Headers());
+      expect(classifyChatError(err, 'openai-compatible').category).to.equal('unavailable');
+    });
+  });
+
   describe('classifyChatError — ollama', () => {
     it('classifies a 404 ResponseError as unavailable', () => {
       const err = ollamaResponseError("model 'llama9' not found, try pulling it first", 404);

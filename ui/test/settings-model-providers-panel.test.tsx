@@ -21,6 +21,7 @@ jest.mock('@/lib/toast', () => ({ showToast: jest.fn() }));
 jest.mock('@/services/providers-api', () => ({
   listProviderModels: jest.fn().mockResolvedValue([]),
   revokeProviderToken: jest.fn(),
+  testOidcToken: jest.fn(),
 }));
 
 // The panel and its Add-favorite modal read live model lists from this hook;
@@ -42,6 +43,9 @@ const mockFetch = api.fetchSettingsSection as jest.MockedFunction<typeof api.fet
 const mockPatch = api.patchSettingsSection as jest.MockedFunction<typeof api.patchSettingsSection>;
 const mockRevoke = providersApi.revokeProviderToken as jest.MockedFunction<
   typeof providersApi.revokeProviderToken
+>;
+const mockTestOidcToken = providersApi.testOidcToken as jest.MockedFunction<
+  typeof providersApi.testOidcToken
 >;
 
 const LIVE_PROVIDERS = [
@@ -301,6 +305,132 @@ describe('ModelProvidersPanel', () => {
         body as { providers: Array<{ name: string; auth?: { clientId: string } }> }
       ).providers;
       expect(providers.find((p) => p.name === 'azure')?.auth?.clientId).toEqual('id');
+    });
+  });
+
+  describe('OpenAI-compatible provider', () => {
+    const APIKEY_PROVIDER = {
+      name: 'in-house-apikey',
+      type: 'openai-compatible' as const,
+      baseUrl: 'https://api.example.com/1.0/openai/v1',
+      authMode: 'apiKey' as const,
+      apiKey: '****',
+    };
+
+    const OIDC_PROVIDER = {
+      name: 'in-house-oidc',
+      type: 'openai-compatible' as const,
+      baseUrl: 'https://api.example.com/1.0/openai/v1',
+      authMode: 'oidc' as const,
+      auth: {
+        tokenUrl: 'https://login.example.com/token',
+        clientId: 'id',
+        clientSecret: '****',
+        grantType: 'client_credentials',
+      },
+    };
+
+    const originalConfirm = global.confirm;
+    afterEach(() => {
+      global.confirm = originalConfirm;
+    });
+
+    function findRow(container: HTMLElement, name: string): HTMLElement {
+      const rows = container.querySelectorAll('[data-slot="provider-row"]');
+      return Array.from(rows).find((r) =>
+        r.querySelector('[data-slot="provider-row-name"]')?.textContent?.includes(name),
+      ) as HTMLElement;
+    }
+
+    it('renders the OpenAI-compatible type badge', async () => {
+      mockFetch.mockResolvedValue({ ...DEFAULT_DATA, providers: [APIKEY_PROVIDER] });
+      await renderLoaded();
+      expect(screen.getAllByText('OpenAI-compatible')[0]).toBeInTheDocument();
+    });
+
+    it('shows a Revoke token button only for the oidc-mode row, not the apiKey-mode row [unit]', async () => {
+      mockFetch.mockResolvedValue({
+        ...DEFAULT_DATA,
+        providers: [...DEFAULT_DATA.providers, APIKEY_PROVIDER, OIDC_PROVIDER],
+      });
+      await renderLoaded();
+      expect(screen.getAllByRole('button', { name: 'Revoke token' })).toHaveLength(1);
+    });
+
+    it('calls revokeProviderToken and shows a success toast after confirming [unit]', async () => {
+      global.confirm = jest.fn(() => true);
+      mockRevoke.mockResolvedValue(undefined);
+      mockFetch.mockResolvedValue({ ...DEFAULT_DATA, providers: [OIDC_PROVIDER] });
+      await renderLoaded();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Revoke token' }));
+
+      await waitFor(() => expect(mockRevoke).toHaveBeenCalledWith('in-house-oidc'));
+      expect(showToast).toHaveBeenCalledWith('success', 'Token revoked');
+    });
+
+    it("preserves an openai-compatible/apiKey provider's apiKey/headers when editing an unrelated field [unit]", async () => {
+      mockFetch.mockResolvedValue({ ...DEFAULT_DATA, providers: [APIKEY_PROVIDER] });
+      mockPatch.mockResolvedValue(DEFAULT_DATA);
+      const { container } = await renderLoaded();
+
+      const row = findRow(container, 'in-house-apikey');
+      const baseUrlInput = row.querySelector('#provider-baseUrl') as HTMLInputElement;
+      fireEvent.input(baseUrlInput, { target: { value: 'https://changed.example.com/v1' } });
+      fireEvent.click(within(row).getByRole('button', { name: 'Save' }));
+
+      fireEvent.click(await screen.findByText('Save changes'));
+
+      await waitFor(() => expect(mockPatch).toHaveBeenCalled());
+      const [, body] = mockPatch.mock.calls[0]!;
+      const providers = (body as { providers: Array<{ name: string; apiKey?: string }> }).providers;
+      expect(providers.find((p) => p.name === 'in-house-apikey')?.apiKey).toEqual('****');
+    });
+
+    it("preserves an openai-compatible/oidc provider's auth/headers when editing an unrelated field [unit]", async () => {
+      mockFetch.mockResolvedValue({ ...DEFAULT_DATA, providers: [OIDC_PROVIDER] });
+      mockPatch.mockResolvedValue(DEFAULT_DATA);
+      const { container } = await renderLoaded();
+
+      const row = findRow(container, 'in-house-oidc');
+      const baseUrlInput = row.querySelector('#provider-baseUrl') as HTMLInputElement;
+      fireEvent.input(baseUrlInput, { target: { value: 'https://changed.example.com/v1' } });
+      fireEvent.click(within(row).getByRole('button', { name: 'Save' }));
+
+      fireEvent.click(await screen.findByText('Save changes'));
+
+      await waitFor(() => expect(mockPatch).toHaveBeenCalled());
+      const [, body] = mockPatch.mock.calls[0]!;
+      const providers = (
+        body as { providers: Array<{ name: string; auth?: { clientId: string } }> }
+      ).providers;
+      expect(providers.find((p) => p.name === 'in-house-oidc')?.auth?.clientId).toEqual('id');
+    });
+
+    it('verifies OIDC credentials via the Get/refresh token button and shows the result [unit]', async () => {
+      mockTestOidcToken.mockResolvedValue({ expiresInSeconds: 3480 });
+      mockFetch.mockResolvedValue({ ...DEFAULT_DATA, providers: [OIDC_PROVIDER] });
+      const { container } = await renderLoaded();
+
+      const row = findRow(container, 'in-house-oidc');
+      fireEvent.click(within(row).getByRole('button', { name: /Get\/refresh token/ }));
+
+      await waitFor(() => expect(mockTestOidcToken).toHaveBeenCalled());
+      expect(mockTestOidcToken).toHaveBeenCalledWith(
+        expect.objectContaining({ providerName: 'in-house-oidc', clientId: 'id' }),
+      );
+      expect(await within(row).findByText(/Token acquired/)).toBeInTheDocument();
+    });
+
+    it('shows an error message when token verification fails [unit]', async () => {
+      mockTestOidcToken.mockRejectedValue(new Error('invalid_client'));
+      mockFetch.mockResolvedValue({ ...DEFAULT_DATA, providers: [OIDC_PROVIDER] });
+      const { container } = await renderLoaded();
+
+      const row = findRow(container, 'in-house-oidc');
+      fireEvent.click(within(row).getByRole('button', { name: /Get\/refresh token/ }));
+
+      expect(await within(row).findByText('invalid_client')).toBeInTheDocument();
     });
   });
 

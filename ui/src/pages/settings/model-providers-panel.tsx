@@ -53,7 +53,15 @@ const TYPE_LABELS: Record<string, string> = {
   openai: 'OpenAI',
   anthropic: 'Anthropic',
   'azure-openai': 'Azure OpenAI',
+  'openai-compatible': 'OpenAI-compatible',
 };
+
+// A Provider is OIDC-authenticated if it's the Azure OpenAI Provider, or an
+// OpenAI-Compatible Provider in oidc mode — this is the one that gets a
+// Revoke-token action (see GLOSSARY.md "Revoke").
+function usesOidcAuth(p: AnyProviderConfig): boolean {
+  return p.type === 'azure-openai' || (p.type === 'openai-compatible' && p.authMode === 'oidc');
+}
 
 export function ModelProvidersPanel() {
   useTitle('Settings - Model providers');
@@ -214,7 +222,7 @@ export function ModelProvidersPanel() {
                       )}
                     </div>
                     <div class="flex items-center gap-2">
-                      {p.type === 'azure-openai' && (
+                      {usesOidcAuth(p) && (
                         <Button
                           type="button"
                           variant="ghost"

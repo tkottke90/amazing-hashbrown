@@ -10,6 +10,7 @@ import {
   describeSampling,
   createProvider,
   createProviderFromConfig,
+  createOidcAuthenticatingFetch,
   resolveEffectiveSampling,
   hasOllamaVisionCapability,
   resolveVisionCapability,
@@ -18,7 +19,11 @@ import {
   listModels,
   FALLBACK_VISION_CAPABILITIES,
 } from './provider-factory.js';
-import type { ProviderConfig, AzureOpenAiProviderConfig } from '../config/env.js';
+import type {
+  ProviderConfig,
+  AzureOpenAiProviderConfig,
+  OpenAiCompatibleProviderConfig,
+} from '../config/env.js';
 
 // Minimal local HTTP server standing in for an OpenAI-compatible /models
 // endpoint — there's no sinon in this repo's toolchain and fetchModelDetails
@@ -36,6 +41,32 @@ function startModelsServer(body: unknown): Promise<{ baseUrl: string; close: () 
       const address = server.address();
       const port = typeof address === 'object' && address ? address.port : 0;
       resolve({ baseUrl: `http://127.0.0.1:${port}`, close: () => server.close() });
+    });
+  });
+}
+
+// Same shape as startModelsServer, but also records the Authorization header
+// each request arrived with — used to prove the oidc authenticating path
+// actually sends the token the stubbed cache handed back, not just that the
+// call succeeds.
+function startAuthCapturingModelsServer(
+  body: unknown,
+): Promise<{ baseUrl: string; close: () => void; capturedAuth: () => string | undefined }> {
+  return new Promise((resolve) => {
+    let lastAuth: string | undefined;
+    const server: Server = createServer((req, res) => {
+      lastAuth = req.headers.authorization;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(body));
+    });
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      resolve({
+        baseUrl: `http://127.0.0.1:${port}`,
+        close: () => server.close(),
+        capturedAuth: () => lastAuth,
+      });
     });
   });
 }
@@ -85,14 +116,40 @@ const azureConfig: AzureOpenAiProviderConfig = {
   },
 };
 
+const openaiCompatibleApiKeyConfig: OpenAiCompatibleProviderConfig = {
+  name: 'in-house-gateway',
+  type: 'openai-compatible',
+  baseUrl: 'https://api.example.com/1.0/openai/v1',
+  defaultModel: 'gpt-5.4-mini',
+  authMode: 'apiKey',
+  apiKey: 'sk-test',
+};
+
+const openaiCompatibleOidcConfig: OpenAiCompatibleProviderConfig = {
+  name: 'in-house-gateway-oidc',
+  type: 'openai-compatible',
+  baseUrl: 'https://api.example.com/1.0/openai/v1',
+  defaultModel: 'gpt-5.4-mini',
+  authMode: 'oidc',
+  auth: {
+    tokenUrl: 'https://login.example.com/token',
+    clientId: 'client-id',
+    clientSecret: 'client-secret',
+    grantType: 'client_credentials',
+  },
+};
+
 // A stub Access Token cache that never makes a real HTTP call — proves the
-// azureADTokenProvider closure wiring, not just field passthrough.
+// azureADTokenProvider/authenticating-fetch wiring, not just field
+// passthrough. Shared by azure-openai and openai-compatible/oidc tests
+// below, so it's typed against the generalized { name, auth } shape rather
+// than either concrete provider config.
 function stubTokenCache(token = 'fake-token') {
-  const calls: AzureOpenAiProviderConfig[] = [];
+  const calls: Array<{ name: string }> = [];
   return {
     calls,
     cache: {
-      getToken: async (config: AzureOpenAiProviderConfig) => {
+      getToken: async (config: { name: string }) => {
         calls.push(config);
         return token;
       },
@@ -316,6 +373,77 @@ describe('services/provider-factory', () => {
         );
       });
     });
+
+    describe('openai-compatible', () => {
+      it('returns ChatOpenAI (not AzureChatOpenAI) for authMode apiKey', () => {
+        const agent = createProviderFromConfig(openaiCompatibleApiKeyConfig);
+        expect(agent).to.be.instanceOf(ChatOpenAI);
+        expect(agent).to.not.be.instanceOf(AzureChatOpenAI);
+      });
+
+      it('passes baseUrl and apiKey through for authMode apiKey, same as the openai case', () => {
+        const agent = createProviderFromConfig(openaiCompatibleApiKeyConfig) as ChatOpenAI;
+        expect(agent.clientConfig?.baseURL).to.equal('https://api.example.com/1.0/openai/v1');
+      });
+
+      it('returns ChatOpenAI (not AzureChatOpenAI) for authMode oidc', () => {
+        const { cache } = stubTokenCache();
+        const agent = createProviderFromConfig(openaiCompatibleOidcConfig, undefined, {
+          tokenCache: cache,
+        });
+        expect(agent).to.be.instanceOf(ChatOpenAI);
+        expect(agent).to.not.be.instanceOf(AzureChatOpenAI);
+      });
+
+      it('does not throw at construction and wires a function fetch override for authMode oidc', () => {
+        const { cache } = stubTokenCache();
+        // Construction must not throw: the underlying SDK requires some
+        // non-empty apiKey (or OPENAI_API_KEY) to be set, even though the
+        // real Authorization header comes from the fetch wrapper below, not
+        // this placeholder — see createOidcAuthenticatingFetch's own test.
+        expect(() =>
+          createProviderFromConfig(openaiCompatibleOidcConfig, undefined, { tokenCache: cache }),
+        ).to.not.throw();
+        const agent = createProviderFromConfig(openaiCompatibleOidcConfig, undefined, {
+          tokenCache: cache,
+        }) as ChatOpenAI;
+        expect(agent.clientConfig?.fetch).to.be.a('function');
+      });
+
+      it("the authenticating fetch wrapper injects the cached token's Authorization header for authMode oidc", async () => {
+        const { cache, calls } = stubTokenCache('tok-from-cache');
+        const agent = createProviderFromConfig(openaiCompatibleOidcConfig, undefined, {
+          tokenCache: cache,
+        }) as ChatOpenAI;
+        const wrapped = agent.clientConfig?.fetch as typeof fetch;
+        let capturedHeaders: Headers | undefined;
+        const fakeNext: typeof fetch = async (_input, init) => {
+          capturedHeaders = new Headers(init?.headers);
+          return new Response('{}', { status: 200 });
+        };
+        // The wrapper closes over the real global `fetch` as its default
+        // `next` — reconstruct one with the fake instead by calling the
+        // exported factory directly with the same tokenCache/config, which
+        // is exactly what createProviderFromConfig does internally.
+        const testWrapper = createOidcAuthenticatingFetch(
+          cache,
+          { name: openaiCompatibleOidcConfig.name, auth: openaiCompatibleOidcConfig.auth! },
+          fakeNext,
+        );
+        await testWrapper('https://api.example.com/1.0/openai/v1/chat/completions', {});
+        expect(calls).to.have.length(1);
+        expect(calls[0]?.name).to.equal('in-house-gateway-oidc');
+        expect(capturedHeaders?.get('Authorization')).to.equal('Bearer tok-from-cache');
+        // wrapped is also a function — confirms createProviderFromConfig
+        // actually wired the same kind of wrapper into configuration.fetch.
+        expect(wrapped).to.be.a('function');
+      });
+
+      it('throws when no defaultModel and no model override', () => {
+        const noModel = { ...openaiCompatibleApiKeyConfig, defaultModel: undefined };
+        expect(() => createProviderFromConfig(noModel)).to.throw(/defaultModel/);
+      });
+    });
   });
 
   describe('headers passthrough', () => {
@@ -360,6 +488,24 @@ describe('services/provider-factory', () => {
       expect(agent.clientConfig?.defaultHeaders).to.deep.equal({ 'x-tenant-id': 'acme' });
     });
 
+    it('passes headers through to ChatOpenAI as configuration.defaultHeaders for openai-compatible/apiKey', () => {
+      const agent = createProviderFromConfig({
+        ...openaiCompatibleApiKeyConfig,
+        headers: { 'x-tenant-id': 'acme' },
+      }) as ChatOpenAI;
+      expect(agent.clientConfig?.defaultHeaders).to.deep.equal({ 'x-tenant-id': 'acme' });
+    });
+
+    it('passes headers through to ChatOpenAI as configuration.defaultHeaders for openai-compatible/oidc', () => {
+      const { cache } = stubTokenCache();
+      const agent = createProviderFromConfig(
+        { ...openaiCompatibleOidcConfig, headers: { 'x-tenant-id': 'acme' } },
+        undefined,
+        { tokenCache: cache },
+      ) as ChatOpenAI;
+      expect(agent.clientConfig?.defaultHeaders).to.deep.equal({ 'x-tenant-id': 'acme' });
+    });
+
     it('leaves headers unset for every type when not configured', () => {
       const ollama = createProviderFromConfig(ollamaConfig) as ChatOllama;
       const ollamaClient = ollama.client as unknown as { config?: { headers?: unknown } };
@@ -371,11 +517,42 @@ describe('services/provider-factory', () => {
   });
 
   describe('listModels()/fetchModelIds (private)', () => {
+    let close: (() => void) | undefined;
+    after(() => close?.());
+
     it('resolves to [deploymentName] for azure-openai without making any HTTP call', async () => {
       // azureConfig's tokenUrl/endpoint point nowhere reachable — if this
       // made a live call it would reject or hang, not resolve immediately.
       const models = await listModels(azureConfig);
       expect(models).to.deep.equal(['gpt-4o']);
+    });
+
+    it('lists models for openai-compatible/apiKey the same way as the openai case', async () => {
+      const server = await startModelsServer({
+        object: 'list',
+        data: [{ id: 'gpt-5.4-mini', object: 'model', owned_by: 'in-house' }],
+      });
+      close = server.close;
+
+      const models = await listModels({ ...openaiCompatibleApiKeyConfig, baseUrl: server.baseUrl });
+      expect(models).to.deep.equal(['gpt-5.4-mini']);
+    });
+
+    it('authenticates the live /models call with the oidc-cached token for openai-compatible/oidc', async () => {
+      const server = await startModelsServer({
+        object: 'list',
+        data: [{ id: 'gpt-5.4-mini', object: 'model', owned_by: 'in-house' }],
+      });
+      close = server.close;
+      const { cache, calls } = stubTokenCache('tok-for-models');
+
+      const models = await listModels(
+        { ...openaiCompatibleOidcConfig, baseUrl: server.baseUrl },
+        { tokenCache: cache },
+      );
+      expect(models).to.deep.equal(['gpt-5.4-mini']);
+      expect(calls).to.have.length(1);
+      expect(calls[0]?.name).to.equal('in-house-gateway-oidc');
     });
   });
 
@@ -426,6 +603,21 @@ describe('services/provider-factory', () => {
     it('resolves to undefined per field when neither the model nor the provider sets it', () => {
       expect(resolveEffectiveSampling(ollamaConfig, 'llama3')).to.deep.equal({
         temperature: undefined,
+        topP: undefined,
+        seed: undefined,
+        numCtx: undefined,
+        topK: undefined,
+        repeatPenalty: undefined,
+      });
+    });
+
+    it('resolves numCtx/topK/repeatPenalty to undefined for an openai-compatible config, same as azure-openai', () => {
+      const result = resolveEffectiveSampling(
+        { ...openaiCompatibleApiKeyConfig, temperature: 0.2 },
+        'gpt-5.4-mini',
+      );
+      expect(result).to.deep.equal({
+        temperature: 0.2,
         topP: undefined,
         seed: undefined,
         numCtx: undefined,
@@ -641,6 +833,19 @@ describe('services/provider-factory', () => {
       }
     });
 
+    it('falls back to FALLBACK_VISION_CAPABILITIES for an unknown openai-compatible model', async () => {
+      FALLBACK_VISION_CAPABILITIES['openai-compatible']['my-custom-vision-model'] = true;
+      try {
+        const result = await resolveVisionCapabilityFromConfig(
+          openaiCompatibleApiKeyConfig,
+          'my-custom-vision-model',
+        );
+        expect(result).to.equal(true);
+      } finally {
+        delete FALLBACK_VISION_CAPABILITIES['openai-compatible']['my-custom-vision-model'];
+      }
+    });
+
     it('resolves false, not a thrown error, for an unknown openai model with no fallback entry', async () => {
       // openaiConfig has an apiKey, so createProviderFromConfig succeeds; the
       // model id just isn't in any known PROFILES table or the fallback map.
@@ -748,9 +953,40 @@ describe('services/provider-factory', () => {
       expect(details.find((d) => d.id === 'text-model')?.labels).to.deep.equal(['tool-calling']);
     });
 
-    it('returns [] for a non-openai provider without making any request', async () => {
+    it('returns [] for a non-openai, non-openai-compatible provider without making any request', async () => {
       expect(await fetchModelDetails(ollamaConfig)).to.deep.equal([]);
       expect(await fetchModelDetails(anthropicConfig)).to.deep.equal([]);
+    });
+
+    it('surfaces an extra field (labels) for openai-compatible/apiKey, same as the openai case', async () => {
+      const server = await startModelsServer({
+        object: 'list',
+        data: [{ id: 'gpt-5.4-mini', object: 'model', owned_by: 'in-house', labels: ['vision'] }],
+      });
+      close = server.close;
+
+      const details = await fetchModelDetails({
+        ...openaiCompatibleApiKeyConfig,
+        baseUrl: server.baseUrl,
+      });
+      expect(details).to.have.length(1);
+      expect(details[0]?.labels).to.deep.equal(['vision']);
+    });
+
+    it('authenticates the live /models call with the oidc-cached token for openai-compatible/oidc', async () => {
+      const server = await startAuthCapturingModelsServer({
+        object: 'list',
+        data: [{ id: 'gpt-5.4-mini' }],
+      });
+      close = server.close;
+      const { cache } = stubTokenCache('tok-for-details');
+
+      const details = await fetchModelDetails(
+        { ...openaiCompatibleOidcConfig, baseUrl: server.baseUrl },
+        { tokenCache: cache },
+      );
+      expect(details).to.have.length(1);
+      expect(server.capturedAuth()).to.equal('Bearer tok-for-details');
     });
 
     it('returns [] (not throw) when the request fails', async () => {
