@@ -1,5 +1,6 @@
 import { MultiServerMCPClient } from '@langchain/mcp-adapters';
 import type { Connection } from '@langchain/mcp-adapters';
+import type { RunnableConfig } from '@langchain/core/runnables';
 import type { z } from 'zod';
 import type { McpConfigFile, McpServerConfig, RegisteredTool } from '../types.js';
 import { slugifyServerName, mcpBoundName } from './mcp-naming.js';
@@ -10,7 +11,7 @@ interface LangChainTool {
   name: string;
   description: string;
   schema: unknown;
-  invoke(args: Record<string, unknown>): Promise<unknown>;
+  invoke(args: Record<string, unknown>, config?: RunnableConfig): Promise<unknown>;
 }
 
 // One MultiServerMCPClient per enabled server, rather than a single client
@@ -110,6 +111,13 @@ function fromLangChain(tool: LangChainTool, serverName: string): RegisteredTool 
     parameters: tool.schema as z.ZodType,
     source: 'mcp',
     mcpServer: serverName,
-    execute: (args) => tool.invoke(args),
+    // callbacks: [] suppresses callback propagation on this inner invoke —
+    // this tool() wraps `execute` in a SECOND LangChain tool in
+    // mcpToolToLangChain() (chat-agent.ts), bound under boundName. Without
+    // this, the outer tool's own .invoke() and this inner one both fire
+    // their own handleToolStart/handleToolEnd against the ambient trace
+    // context, producing two spans for one real execution — see issue #353
+    // and docs/adr/0041-mcp-tool-invoke-suppresses-nested-callbacks.md.
+    execute: (args) => tool.invoke(args, { callbacks: [] }),
   };
 }

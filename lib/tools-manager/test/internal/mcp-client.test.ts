@@ -99,5 +99,35 @@ describe('mcp-client', () => {
       expect(statuses.get('broken')).to.equal('unreachable');
       expect(statuses.get('healthy')).to.equal('connected');
     });
+
+    it('suppresses callback propagation on the inner invoke, so one execute() call does not fire a duplicate trace span (#353)', async () => {
+      let received: unknown[] = [];
+      const clients = new Map([
+        [
+          'svc',
+          {
+            initializeConnections: async () => ({
+              svc: [
+                {
+                  name: 'svc-tool',
+                  description: 'a tool',
+                  schema: {},
+                  invoke: async (...args: unknown[]) => {
+                    received = args;
+                    return 'ok';
+                  },
+                },
+              ],
+            }),
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          } as any,
+        ],
+      ]);
+
+      const { tools } = await fetchAllMcpTools(clients);
+      await tools[0]!.execute({ foo: 'bar' });
+
+      expect(received).to.deep.equal([{ foo: 'bar' }, { callbacks: [] }]);
+    });
   });
 });
