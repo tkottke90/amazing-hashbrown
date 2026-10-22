@@ -1,0 +1,37 @@
+suite:
+  id: manual-tests
+  name: Manual Tests
+  purpose: >
+    Collection of tests that I came up with manually as opposed to being related to
+    a specific feature or bug. These are tests help me better understand the model's
+    behavior and capabilities. They are not meant to be comprehensive or exhaustive.
+  passingThreshold: 0
+  # generateTitleHandler calls model.invoke(prompt) directly in production —
+  # no system message at all. The `input` field above already is that exact
+  # prompt, so attaching the chat agent's harness system prompt on top would
+  # test a combination that never happens in production.
+  appliesHarnessSystemPrompt: false
+
+scenarios:
+  - id: tt-001-non-empty
+    name: Reference 
+    purpose: >
+      A blank or whitespace-only title would render as an empty sidebar row
+      — the most basic acceptance bar before anything else matters.
+    type: deterministic
+    input: >
+      Summarize the following conversation as a short, specific title (no
+      more than 6 words). Do not use quotation marks or end with
+      punctuation. Respond with only the title, nothing else.
+
+
+      Conversation:
+      User: How do I set up a multi-stage Docker build for a Node.js app?
+      Assistant: Use a build stage with the full node image to compile, then
+      copy only the built artifacts into a slim runtime image based on
+      node:alpine. This keeps your final image small since dev dependencies
+      and build tools never ship.
+    match: regex
+    expected: '\S'
+
+  
