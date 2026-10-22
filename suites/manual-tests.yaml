@@ -14,7 +14,7 @@ suite:
 
 scenarios:
   - id: tt-001-non-empty
-    name: Reference 
+    name: Reference
     purpose: >
       A blank or whitespace-only title would render as an empty sidebar row
       — the most basic acceptance bar before anything else matters.
@@ -33,5 +33,3 @@ scenarios:
       and build tools never ship.
     match: regex
     expected: '\S'
-
-  

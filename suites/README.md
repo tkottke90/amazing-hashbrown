@@ -19,10 +19,10 @@ This project practices **Evaluation-Driven Development**. The house rules (full 
 
 1. Before implementing a new LLM-facing feature, write a failing scenario first
    (`npm run eval:new -- --suite <id>`), then implement until it passes.
-2. When filing a bug involving LLM output, add a failing scenario that reproduces it *before*
+2. When filing a bug involving LLM output, add a failing scenario that reproduces it _before_
    the fix — id it `bug-<issue#>-<short-description>` (e.g. `bug-42-agent-refuses-tool-call`).
 3. A bug fix isn't mergeable until its reproduction scenario is green.
-4. `purpose` is required on every scenario and must answer *why this matters*, not just restate
+4. `purpose` is required on every scenario and must answer _why this matters_, not just restate
    what it tests (see "Writing `purpose`" below).
 5. **You probably can't run the eval yourself.** An agent session typically has no network path
    to the local providers (Ollama, Lemonade, etc.) these suites target. Write the scenario, then
@@ -34,20 +34,20 @@ This project practices **Evaluation-Driven Development**. The house rules (full 
 This is the decision that most determines whether a scenario will actually measure what you
 intend. Six of the seven types bind no tools at all — only `tool-call` and `tool-sequence` do.
 
-| Type | Use when... | Binds tools? |
-|---|---|---|
-| `deterministic` | The correct output is a fixed string, substring, or pattern. | No |
-| `semantic` | ⚠️ Avoid by default — see below. | No |
-| `llm-judge` | You're scoring *prose quality* in a response that is already past any tool-calling decision. | No |
-| `structured` | The production code path calls `model.withStructuredOutput()` and you're checking fields of the parsed object. | No |
-| `tool-call` | You're asserting *which tool* the model calls (and optionally its arguments) on a fresh turn. | Yes |
-| `tool-sequence` | Same as `tool-call`, but the model needs to react to a conversation already in progress. | Yes |
-| `human` | The judgment is subjective enough that no rubric should stand in for a person. | No |
+| Type            | Use when...                                                                                                    | Binds tools? |
+| --------------- | -------------------------------------------------------------------------------------------------------------- | ------------ |
+| `deterministic` | The correct output is a fixed string, substring, or pattern.                                                   | No           |
+| `semantic`      | ⚠️ Avoid by default — see below.                                                                               | No           |
+| `llm-judge`     | You're scoring _prose quality_ in a response that is already past any tool-calling decision.                   | No           |
+| `structured`    | The production code path calls `model.withStructuredOutput()` and you're checking fields of the parsed object. | No           |
+| `tool-call`     | You're asserting _which tool_ the model calls (and optionally its arguments) on a fresh turn.                  | Yes          |
+| `tool-sequence` | Same as `tool-call`, but the model needs to react to a conversation already in progress.                       | Yes          |
+| `human`         | The judgment is subjective enough that no rubric should stand in for a person.                                 | No           |
 
 **The rule that matters most: if a scenario is really about which tool gets called, it must be
 `tool-call`/`tool-sequence`, never `llm-judge`.** `llm-judge` never binds tools — the model is
 only ever asked to produce a text reply, so a rubric like "did the model pick the right command"
-is literally unobservable to it. Worse, a tool-trained model that *wants* to call a tool it
+is literally unobservable to it. Worse, a tool-trained model that _wants_ to call a tool it
 hasn't been given will sometimes fall back to writing a pseudo-tool-call as prose (e.g.
 `<wiki_locate><query>...</query></wiki_locate>`), which tanks a judge score for reasons that have
 nothing to do with your rubric. Two real examples from this repo:
@@ -56,7 +56,7 @@ nothing to do with your rubric. Two real examples from this repo:
   safe command" — both models under test scored 0 by refusing, because the judged behavior (which
   command gets picked) can't be observed without a bound tool. Restructured as `tool-call` with
   three `contains` arg checks at `minScore: 0.3` (any one of `cat`/`head`/`tail` passes).
-- `wiki-navigation.yaml`'s `wnav-005` seeds two prior tool turns (`wiki_locate` *and* `wiki_search`
+- `wiki-navigation.yaml`'s `wnav-005` seeds two prior tool turns (`wiki_locate` _and_ `wiki_search`
   both returning no match) specifically so the model has no reasonable tool call left to want —
   only then is the honest-prose judgment it's actually testing clean of that confound.
 
@@ -71,7 +71,7 @@ the embedding backend actually separates correct from incorrect answers for your
 
 `purpose` isn't a restatement of the scenario's mechanics — it's an audit trail. The dominant
 style in this codebase cites the specific auto-eval round/date/model that surfaced the problem,
-what the scenario originally asserted if it changed, and *why* it was reshaped rather than just
+what the scenario originally asserted if it changed, and _why_ it was reshaped rather than just
 deleted when a prior assertion turned out to be wrong. This is what makes a scenario legible
 months later without re-deriving the reasoning from scratch. Compare:
 
@@ -110,9 +110,10 @@ registered).
 ```yaml
 type: deterministic
 input: 'How do I configure a provider?'
-match: contains   # contains | exact | regex
+match: contains # contains | exact | regex
 expected: 'provider'
 ```
+
 `exact` trims both sides before comparing; `regex` does `new RegExp(expected).test(output)`.
 
 ### `semantic` (avoid by default — see above)
@@ -121,21 +122,23 @@ expected: 'provider'
 type: semantic
 input: '...'
 expectedSimilarTo: '...'
-minSimilarity: 0.75   # default
+minSimilarity: 0.75 # default
 ```
+
 Requires `embeddings.enabled: true` in `config/config.yaml`.
 
 ### `llm-judge`
 
 ```yaml
 type: llm-judge
-input: '...'          # or turns: / steps: — see below
+input: '...' # or turns: / steps: — see below
 rubric: >
   Free text describing what a correct answer looks like.
-minScore: 7            # 0-10 scale, default 7
+minScore: 7 # 0-10 scale, default 7
 ```
-**Write a hard gate before any weighted scoring**, e.g. *"Score no higher than 3/10 if X is
-missing. Given X is met, score 8+ — extra polish is a bonus, not a requirement."* An unweighted
+
+**Write a hard gate before any weighted scoring**, e.g. _"Score no higher than 3/10 if X is
+missing. Given X is met, score 8+ — extra polish is a bonus, not a requirement."_ An unweighted
 multi-criteria rubric with a bare `minScore` is a confirmed source of flaky straddling scores (the
 same compliant answer scoring 8 one run and 6 the next). Anchor the rubric the way `wnav-005`
 does, not the way an unweighted checklist does.
@@ -145,13 +148,14 @@ does, not the way an unweighted checklist does.
 ```yaml
 type: structured
 input: '...'
-outputSchema: { ... }      # JSON-Schema-shaped object, passed to withStructuredOutput()
+outputSchema: { ... } # JSON-Schema-shaped object, passed to withStructuredOutput()
 fieldChecks:
-  - path: shouldWrite        # dot-path into the parsed object
-    match: equals            # equals | contains | exists | oneOf | gte | between
+  - path: shouldWrite # dot-path into the parsed object
+    match: equals # equals | contains | exists | oneOf | gte | between
     value: true
-minScore: 1                  # fraction of fieldChecks that must pass; default 1
+minScore: 1 # fraction of fieldChecks that must pass; default 1
 ```
+
 `match` semantics: `equals` is `===`; `contains` is substring or array-includes; `exists` checks
 not-`undefined`/`null` (no `value` needed); `oneOf` checks `value` (an array) includes the actual
 value; `gte` is `actual >= value` (both numbers); `between` takes `value: [min, max]` inclusive.
@@ -161,16 +165,17 @@ value; `gte` is `actual >= value` (both numbers); `between` takes `value: [min, 
 ```yaml
 type: tool-call
 input: '...'
-tool: wiki_search            # a '!' prefix negates: '!create_tasks' passes iff NOT called
-argChecks:                   # optional — same match semantics as structured's fieldChecks
+tool: wiki_search # a '!' prefix negates: '!create_tasks' passes iff NOT called
+argChecks: # optional — same match semantics as structured's fieldChecks
   - path: query
     match: exists
-minScore: 1                   # fraction of argChecks that must pass; default 1
-gatedSkill: create-skill       # optional — see "Skill-gated tools" below
-responseRubric: >              # optional — judges the SAME turn's reply text too
+minScore: 1 # fraction of argChecks that must pass; default 1
+gatedSkill: create-skill # optional — see "Skill-gated tools" below
+responseRubric: > # optional — judges the SAME turn's reply text too
   ...
-responseMinScore: 7             # default 7 if responseRubric is set
+responseMinScore: 7 # default 7 if responseRubric is set
 ```
+
 With no `argChecks`, the tool-name match alone decides pass/fail — this is the common case, not
 an edge case. For a negated `!tool`, `argChecks` are ignored (nothing to check on the passing
 path). `responseRubric` exists for cases the tool assertion alone can't see — e.g. a negated
@@ -179,7 +184,7 @@ do the thing anyway.
 
 ### `tool-sequence`
 
-Like `tool-call`, but *requires* `turns` or `steps` (at least one) — it always represents a
+Like `tool-call`, but _requires_ `turns` or `steps` (at least one) — it always represents a
 conversation already in progress. Use this whenever a scenario needs the model to react to a
 prior tool result rather than cold-starting; use `tool-call` if there's nothing to seed.
 
@@ -192,9 +197,10 @@ turns:
     result: { imageBase64: '...', mimeType: 'image/png' }
 tool: upload_image
 argChecks: [...]
-responseRubric: '...'       # optional — can additionally see the final turn's tool call(s),
-responseMinScore: 7          # not just its reply text, unlike tool-call's responseRubric
+responseRubric: '...' # optional — can additionally see the final turn's tool call(s),
+responseMinScore: 7 # not just its reply text, unlike tool-call's responseRubric
 ```
+
 A `!tool` negation is also supported here (and only here — `tool-call` scenarios have no seeded
 history that would make abstaining the correct answer).
 
@@ -205,14 +211,15 @@ type: human
 input: '...'
 rubric: '...'
 scoring:
-  type: choice   # or: scale (options carry a numeric `value` + top-level `passingScore`)
+  type: choice # or: scale (options carry a numeric `value` + top-level `passingScore`)
   options:
     - { key: 'y', label: 'Yes — clear', pass: true }
     - { key: 'n', label: 'No', pass: false }
-status: pending   # pending | approved | rejected
+status: pending # pending | approved | rejected
 ```
+
 Under `--ci` these are recorded `skipped` (no model call) and excluded from pass-rate. Otherwise
-the model *is* invoked, but scoring is deferred to `npm run eval:review` (interactive, or
+the model _is_ invoked, but scoring is deferred to `npm run eval:review` (interactive, or
 `--detached` for a manifest an agent can fill in, submitted with `eval:submit`).
 
 ## `input`, `turns`, and `steps` — which types support which
@@ -224,15 +231,15 @@ the schema enforces this per-type in `lib/evaluations/src/schemas.ts`, with the
 cross-field combination rules checked separately in `validateScenarioTurns` (`lib/evaluations/src/loader.ts`,
 called right after the YAML parses):
 
-| Type | `input` | `turns` | `steps` |
-|---|---|---|---|
-| `deterministic` | ✅ optional | ✅ optional | ✅ optional |
-| `semantic` | ✅ **required** | ❌ | ❌ |
-| `llm-judge` | ✅ optional | ✅ optional | ✅ optional |
-| `structured` | ✅ **required** | ❌ | ❌ |
-| `tool-call` | ✅ **required** | ❌ | ❌ |
+| Type            | `input`                              | `turns`     | `steps`     |
+| --------------- | ------------------------------------ | ----------- | ----------- |
+| `deterministic` | ✅ optional                          | ✅ optional | ✅ optional |
+| `semantic`      | ✅ **required**                      | ❌          | ❌          |
+| `llm-judge`     | ✅ optional                          | ✅ optional | ✅ optional |
+| `structured`    | ✅ **required**                      | ❌          | ❌          |
+| `tool-call`     | ✅ **required**                      | ❌          | ❌          |
 | `tool-sequence` | ✅ optional (never sufficient alone) | ✅ optional | ✅ optional |
-| `human` | ✅ **required** | ❌ | ❌ |
+| `human`         | ✅ **required**                      | ❌          | ❌          |
 
 For the three types that support seeding (`deterministic`, `llm-judge`, `tool-sequence`), the
 valid combinations are:
@@ -258,19 +265,21 @@ alternative to `tool-call`, it's the seeded version of it.
 
 ### `turns` vs. `steps` mechanics
 
-**`turns`** — a *fixed* list that becomes conversation history before one real model call at the
+**`turns`** — a _fixed_ list that becomes conversation history before one real model call at the
 end:
+
 - `{ user: '...' }` → a `HumanMessage`.
 - `{ tool: 'name', args: {...}, result: {...} }` → a synthetic tool-call + tool-result pair.
   **`result` must be an object**, not a bare string — wrap a real tool's string output as
   `{ text: '...' }` by convention.
 - The list **must open with a `{ user }` entry** — some providers' chat templates reject a
   conversation that opens with an assistant tool call.
-- A reply can be placed *after* the tool turn it's actually answering, rather than always first.
+- A reply can be placed _after_ the tool turn it's actually answering, rather than always first.
 
-**`steps`** — an ordered list of *live* turns: the model is actually invoked once per step (the
+**`steps`** — an ordered list of _live_ turns: the model is actually invoked once per step (the
 last step is scored by the scenario's own top-level fields, exactly like a plain `input`
 scenario). Each step is `{ user: '...', assert?: {...}, mocks?: { toolName: {...} } }`:
+
 - `assert` is optional per intermediate step, checked independently (narrowed to that type's
   fields, e.g. just `{ tool, argChecks, minScore }` for tool-sequence).
 - If a step's live response includes a tool call, `mocks` (keyed by tool name) supplies the
@@ -303,21 +312,21 @@ with `gatedSkill: create-skill` set). Two gotchas learned the hard way there:
 
 ```yaml
 suite:
-  id: wiki-navigation             # used by --suite <id>, NOT the filename
+  id: wiki-navigation # used by --suite <id>, NOT the filename
   name: Wiki Navigation
   purpose: >
     Why this suite exists — what regression it guards against.
-  passingThreshold: 0.8            # fraction of scored scenarios that must pass; default 1
+  passingThreshold: 0.8 # fraction of scored scenarios that must pass; default 1
   appliesHarnessSystemPrompt: true # default true — see below
   simulatedUserInstructions: '...' # optional, see below
-  simulatedNow: '2026-10-22T00:00:00Z'  # optional, pins ambient-context's "now"
-  simulatedTask: { title: '...', description: '...', outcome: '...', plan: [...] }      # optional
+  simulatedNow: '2026-10-22T00:00:00Z' # optional, pins ambient-context's "now"
+  simulatedTask: { title: '...', description: '...', outcome: '...', plan: [...] } # optional
   simulatedWorkspace: { name: '...', location: '...', goal: '...', description: '...' } # optional
 ```
 
 - **`appliesHarnessSystemPrompt: false`** — most suites implicitly test the live chat agent, so
   the real `buildSystemPrompt()` output is attached before invoking the model, matching
-  production. Set this `false` *only* when the suite's `input` fields are already the exact
+  production. Set this `false` _only_ when the suite's `input` fields are already the exact
   production prompt of a **different** code path that never sees the chat harness prompt at all
   (e.g. `after-agent.yaml`, `thread-titles.yaml` — `generateTitleHandler` calls `model.invoke(prompt)`
   directly, with no system message). Don't add this to a new suite unless that exact condition
@@ -327,14 +336,14 @@ suite:
   the model to ignore them (see `instruction-hierarchy.yaml`).
 - **`simulatedTask` / `simulatedWorkspace`** — mutually exclusive (a scenario models either an
   automated task run or a workspace-chat turn, never both — they're different production
-  agent-builder call sites). Setting one renders the *real* `buildTaskContextBlock()` /
+  agent-builder call sites). Setting one renders the _real_ `buildTaskContextBlock()` /
   `buildWorkspaceContextBlock()` as the system prompt's context block, so the suite can't drift
   from what production actually sends. These are suite-level, not per-scenario — every scenario
   in the file gets the same simulated context.
 
 ## Negative controls and held-out companions
 
-Several suites exist purely to catch a guard that's become *too broad*, not just one that's too
+Several suites exist purely to catch a guard that's become _too broad_, not just one that's too
 narrow — e.g. `instruction-hierarchy-preferences.yaml` is a positive control for
 `instruction-hierarchy.yaml`. Others are reworded companions used to tell "the rule generalizes"
 from "the model memorized the worked example" — e.g. `wiki-navigation-heldout.yaml`. If you're
@@ -346,7 +355,7 @@ stops measuring what it exists to measure.
 
 - **`lib/rlm`'s internal reasoning loop has no eval coverage, by design.** Any corpus seeded via
   `turns` is visible context to the top-level model, so delegation to a sub-tool can never be
-  *forced* or *observed* at this level — from the model's own perspective, reading the seeded
+  _forced_ or _observed_ at this level — from the model's own perspective, reading the seeded
   text directly is simply the better move. `rlm.yaml`'s `rlm-002`/`rlm-003` were deliberately
   restructured from "must call `rlm_query`" assertions into "answer accurately, either path is
   fine" `llm-judge` scenarios once four independent models converged on exactly that. See
