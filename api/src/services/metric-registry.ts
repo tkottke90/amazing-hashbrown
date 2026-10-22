@@ -6,6 +6,8 @@ import { projectCountMetric } from './metrics/project-count.metric.js';
 import { totalInferenceSpendMetric } from './metrics/total-inference-spend.metric.js';
 import { workspaceListMetric } from './metrics/workspace-list.metric.js';
 import { versionInfoMetric } from './metrics/version-info.metric.js';
+import { usageByProviderTokensMetric } from './metrics/usage-by-provider-tokens.metric.js';
+import { usageByModelTokensMetric } from './metrics/usage-by-model-tokens.metric.js';
 
 const metrics = new Map<string, Metric>();
 
@@ -30,6 +32,8 @@ registerMetric(projectCountMetric);
 registerMetric(totalInferenceSpendMetric);
 registerMetric(workspaceListMetric);
 registerMetric(versionInfoMetric);
+registerMetric(usageByProviderTokensMetric);
+registerMetric(usageByModelTokensMetric);
 
 /**
  * Resolves a `source: 'system'` widget's live value in place (ADR-0011) —

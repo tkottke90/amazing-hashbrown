@@ -21,6 +21,12 @@ const mockCreate = api.createWidget as jest.MockedFunction<typeof api.createWidg
 const mockUpdate = api.updateWidget as jest.MockedFunction<typeof api.updateWidget>;
 const mockUpdateRaw = api.updateWidgetRaw as jest.MockedFunction<typeof api.updateWidgetRaw>;
 const mockValidate = api.validateWidgetRaw as jest.MockedFunction<typeof api.validateWidgetRaw>;
+const mockFetchMetricCatalog = api.fetchMetricCatalog as jest.MockedFunction<
+  typeof api.fetchMetricCatalog
+>;
+const mockPreviewMetricValue = api.previewMetricValue as jest.MockedFunction<
+  typeof api.previewMetricValue
+>;
 
 const WIDGET: MarkdownWidget = {
   id: 'w1',
@@ -580,6 +586,111 @@ describe('WidgetDrawer', () => {
 
       await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
       expect(onSaved).toHaveBeenCalled();
+    });
+  });
+
+  describe('system metric preview', () => {
+    async function selectSystemMetric(metricId: string) {
+      fireEvent.click(screen.getByTestId('widget-type-picker'));
+      fireEvent.click(await screen.findByRole('option', { name: 'System' }));
+      fireEvent.click(screen.getByTestId('widget-metric-picker'));
+      fireEvent.click(await screen.findByTestId(`widget-metric-option-${metricId}`));
+    }
+
+    it('renders a big-number preview for the selected metric [unit]', async () => {
+      mockFetchMetricCatalog.mockResolvedValue([
+        { id: 'workspace-count', label: 'Workspace Count', displayType: 'big-number' },
+      ]);
+      mockPreviewMetricValue.mockResolvedValue({
+        displayType: 'big-number',
+        value: 3,
+        unit: 'workspaces',
+      });
+      renderDrawer(
+        <WidgetDrawer
+          mode="add"
+          dashboardId="default"
+          onSaved={jest.fn()}
+          trigger={<button>Add</button>}
+        />,
+      );
+
+      await selectSystemMetric('workspace-count');
+
+      const preview = await screen.findByTestId('widget-metric-preview');
+      expect(preview).toHaveTextContent('3');
+      expect(preview).toHaveTextContent('workspaces');
+    });
+
+    it('renders a markdown preview for the selected metric [unit]', async () => {
+      mockFetchMetricCatalog.mockResolvedValue([
+        { id: 'workspace-list', label: 'Workspace List', displayType: 'markdown' },
+      ]);
+      mockPreviewMetricValue.mockResolvedValue({
+        displayType: 'markdown',
+        content: '_No workspaces yet._',
+      });
+      renderDrawer(
+        <WidgetDrawer
+          mode="add"
+          dashboardId="default"
+          onSaved={jest.fn()}
+          trigger={<button>Add</button>}
+        />,
+      );
+
+      await selectSystemMetric('workspace-list');
+
+      const preview = await screen.findByTestId('widget-metric-preview');
+      expect(preview).toHaveTextContent('No workspaces yet.');
+    });
+
+    it('renders a pie chart preview for the selected metric [unit]', async () => {
+      mockFetchMetricCatalog.mockResolvedValue([
+        {
+          id: 'usage-by-provider-tokens',
+          label: 'Token Usage by Provider',
+          displayType: 'pie-graph',
+        },
+      ]);
+      mockPreviewMetricValue.mockResolvedValue({
+        displayType: 'pie-graph',
+        labels: ['anthropic', 'openai'],
+        values: [1, 1],
+      });
+      renderDrawer(
+        <WidgetDrawer
+          mode="add"
+          dashboardId="default"
+          onSaved={jest.fn()}
+          trigger={<button>Add</button>}
+        />,
+      );
+
+      await selectSystemMetric('usage-by-provider-tokens');
+
+      const preview = await screen.findByTestId('widget-metric-preview');
+      await waitFor(() => expect(preview.querySelectorAll('svg path')).toHaveLength(2));
+    });
+
+    it('shows the preview error message when previewMetricValue rejects [unit]', async () => {
+      mockFetchMetricCatalog.mockResolvedValue([
+        { id: 'workspace-count', label: 'Workspace Count', displayType: 'big-number' },
+      ]);
+      mockPreviewMetricValue.mockRejectedValue(new Error('boom'));
+      renderDrawer(
+        <WidgetDrawer
+          mode="add"
+          dashboardId="default"
+          onSaved={jest.fn()}
+          trigger={<button>Add</button>}
+        />,
+      );
+
+      await selectSystemMetric('workspace-count');
+
+      const preview = await screen.findByTestId('widget-metric-preview');
+      await waitFor(() => expect(preview).toHaveTextContent('boom'));
     });
   });
 });

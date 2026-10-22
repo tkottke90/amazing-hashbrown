@@ -198,7 +198,7 @@ _Avoid_: OIDC config, credentials (ambiguous with Access Token)
 
 **Access Token**:
 The short-lived bearer credential an Azure OpenAI Provider's Client Credentials are exchanged for. Held in memory only, keyed by Provider name, never written to disk; refreshed proactively before it would be handed out expired or near-expiry.
-_Avoid_: Token, credential (see Client Credentials)
+_Avoid_: Token, credential (see Client Credentials; for LLM input/output counts, see LLM Usage Token — an unrelated concept despite the shared word)
 
 **Revoke**:
 Clearing an Azure OpenAI Provider's cached Access Token without touching its stored Client Credentials, forcing re-authentication on the next use. Not a call to an IdP revocation endpoint — a client-credentials Access Token has no standard one.
@@ -255,6 +255,16 @@ _Avoid_: Stale window, cleanup window
 **Show Archived** (toggle):
 The board/Inbox control that, toggled on, reveals both Archived Tasks and Aged-Out Tasks back into their normal view in one combined pass. Resets to off on every page load — never remembered across sessions, the same convention this app already uses for other page-level display toggles (e.g. Dashboard's Edit Mode).
 _Avoid_: View all, archive filter, done filter
+
+# LLM Usage & Cost Tracking
+
+How many tokens an LLM call consumes, and what that costs — tracked per provider and model from this app's own observability data.
+
+## Language
+
+**LLM Usage Token**:
+One unit of input or output text a single LLM call consumes or produces, counted per provider and model and the basis for every cost estimate this app computes. Unrelated to Access Token's bearer credential, despite the shared word "token."
+_Avoid_: Token (see Access Token — different concept, same word)
 
 # Task Files
 
