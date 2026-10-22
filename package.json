@@ -22,7 +22,7 @@
     "better-sqlite3": "12.11.1"
   },
   "scripts": {
-    "dev:api": "npm run build:libs && CONFIG_DIR='../config' npm run dev --workspace api",
+    "dev:api": "npm run build:libs && CONFIG_DIR='../config' COMMIT_SHA=$(git rev-parse HEAD) APP_VERSION=$(node -p \"require('./package.json').version\") npm run dev --workspace api",
     "dev:ui": "npm run dev --workspace ui",
     "dev:docs": "npm run dev --workspace docs-site",
     "build:libs": "npm run build --workspace lib/inference-adapter && npm run build --workspace lib/amazing-hashbrown-widgets && npm run build --workspace lib/llm-common-types && npm run build --workspace lib/observability && npm run build --workspace lib/llm-wiki && npm run build --workspace lib/rlm && npm run build --workspace lib/tools-manager && npm run build --workspace lib/evaluations && npm run build --workspace lib/thread-reports && npm run build --workspace lib/workspace-reports && npm run build --workspace lib/preact-dialog && npm run build --workspace lib/shell-executor && npm run build --workspace lib/skills-manager && npm run build --workspace lib/playwrite-test-runner",

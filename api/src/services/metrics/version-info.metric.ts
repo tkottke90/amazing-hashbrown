@@ -15,7 +15,7 @@ function baseContent(): string {
   const version = process.env['APP_VERSION'] ?? 'unknown';
   const sha = process.env['COMMIT_SHA'] ?? 'unknown';
   const shortSha = sha === 'unknown' ? sha : sha.slice(0, 7);
-  return `**Version:** ${version} (\`${shortSha}\`)\n[Repository](${REPO_URL})`;
+  return `**Version:** ${version} (\`${shortSha}\`)\n\n[Repository](${REPO_URL})`;
 }
 
 export const versionInfoMetric: Metric = {
@@ -24,7 +24,7 @@ export const versionInfoMetric: Metric = {
   displayType: 'markdown',
   async resolve({ checkForUpdates, fetchImpl }) {
     const base = baseContent();
-    const staticFallback = `${base}\n[View Releases](${RELEASES_URL})`;
+    const staticFallback = `${base}\n\n[View Releases](${RELEASES_URL})`;
 
     if (!checkForUpdates) return { displayType: 'markdown', content: staticFallback };
 
@@ -42,7 +42,7 @@ export const versionInfoMetric: Metric = {
         latestVersion !== currentVersion
           ? `⬆️ Newer version available: **${release.tag_name}** (released ${release.published_at.slice(0, 10)}) — [View Release](${release.html_url})`
           : '✅ Up to date';
-      return { displayType: 'markdown', content: `${base}\n${notice}` };
+      return { displayType: 'markdown', content: `${base}\n\n${notice}` };
     } catch {
       // Never surface the failure — fall back to the static link.
       return { displayType: 'markdown', content: staticFallback };
