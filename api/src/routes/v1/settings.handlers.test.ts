@@ -601,6 +601,66 @@ describe('routes/v1/settings.handlers', () => {
       });
     });
 
+    it('PATCH agent-behavior rejects chat.contextWindow.maxTokens below its floor [unit]', async () => {
+      const config = makeConfig(tmpDir);
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
+
+      const result = await patchSettingsSectionHandler(
+        'agent-behavior',
+        { chat: { contextWindow: { maxTokens: 1000 } } },
+        config,
+        makeEnv(),
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      );
+
+      expect(result.ok).to.equal(false);
+      if (result.ok) throw new Error('unreachable');
+      expect(result.status).to.equal(400);
+      // zod's .flatten().fieldErrors only keys by the top-level patchSchema
+      // segment — a failure nested at chat.contextWindow.maxTokens surfaces
+      // as `chat`, the same single error slot the UI's chat card already
+      // reads via fieldErrors.value['chat'].
+      expect(result.fieldErrors?.chat).to.be.an('array').with.length.greaterThan(0);
+    });
+
+    it('PATCH agent-behavior writes chat.mcpToolStub.enabled [unit]', async () => {
+      const config = makeConfig(tmpDir);
+      const {
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      } = makeSideEffects();
+
+      const result = await patchSettingsSectionHandler(
+        'agent-behavior',
+        { chat: { mcpToolStub: { enabled: false } } },
+        config,
+        makeEnv(),
+        loadAgentInstructions,
+        invalidateChatAgent,
+        seedProviderCosts,
+        reloadTrackerRegistry,
+      );
+
+      expect(result.ok).to.equal(true);
+      const written = readYaml(tmpDir);
+      expect(written.chat).to.deep.equal({
+        showErrorMessages: false,
+        codeBlockWrap: false,
+        sidebarRetentionDays: 7,
+        mcpToolStub: { enabled: false },
+      });
+    });
+
     it('PATCH agent-behavior writes taskBoard.doneRetentionDays [unit]', async () => {
       const config = makeConfig(tmpDir);
       const {

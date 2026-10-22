@@ -174,6 +174,41 @@ describe('ModelProvidersPanel', () => {
     await waitFor(() => expect(screen.getByText(/No providers configured/)).toBeInTheDocument());
   });
 
+  describe('context budget (agent-behavior section composed into this page)', () => {
+    const AGENT_BEHAVIOR_DATA = { chat: { contextWindow: { maxTokens: 32000 } } };
+
+    beforeEach(() => {
+      mockFetch.mockImplementation((slug: string) =>
+        Promise.resolve(slug === 'agent-behavior' ? AGENT_BEHAVIOR_DATA : DEFAULT_DATA),
+      );
+    });
+
+    it('renders the current maxTokens value from the agent-behavior section', async () => {
+      await renderLoaded();
+      const input = screen.getByLabelText('Context budget (tokens)') as HTMLInputElement;
+      expect(input.value).toBe('32000');
+    });
+
+    it('saving sends two separate PATCHes — model-providers first, then agent-behavior with the new maxTokens', async () => {
+      mockPatch.mockImplementation((slug: string) =>
+        Promise.resolve(slug === 'agent-behavior' ? AGENT_BEHAVIOR_DATA : DEFAULT_DATA),
+      );
+      await renderLoaded();
+
+      const input = screen.getByLabelText('Context budget (tokens)') as HTMLInputElement;
+      fireEvent.input(input, { target: { value: '50000' } });
+      fireEvent.click(await screen.findByText('Save changes'));
+
+      await waitFor(() => expect(mockPatch.mock.calls.length).toBe(2));
+      expect(mockPatch.mock.calls[0]![0]).toBe('model-providers');
+      expect(mockPatch.mock.calls[1]![0]).toBe('agent-behavior');
+      const agentBehaviorBody = mockPatch.mock.calls[1]![1] as {
+        chat: { contextWindow: { maxTokens: number } };
+      };
+      expect(agentBehaviorBody.chat.contextWindow.maxTokens).toBe(50000);
+    });
+  });
+
   describe('Azure OpenAI provider', () => {
     const AZURE_PROVIDER = {
       name: 'azure',
