@@ -159,9 +159,11 @@ export function classifyChatError(
   switch (providerType) {
     case 'anthropic':
       return { category: classifyAnthropicError(source), message };
-    // Azure OpenAI's errors arrive in the same `openai` SDK wire shape.
+    // Azure OpenAI and the OpenAI-Compatible Provider (both auth modes)
+    // all arrive in the same `openai` SDK wire shape.
     case 'openai':
     case 'azure-openai':
+    case 'openai-compatible':
       return { category: classifyOpenAIError(source), message };
     case 'ollama':
       return { category: classifyOllamaError(source), message };

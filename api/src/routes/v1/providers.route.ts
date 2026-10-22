@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { env, type ProviderConfig } from '../../config/env.js';
+import { env, type AnyProviderConfig } from '../../config/env.js';
 import {
   listModels,
   listModelsOrThrow,
@@ -11,7 +11,17 @@ import {
 import { unmaskApiKey } from './settings.handlers.js';
 import { resolveAvailableFavorites } from '../../services/favorite-models.js';
 import { OllamaEmbeddingProvider, OpenAIEmbeddingProvider } from '@tkottke90/llm-wiki/providers';
-import { getAzureTokenCache } from '../../services/azure-token-cache.js';
+import { getOidcTokenCache } from '../../services/oidc-token-cache.js';
+
+// Shared by the revoke and test-oidc-token endpoints below: a Provider is
+// OIDC-authenticated if it's the Azure OpenAI Provider, or an
+// OpenAI-Compatible Provider in oidc mode.
+function usesOidcAuth(provider: AnyProviderConfig): boolean {
+  return (
+    provider.type === 'azure-openai' ||
+    (provider.type === 'openai-compatible' && provider.authMode === 'oidc')
+  );
+}
 
 export const providersRouter = Router();
 
@@ -23,7 +33,7 @@ providersRouter.get('/', async (_req, res) => {
       // openai-type provider with N models doesn't refetch its entire
       // /models list N times just to read each one's labels.
       const rawDetailsById =
-        p.type === 'openai'
+        p.type === 'openai' || p.type === 'openai-compatible'
           ? new Map((await fetchModelDetails(p)).map((d) => [d.id, d]))
           : new Map<string, RawModelDetails>();
       const pricingMap = new Map((p.models ?? []).map((m) => [m.id, m]));
@@ -73,6 +83,15 @@ interface ListModelsBody {
   // When set, filters the result to embedding-capable models instead of
   // returning every model the provider has (see listEmbeddingModels).
   capability?: 'embedding';
+  // Only meaningful for type === 'openai-compatible' — selects between the
+  // apiKey field above and the Client Credentials fields below for this
+  // live, possibly-unsaved model-list fetch.
+  authMode?: 'apiKey' | 'oidc';
+  tokenUrl?: string;
+  clientId?: string;
+  clientSecret?: string;
+  scope?: string;
+  grantType?: string;
 }
 
 // The ollama/openai/@anthropic-ai SDKs each throw a differently-shaped
@@ -148,13 +167,30 @@ function describeModelListError(err: unknown): string {
 // of swallowed into an empty list, since the modal needs to tell the user
 // why loading failed.
 providersRouter.post('/models', async (req, res) => {
-  const { type, baseUrl, apiKey, name, source, capability } = req.body as ListModelsBody;
+  const {
+    type,
+    baseUrl,
+    apiKey,
+    name,
+    source,
+    capability,
+    authMode,
+    tokenUrl,
+    clientId,
+    clientSecret,
+    scope,
+    grantType,
+  } = req.body as ListModelsBody;
 
-  // Deliberately still a 3-value allow-list, not 4: the provider modal
-  // never probes a live model list for 'azure-openai' (no model picker for
-  // that type — see the design doc §4.4/GLOSSARY.md "Deployment Name"), so
-  // nothing should ever call this endpoint with that type.
-  if (type !== 'ollama' && type !== 'openai' && type !== 'anthropic') {
+  // 4-value allow-list: 'azure-openai' is still deliberately excluded — the
+  // provider modal never probes a live model list for it (no model picker
+  // for that type — see the design doc §4.4/GLOSSARY.md "Deployment Name").
+  if (
+    type !== 'ollama' &&
+    type !== 'openai' &&
+    type !== 'anthropic' &&
+    type !== 'openai-compatible'
+  ) {
     res.status(400).json({ ok: false, error: 'Unknown provider type.' });
     return;
   }
@@ -164,26 +200,64 @@ providersRouter.post('/models', async (req, res) => {
     return;
   }
 
-  // apiKey arrives masked ('****') when the caller was seeded from a saved
-  // config's GET response and the user hasn't retyped it — resolve back
-  // to the real stored key, same as the settings PATCH handler. `name`
-  // (a saved provider) and `source: 'embeddings'` (the embeddings
-  // section's own key) are the two places a stored key can come from. A
-  // saved provider found by name might be an Azure OpenAI Provider (no
-  // apiKey field at all) — typed loosely here since `type?: string` is
-  // optional on this shared shape, so a lookup that lands on one simply
-  // has no apiKey to resolve against.
-  const stored: { type?: string; apiKey?: string } | undefined = name
+  // apiKey/clientSecret arrive masked ('****') when the caller was seeded
+  // from a saved config's GET response and the user hasn't retyped them —
+  // resolve back to the real stored value, same as the settings PATCH
+  // handler. `name` (a saved provider) and `source: 'embeddings'` (the
+  // embeddings section's own key) are the two places a stored value can
+  // come from.
+  const stored: AnyProviderConfig | { apiKey?: string } | undefined = name
     ? env.providers.find((p) => p.name === name)
     : source === 'embeddings'
       ? { apiKey: env.embeddings.apiKey }
       : undefined;
-  const resolvedApiKey = unmaskApiKey(
-    apiKey,
-    stored?.type === 'azure-openai' ? undefined : stored?.apiKey,
-  );
 
-  const provider: ProviderConfig = { name: name ?? '', type, baseUrl, apiKey: resolvedApiKey };
+  const storedApiKey =
+    stored && 'type' in stored
+      ? stored.type === 'openai-compatible' && stored.authMode === 'apiKey'
+        ? stored.apiKey
+        : stored.type === 'azure-openai' || stored.type === 'openai-compatible'
+          ? undefined
+          : stored.apiKey
+      : stored?.apiKey;
+  const resolvedApiKey = unmaskApiKey(apiKey, storedApiKey);
+
+  const storedClientSecret =
+    stored && 'type' in stored
+      ? stored.type === 'azure-openai'
+        ? stored.auth.clientSecret
+        : stored.type === 'openai-compatible' && stored.authMode === 'oidc'
+          ? stored.auth?.clientSecret
+          : undefined
+      : undefined;
+  const resolvedClientSecret = unmaskApiKey(clientSecret, storedClientSecret);
+
+  let provider: AnyProviderConfig;
+  if (type === 'openai-compatible' && authMode === 'oidc') {
+    provider = {
+      name: name ?? '',
+      type: 'openai-compatible',
+      baseUrl: baseUrl ?? '',
+      authMode: 'oidc',
+      auth: {
+        tokenUrl: tokenUrl ?? '',
+        clientId: clientId ?? '',
+        clientSecret: resolvedClientSecret,
+        scope,
+        grantType: grantType ?? 'client_credentials',
+      },
+    };
+  } else if (type === 'openai-compatible') {
+    provider = {
+      name: name ?? '',
+      type: 'openai-compatible',
+      baseUrl: baseUrl ?? '',
+      authMode: 'apiKey',
+      apiKey: resolvedApiKey,
+    };
+  } else {
+    provider = { name: name ?? '', type, baseUrl, apiKey: resolvedApiKey };
+  }
 
   try {
     const models =
@@ -244,19 +318,71 @@ providersRouter.post('/embeddings/test', async (req, res) => {
   }
 });
 
-// Revoke: clears the cached Access Token for an Azure OpenAI Provider only —
-// no config write, no IdP call (ADR-0026). Rotate (replacing clientId/
-// clientSecret) goes through the normal settings PATCH flow instead; see
-// settings.handlers.ts's model-providers slug.
+interface TestOidcTokenBody {
+  // Resolves a masked ('****') clientSecret against this saved provider's
+  // stored secret — set when editing an existing OIDC-authenticated
+  // provider; omitted for a brand-new, unsaved one (nothing to resolve
+  // against, so a masked/empty secret there is simply a real auth failure).
+  providerName?: string;
+  tokenUrl?: string;
+  clientId?: string;
+  clientSecret?: string;
+  scope?: string;
+  grantType?: string;
+}
+
+// Verifies OIDC Client Credentials from inside the provider-edit modal,
+// before Save — a one-off fetch-and-discard (OidcTokenCache.testToken never
+// touches the persistent cache), so it works for a provider that doesn't
+// exist yet and never leaves a stray cache entry. Shared by both
+// OIDC-authenticated provider types (the Azure OpenAI Provider, and the
+// OpenAI-Compatible Provider in oidc mode).
+providersRouter.post('/test-oidc-token', async (req, res) => {
+  const { providerName, tokenUrl, clientId, clientSecret, scope, grantType } =
+    req.body as TestOidcTokenBody;
+
+  const stored = providerName ? env.providers.find((p) => p.name === providerName) : undefined;
+  const storedClientSecret =
+    stored && usesOidcAuth(stored)
+      ? stored.type === 'azure-openai'
+        ? stored.auth.clientSecret
+        : stored.type === 'openai-compatible'
+          ? stored.auth?.clientSecret
+          : undefined
+      : undefined;
+  const resolvedClientSecret = unmaskApiKey(clientSecret, storedClientSecret);
+
+  try {
+    const { expiresInSeconds } = await getOidcTokenCache().testToken({
+      tokenUrl: tokenUrl ?? '',
+      clientId: clientId ?? '',
+      clientSecret: resolvedClientSecret,
+      scope,
+      grantType: grantType ?? 'client_credentials',
+    });
+    res.json({ ok: true, expiresInSeconds });
+  } catch (err) {
+    res.status(502).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed to verify credentials.',
+    });
+  }
+});
+
+// Revoke: clears the cached Access Token for an OIDC-authenticated Provider
+// only (the Azure OpenAI Provider, or an OpenAI-Compatible Provider in oidc
+// mode) — no config write, no IdP call (ADR-0026). Rotate (replacing
+// clientId/clientSecret) goes through the normal settings PATCH flow
+// instead; see settings.handlers.ts's model-providers slug.
 providersRouter.post('/:name/revoke', (req, res) => {
   const { name } = req.params;
   const provider = env.providers.find((p) => p.name === name);
 
-  if (!provider || provider.type !== 'azure-openai') {
-    res.status(404).json({ ok: false, error: `Azure OpenAI provider "${name}" not found.` });
+  if (!provider || !usesOidcAuth(provider)) {
+    res.status(404).json({ ok: false, error: `OIDC-authenticated provider "${name}" not found.` });
     return;
   }
 
-  getAzureTokenCache().revoke(name);
+  getOidcTokenCache().revoke(name);
   res.json({ ok: true });
 });

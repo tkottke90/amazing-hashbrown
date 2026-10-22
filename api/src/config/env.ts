@@ -94,9 +94,10 @@ export const ClientCredentialsSchema = z.object({
 export type ClientCredentials = z.infer<typeof ClientCredentialsSchema>;
 
 // A separate schema, not more optional fields on ProviderSchema above — see
-// ADR-0024. OIDC auth is scoped to exactly this provider type (GLOSSARY.md
-// "Azure OpenAI Provider"); the other three types never gain `auth`/OIDC
-// fields. Azure OpenAI is deployment-scoped rather than model-id-scoped, so
+// ADR-0024. OIDC auth is also available on the OpenAI-Compatible Provider
+// below (via `authMode`); `ollama`/`openai`/`anthropic` never gain
+// `auth`/OIDC fields. Azure OpenAI is deployment-scoped rather than
+// model-id-scoped, so
 // `deploymentName` is this provider's one "model" (see GLOSSARY.md
 // "Deployment Name") — there is no `defaultModel`/`baseUrl`/`apiKey` here.
 export const AzureOpenAiProviderSchema = z.object({
@@ -120,13 +121,65 @@ export const AzureOpenAiProviderSchema = z.object({
 
 export type AzureOpenAiProviderConfig = z.infer<typeof AzureOpenAiProviderSchema>;
 
-// `providers[]`'s actual element type: the existing ProviderSchema or the
-// Azure OpenAI Provider's own schema — a union rather than a Zod
-// discriminatedUnion, since every consumer already hand-narrows on `type`
-// itself (see ADR-0024/the design doc §3 for why a true discriminated union
-// buys nothing here).
-export const AnyProviderSchema = z.union([ProviderSchema, AzureOpenAiProviderSchema]);
-export type AnyProviderConfig = ProviderConfig | AzureOpenAiProviderConfig;
+// The OpenAI-Compatible Provider: same OpenAI-wire-compatible request shape
+// as the plain `openai` Provider (baseUrl + body-level model), but —
+// unlike `openai` — selectable between a static API key and OIDC/OAuth2
+// Client Credentials Flow auth via `authMode`. Distinct from the Azure
+// OpenAI Provider, which is Azure-native on the wire and OIDC-only. See
+// docs/superpowers/specs/2026-10-22-openai-compatible-oidc-provider-design.md.
+//
+// Defined as a plain object first, then wrapped in `.refine()` separately —
+// `.refine()` returns a ZodEffects, which has no `.omit()`, and
+// parseOpenAiCompatibleProvider below needs to omit `models` the same way
+// parseAzureOpenAiProvider does.
+const OpenAiCompatibleProviderObjectSchema = z.object({
+  name: z.string(),
+  type: z.literal('openai-compatible'),
+  baseUrl: z.string(),
+  defaultModel: z.string().optional(),
+  authMode: z.enum(['apiKey', 'oidc']).default('apiKey'),
+  apiKey: z.string().optional(), // required when authMode === 'apiKey'
+  auth: ClientCredentialsSchema.optional(), // required when authMode === 'oidc'
+  headers: z.record(z.string(), z.string()).optional(),
+  models: z.array(ModelConfigSchema).optional(),
+  maxConcurrency: z.number().int().optional(),
+  timeoutMs: z.number().int().optional(),
+  temperature: z.number().optional(),
+  topP: z.number().optional(),
+  seed: z.number().int().optional(),
+});
+
+function hasRequiredAuthForMode(v: {
+  authMode: 'apiKey' | 'oidc';
+  apiKey?: string;
+  auth?: unknown;
+}) {
+  return v.authMode === 'apiKey' ? v.apiKey !== undefined : v.auth !== undefined;
+}
+
+export const OpenAiCompatibleProviderSchema = OpenAiCompatibleProviderObjectSchema.refine(
+  hasRequiredAuthForMode,
+  {
+    message:
+      "openai-compatible provider requires 'apiKey' when authMode is 'apiKey', or 'auth' when authMode is 'oidc'",
+    path: ['authMode'],
+  },
+);
+
+export type OpenAiCompatibleProviderConfig = z.infer<typeof OpenAiCompatibleProviderSchema>;
+
+// `providers[]`'s actual element type: the existing ProviderSchema or one of
+// the two independently-shaped OIDC-capable Provider schemas — a union
+// rather than a Zod discriminatedUnion, since every consumer already
+// hand-narrows on `type` itself (see ADR-0024/the design doc §3 for why a
+// true discriminated union buys nothing here).
+export const AnyProviderSchema = z.union([
+  ProviderSchema,
+  AzureOpenAiProviderSchema,
+  OpenAiCompatibleProviderSchema,
+]);
+export type AnyProviderConfig =
+  ProviderConfig | AzureOpenAiProviderConfig | OpenAiCompatibleProviderConfig;
 
 // A user-pinned provider/model pair, surfaced at the top of the chat
 // Provider menu (issue #137). An ordered list rather than a Record — a
@@ -217,14 +270,45 @@ function parseAzureOpenAiProvider(
   return [{ ...base.data, ...(models ? { models } : {}) }];
 }
 
+// `.refine()` (hasRequiredAuthForMode) can't be applied through `.omit()` —
+// it's re-checked by hand here after the plain-object parse succeeds, same
+// "drop and warn" behavior as every other malformed-provider case in this
+// file.
+function parseOpenAiCompatibleProvider(
+  rest: Record<string, unknown>,
+  rawModels: unknown,
+): OpenAiCompatibleProviderConfig[] {
+  const base = OpenAiCompatibleProviderObjectSchema.omit({ models: true }).safeParse(rest);
+  if (!base.success) {
+    warnDroppedProvider(rest, base.error.issues);
+    return [];
+  }
+  if (!hasRequiredAuthForMode(base.data)) {
+    // Re-run the fully refined schema (including `models`, unlike `base`
+    // above) purely to get a real ZodError describing the authMode
+    // mismatch, for the same warn-and-drop shape every other malformed
+    // provider case in this file uses.
+    const refineCheck = OpenAiCompatibleProviderSchema.safeParse(rest);
+    warnDroppedProvider(rest, refineCheck.success ? [] : refineCheck.error.issues);
+    return [];
+  }
+  const models = parseProviderModels(rawModels, base.data.name);
+  return [{ ...base.data, ...(models ? { models } : {}) }];
+}
+
 export function parseProviders(raw: unknown): AnyProviderConfig[] {
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((entry): AnyProviderConfig[] => {
     if (typeof entry !== 'object' || entry === null) return [];
     const { models: rawModels, ...rest } = entry as Record<string, unknown>;
-    return (rest as { type?: unknown }).type === 'azure-openai'
-      ? parseAzureOpenAiProvider(rest, rawModels)
-      : parseStandardProvider(rest, rawModels);
+    switch ((rest as { type?: unknown }).type) {
+      case 'azure-openai':
+        return parseAzureOpenAiProvider(rest, rawModels);
+      case 'openai-compatible':
+        return parseOpenAiCompatibleProvider(rest, rawModels);
+      default:
+        return parseStandardProvider(rest, rawModels);
+    }
   });
 }
 

@@ -14,6 +14,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { KeyValueList } from '@/components/key-value-list';
 import { listProviderModels } from '@/services/providers-api';
+import { OidcClientCredentialsFields } from './oidc-client-credentials-fields';
 import type { JSX } from 'preact';
 
 export interface ProviderConfig {
@@ -57,7 +58,31 @@ export interface AzureOpenAiProviderConfig {
   models?: unknown[];
 }
 
-export type AnyProviderConfig = ProviderConfig | AzureOpenAiProviderConfig;
+// The OpenAI-Compatible Provider — same OpenAI-wire-compatible shape as
+// ProviderConfig above (baseUrl + body-level model), but with a selectable
+// authMode instead of always assuming an apiKey. See GLOSSARY.md
+// "OpenAI-Compatible Provider".
+export interface OpenAiCompatibleProviderConfig {
+  name: string;
+  type: 'openai-compatible';
+  baseUrl: string;
+  defaultModel?: string;
+  authMode: 'apiKey' | 'oidc';
+  apiKey?: string;
+  auth?: {
+    tokenUrl: string;
+    clientId: string;
+    clientSecret?: string;
+    scope?: string;
+    grantType: string;
+  };
+  maxConcurrency?: number;
+  models?: unknown[];
+  headers?: Record<string, string>;
+}
+
+export type AnyProviderConfig =
+  ProviderConfig | AzureOpenAiProviderConfig | OpenAiCompatibleProviderConfig;
 
 interface ProviderModalProps {
   mode: 'add' | 'edit';
@@ -97,6 +122,18 @@ interface ProviderFormProps {
 const initialAzure = (initial: AnyProviderConfig | undefined) =>
   initial?.type === 'azure-openai' ? initial : undefined;
 
+// The Client Credentials an existing provider was saved with — the Azure
+// OpenAI Provider's `auth` is always present; the OpenAI-Compatible
+// Provider's only when it's in oidc mode. Used to seed the shared
+// OidcClientCredentialsFields regardless of which of the two provider
+// types `initial` actually is.
+const initialOidcAuth = (initial: AnyProviderConfig | undefined) =>
+  initial?.type === 'azure-openai'
+    ? initial.auth
+    : initial?.type === 'openai-compatible' && initial.authMode === 'oidc'
+      ? initial.auth
+      : undefined;
+
 function ProviderForm({ mode, initial, onSave, openCount }: ProviderFormProps) {
   const { close } = useDialog();
 
@@ -116,10 +153,16 @@ function ProviderForm({ mode, initial, onSave, openCount }: ProviderFormProps) {
   const endpoint = useSignal(initialAzure(initial)?.endpoint ?? '');
   const deploymentName = useSignal(initialAzure(initial)?.deploymentName ?? '');
   const apiVersion = useSignal(initialAzure(initial)?.apiVersion ?? '');
-  const tokenUrl = useSignal(initialAzure(initial)?.auth.tokenUrl ?? '');
-  const clientId = useSignal(initialAzure(initial)?.auth.clientId ?? '');
-  const clientSecret = useSignal(initialAzure(initial)?.auth.clientSecret ?? '');
-  const scope = useSignal(initialAzure(initial)?.auth.scope ?? '');
+
+  // Shared by the Azure OpenAI Provider form and the OpenAI-Compatible
+  // Provider's oidc-mode form (see initialOidcAuth above).
+  const authMode = useSignal<'apiKey' | 'oidc'>(
+    initial?.type === 'openai-compatible' ? initial.authMode : 'apiKey',
+  );
+  const tokenUrl = useSignal(initialOidcAuth(initial)?.tokenUrl ?? '');
+  const clientId = useSignal(initialOidcAuth(initial)?.clientId ?? '');
+  const clientSecret = useSignal(initialOidcAuth(initial)?.clientSecret ?? '');
+  const scope = useSignal(initialOidcAuth(initial)?.scope ?? '');
 
   const models = useSignal<string[]>([]);
   const modelsLoading = useSignal(false);
@@ -142,6 +185,18 @@ function ProviderForm({ mode, initial, onSave, openCount }: ProviderFormProps) {
         baseUrl: baseUrl.value.trim() || undefined,
         apiKey: apiKey.value || undefined,
         name: mode === 'edit' ? initial?.name : undefined,
+        // Only meaningful (and only sent) for openai-compatible/oidc — a
+        // live model-list fetch for that combination authenticates with
+        // these instead of apiKey.
+        ...(type.value === 'openai-compatible' && authMode.value === 'oidc'
+          ? {
+              authMode: 'oidc' as const,
+              tokenUrl: tokenUrl.value.trim(),
+              clientId: clientId.value.trim(),
+              clientSecret: clientSecret.value || undefined,
+              scope: scope.value.trim() || undefined,
+            }
+          : {}),
       });
     } catch (err) {
       modelsError.value = err instanceof Error ? err.message : 'Failed to load models.';
@@ -174,6 +229,33 @@ function ProviderForm({ mode, initial, onSave, openCount }: ProviderFormProps) {
           scope: scope.value.trim() || undefined,
           grantType: initialAzure(initial)?.auth.grantType ?? 'client_credentials',
         },
+        headers: headers.value,
+        // This form has no fields for it — carry the existing value through
+        // unchanged so editing other fields here can't silently wipe it.
+        models: initial?.models,
+      });
+      close();
+      return;
+    }
+    if (type.value === 'openai-compatible') {
+      onSave({
+        name: name.value.trim(),
+        type: 'openai-compatible',
+        baseUrl: baseUrl.value.trim(),
+        defaultModel: defaultModel.value.trim() || undefined,
+        authMode: authMode.value,
+        apiKey: authMode.value === 'apiKey' ? apiKey.value || undefined : undefined,
+        auth:
+          authMode.value === 'oidc'
+            ? {
+                tokenUrl: tokenUrl.value.trim(),
+                clientId: clientId.value.trim(),
+                clientSecret: clientSecret.value || undefined,
+                scope: scope.value.trim() || undefined,
+                grantType: initialOidcAuth(initial)?.grantType ?? 'client_credentials',
+              }
+            : undefined,
+        maxConcurrency: Number(maxConcurrency.value) || 1,
         headers: headers.value,
         // This form has no fields for it — carry the existing value through
         // unchanged so editing other fields here can't silently wipe it.
@@ -231,6 +313,7 @@ function ProviderForm({ mode, initial, onSave, openCount }: ProviderFormProps) {
             <SelectItem value="openai">openai</SelectItem>
             <SelectItem value="anthropic">anthropic</SelectItem>
             <SelectItem value="azure-openai">Azure OpenAI</SelectItem>
+            <SelectItem value="openai-compatible">OpenAI-compatible</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -247,16 +330,57 @@ function ProviderForm({ mode, initial, onSave, openCount }: ProviderFormProps) {
             />
           </div>
 
-          <div class="space-y-1.5">
-            <Label htmlFor="provider-apiKey">API key</Label>
-            <Input
-              id="provider-apiKey"
-              type="password"
-              value={apiKey.value}
-              onInput={(e) => (apiKey.value = (e.target as HTMLInputElement).value)}
-              placeholder={mode === 'edit' ? 'Leave blank to keep unchanged' : ''}
-            />
-          </div>
+          {type.value === 'openai-compatible' ? (
+            <>
+              <div class="space-y-1.5">
+                <Label htmlFor="provider-authMode">Auth mode</Label>
+                <Select
+                  value={authMode.value}
+                  onValueChange={(v) => (authMode.value = v as typeof authMode.value)}
+                >
+                  <SelectTrigger id="provider-authMode">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="apiKey">API key</SelectItem>
+                    <SelectItem value="oidc">OIDC Client Credentials</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {authMode.value === 'apiKey' ? (
+                <div class="space-y-1.5">
+                  <Label htmlFor="provider-apiKey">API key</Label>
+                  <Input
+                    id="provider-apiKey"
+                    type="password"
+                    value={apiKey.value}
+                    onInput={(e) => (apiKey.value = (e.target as HTMLInputElement).value)}
+                    placeholder={mode === 'edit' ? 'Leave blank to keep unchanged' : ''}
+                  />
+                </div>
+              ) : (
+                <OidcClientCredentialsFields
+                  mode={mode}
+                  providerName={mode === 'edit' ? initial?.name : undefined}
+                  tokenUrl={tokenUrl}
+                  clientId={clientId}
+                  clientSecret={clientSecret}
+                  scope={scope}
+                />
+              )}
+            </>
+          ) : (
+            <div class="space-y-1.5">
+              <Label htmlFor="provider-apiKey">API key</Label>
+              <Input
+                id="provider-apiKey"
+                type="password"
+                value={apiKey.value}
+                onInput={(e) => (apiKey.value = (e.target as HTMLInputElement).value)}
+                placeholder={mode === 'edit' ? 'Leave blank to keep unchanged' : ''}
+              />
+            </div>
+          )}
 
           <div class="space-y-1.5">
             <Label htmlFor="provider-defaultModel">Default model</Label>
@@ -332,47 +456,14 @@ function ProviderForm({ mode, initial, onSave, openCount }: ProviderFormProps) {
             />
           </div>
 
-          <div class="space-y-3 rounded-md border p-3">
-            <p class="text-sm font-medium">Client Credentials</p>
-            <div class="space-y-1.5">
-              <Label htmlFor="provider-tokenUrl">Token URL</Label>
-              <Input
-                id="provider-tokenUrl"
-                value={tokenUrl.value}
-                onInput={(e) => (tokenUrl.value = (e.target as HTMLInputElement).value)}
-                placeholder="https://login.microsoftonline.com/<tenant>/oauth2/v2.0/token"
-                required
-              />
-            </div>
-            <div class="space-y-1.5">
-              <Label htmlFor="provider-clientId">Client ID</Label>
-              <Input
-                id="provider-clientId"
-                value={clientId.value}
-                onInput={(e) => (clientId.value = (e.target as HTMLInputElement).value)}
-                required
-              />
-            </div>
-            <div class="space-y-1.5">
-              <Label htmlFor="provider-clientSecret">Client secret</Label>
-              <Input
-                id="provider-clientSecret"
-                type="password"
-                value={clientSecret.value}
-                onInput={(e) => (clientSecret.value = (e.target as HTMLInputElement).value)}
-                placeholder={mode === 'edit' ? 'Leave blank to keep unchanged' : ''}
-              />
-            </div>
-            <div class="space-y-1.5">
-              <Label htmlFor="provider-scope">Scope</Label>
-              <Input
-                id="provider-scope"
-                value={scope.value}
-                onInput={(e) => (scope.value = (e.target as HTMLInputElement).value)}
-                placeholder="https://cognitiveservices.azure.com/.default"
-              />
-            </div>
-          </div>
+          <OidcClientCredentialsFields
+            mode={mode}
+            providerName={mode === 'edit' ? initial?.name : undefined}
+            tokenUrl={tokenUrl}
+            clientId={clientId}
+            clientSecret={clientSecret}
+            scope={scope}
+          />
         </>
       )}
 

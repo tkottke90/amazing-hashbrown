@@ -17,6 +17,9 @@ import {
   GithubTrackerSchema,
   WorkspacesSchema,
   type AnyProviderConfig,
+  type AzureOpenAiProviderConfig,
+  type OpenAiCompatibleProviderConfig,
+  type ClientCredentials,
   type FavoriteModel,
   type CostEntry,
   type RLMConfig,
@@ -24,7 +27,7 @@ import {
 } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
 import { describeCredential, validateCredentialValue } from '../../config/credential-value.js';
-import { getAzureTokenCache } from '../../services/azure-token-cache.js';
+import { getOidcTokenCache } from '../../services/oidc-token-cache.js';
 
 // ---- HandlerResult (mirrors artifacts.handlers.ts) ----------------------------
 
@@ -99,6 +102,23 @@ export function unmaskApiKey(
 ): string | undefined {
   if (incoming === MASK) return stored;
   return incoming;
+}
+
+// A Provider is OIDC-authenticated if it's the Azure OpenAI Provider, or an
+// OpenAI-Compatible Provider in oidc mode — shared by the model-providers
+// slug's get/validate/write below, which mask/unmask/Rotate-validate
+// `auth.clientSecret` for these instead of the plain `apiKey` every other
+// provider type uses. A type predicate (not just a boolean) so every call
+// site below gets `.auth` narrowed to present, instead of needing its own
+// `!`/`?` against the OpenAI-Compatible Provider's optional `auth` field
+// (Zod's `.refine()` enforces it's set when authMode is 'oidc', but doesn't
+// narrow the inferred static type).
+function usesOidcAuth(
+  p: AnyProviderConfig,
+): p is
+  | AzureOpenAiProviderConfig
+  | (Omit<OpenAiCompatibleProviderConfig, 'auth'> & { authMode: 'oidc'; auth: ClientCredentials }) {
+  return p.type === 'azure-openai' || (p.type === 'openai-compatible' && p.authMode === 'oidc');
 }
 
 // A credential field (git-credentials/trackers github token) may be unset,
@@ -330,7 +350,7 @@ const SLUG_MAP: Record<string, SlugDef> = {
   'model-providers': {
     get: (env) => ({
       providers: env.providers.map((p) =>
-        p.type === 'azure-openai'
+        usesOidcAuth(p)
           ? { ...p, auth: { ...p.auth, clientSecret: maskApiKey(p.auth.clientSecret) } }
           : { ...p, apiKey: maskApiKey(p.apiKey) },
       ),
@@ -343,12 +363,13 @@ const SLUG_MAP: Record<string, SlugDef> = {
       favoriteModels: z.array(FavoriteModelSchema).optional(),
     }),
     // Async: beyond the existing favorites cross-check, a submitted
-    // azure-openai entry whose clientId/clientSecret actually changed (a
-    // real Rotate) is validated by fetching a fresh Access Token with the
-    // new values *before* the write runs — a failure rejects the whole
-    // PATCH instead of persisting credentials that don't work (ADR-0026).
-    // A successful fetch also seeds the token cache, so write() below
-    // never needs to re-fetch.
+    // OIDC-authenticated entry (azure-openai, or openai-compatible/oidc)
+    // whose clientId/clientSecret actually changed (a real Rotate) is
+    // validated by fetching a fresh Access Token with the new values
+    // *before* the write runs — a failure rejects the whole PATCH instead
+    // of persisting credentials that don't work (ADR-0026). A successful
+    // fetch also seeds the token cache, so write() below never needs to
+    // re-fetch.
     validate: async (v, env): Promise<Record<string, string[]> | null> => {
       const data = v as { providers?: AnyProviderConfig[]; favoriteModels?: FavoriteModel[] };
       if (data.providers === undefined && data.favoriteModels === undefined) return null;
@@ -366,16 +387,16 @@ const SLUG_MAP: Record<string, SlugDef> = {
       if (data.providers !== undefined) {
         const storedByName = new Map(env.providers.map((p) => [p.name, p]));
         for (const p of data.providers) {
-          if (p.type !== 'azure-openai') continue;
+          if (!usesOidcAuth(p)) continue;
           const stored = storedByName.get(p.name);
-          const storedAuth = stored?.type === 'azure-openai' ? stored.auth : undefined;
+          const storedAuth = stored && usesOidcAuth(stored) ? stored.auth : undefined;
           const resolvedSecret = unmaskApiKey(p.auth.clientSecret, storedAuth?.clientSecret);
           const isRotate =
             p.auth.clientId !== storedAuth?.clientId || resolvedSecret !== storedAuth?.clientSecret;
           if (!isRotate) continue;
           try {
-            await getAzureTokenCache().refresh({
-              ...p,
+            await getOidcTokenCache().refresh({
+              name: p.name,
               auth: { ...p.auth, clientSecret: resolvedSecret },
             });
           } catch (err) {
@@ -402,8 +423,8 @@ const SLUG_MAP: Record<string, SlugDef> = {
         const storedByName = new Map(env.providers.map((p) => [p.name, p]));
         updates.providers = data.providers.map((p) => {
           const stored = storedByName.get(p.name);
-          if (p.type === 'azure-openai') {
-            const storedAuth = stored?.type === 'azure-openai' ? stored.auth : undefined;
+          if (usesOidcAuth(p)) {
+            const storedAuth = stored && usesOidcAuth(stored) ? stored.auth : undefined;
             return {
               ...p,
               auth: {
@@ -416,7 +437,7 @@ const SLUG_MAP: Record<string, SlugDef> = {
             ...p,
             apiKey: unmaskApiKey(
               p.apiKey,
-              stored?.type !== 'azure-openai' ? stored?.apiKey : undefined,
+              stored && !usesOidcAuth(stored) ? stored.apiKey : undefined,
             ),
           };
         });

@@ -112,7 +112,8 @@ export const OpenAiCompatibleProviderSchema = z
     seed: z.number().int().optional(),
   })
   .refine((v) => (v.authMode === 'apiKey' ? v.apiKey !== undefined : v.auth !== undefined), {
-    message: "openai-compatible provider requires 'apiKey' when authMode is 'apiKey', or 'auth' when authMode is 'oidc'",
+    message:
+      "openai-compatible provider requires 'apiKey' when authMode is 'apiKey', or 'auth' when authMode is 'oidc'",
     path: ['authMode'],
   });
 
@@ -128,9 +129,7 @@ export const AnyProviderSchema = z.union([
   OpenAiCompatibleProviderSchema,
 ]);
 export type AnyProviderConfig =
-  | ProviderConfig
-  | AzureOpenAiProviderConfig
-  | OpenAiCompatibleProviderConfig;
+  ProviderConfig | AzureOpenAiProviderConfig | OpenAiCompatibleProviderConfig;
 ```
 
 `parseProviders` gets a `parseOpenAiCompatibleProvider` branch mirroring the
@@ -175,7 +174,7 @@ providers:
   `'openai-compatible': {}` entry for TS exhaustiveness.
 - **Token verification endpoint**: `POST /api/v1/providers/test-oidc-token`
   (`providers.route.ts`), body `{ providerName?: string, tokenUrl, clientId,
-  clientSecret, scope?, grantType? }`. When `providerName` names an existing
+clientSecret, scope?, grantType? }`. When `providerName` names an existing
   saved Provider and `clientSecret` is the `'****'` mask sentinel, it's
   resolved against that Provider's stored secret the same way
   `unmaskApiKey` already works for Rotate (§5). The handler calls a new
@@ -184,7 +183,7 @@ providers:
   persistent cache under a provisional name — which runs the same token POST
   `fetchToken` already performs internally and throws on failure. The route
   handler maps that to `{ ok: true, expiresInSeconds }` or `{ ok: false,
-  error }`; the raw token itself never crosses the wire.
+error }`; the raw token itself never crosses the wire.
 
 ## 5. API & UI surface
 

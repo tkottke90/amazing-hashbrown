@@ -1,5 +1,5 @@
 export interface ListProviderModelsRequest {
-  type: 'ollama' | 'openai' | 'anthropic';
+  type: 'ollama' | 'openai' | 'anthropic' | 'openai-compatible';
   baseUrl?: string;
   apiKey?: string;
   // Resolves a masked ('****') apiKey against a saved provider by name —
@@ -10,6 +10,15 @@ export interface ListProviderModelsRequest {
   source?: 'embeddings';
   // Filters the result to embedding-capable models.
   capability?: 'embedding';
+  // Only meaningful for type === 'openai-compatible' — selects between
+  // apiKey above and the Client Credentials fields below for this live,
+  // possibly-unsaved model-list fetch.
+  authMode?: 'apiKey' | 'oidc';
+  tokenUrl?: string;
+  clientId?: string;
+  clientSecret?: string;
+  scope?: string;
+  grantType?: string;
 }
 
 export interface TestEmbeddingsRequest {
@@ -65,9 +74,10 @@ export async function listProviderModels(req: ListProviderModelsRequest): Promis
   return payload.data.models;
 }
 
-// Clears an Azure OpenAI Provider's cached Access Token only — no config
-// change. Rotate (replacing clientId/clientSecret) goes through the normal
-// settings PATCH flow instead; see GLOSSARY.md "Revoke"/"Rotate".
+// Clears an OIDC-authenticated Provider's (Azure OpenAI, or OpenAI-Compatible
+// in oidc mode) cached Access Token only — no config change. Rotate
+// (replacing clientId/clientSecret) goes through the normal settings PATCH
+// flow instead; see GLOSSARY.md "Revoke"/"Rotate".
 export async function revokeProviderToken(name: string): Promise<void> {
   const res = await fetch(`/api/v1/providers/${encodeURIComponent(name)}/revoke`, {
     method: 'POST',
@@ -78,4 +88,42 @@ export async function revokeProviderToken(name: string): Promise<void> {
   if (!res.ok || !payload.ok) {
     throw new Error(payload.error ?? `Failed to revoke token: ${res.status}`);
   }
+}
+
+export interface TestOidcTokenRequest {
+  // Resolves a masked ('****') clientSecret against this saved provider's
+  // stored secret — set when editing an existing OIDC-authenticated
+  // provider; omitted for a brand-new, unsaved one.
+  providerName?: string;
+  tokenUrl: string;
+  clientId: string;
+  clientSecret?: string;
+  scope?: string;
+  grantType?: string;
+}
+
+// Verifies OIDC Client Credentials against the live IdP — a one-off
+// fetch-and-discard the provider-edit modal uses to let the user confirm
+// credentials work before Save, without writing anything or touching the
+// persistent Access Token cache.
+export async function testOidcToken(
+  req: TestOidcTokenRequest,
+): Promise<{ expiresInSeconds: number }> {
+  const res = await fetch('/api/v1/providers/test-oidc-token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+
+  const payload = (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    expiresInSeconds?: number;
+    error?: string;
+  };
+
+  if (!res.ok || !payload.ok || payload.expiresInSeconds == null) {
+    throw new Error(payload.error ?? `Failed to verify credentials: ${res.status}`);
+  }
+
+  return { expiresInSeconds: payload.expiresInSeconds };
 }
