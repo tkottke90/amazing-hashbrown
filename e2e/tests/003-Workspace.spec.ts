@@ -1198,10 +1198,20 @@ export const WorkspaceFileBrowser: TestSuite = {
         const pane = editorPane(page, 'nested.json');
         await expect(pane.locator('.cm-content')).toContainText('sibling');
 
-        // One gutter marker per rendered line; index 1 is the "outer"
-        // object's opening line, the fold target one level in from the
-        // root object.
-        await pane.locator('.cm-foldGutter .cm-gutterElement').nth(1).click();
+        // Click the fold-gutter marker vertically aligned with the "outer"
+        // object's opening line specifically (not the root object's own
+        // marker on line 1) - .cm-foldGutter's rendered marker count isn't
+        // reliably 1:1 with .cm-gutterElement's index (a leading spacer
+        // element offsets it), so target by position instead of index.
+        const outerLineBox = await pane
+          .locator('.cm-line')
+          .filter({ hasText: '"outer"' })
+          .boundingBox();
+        const foldGutterBox = await pane.locator('.cm-foldGutter').boundingBox();
+        await page.mouse.click(
+          foldGutterBox!.x + foldGutterBox!.width / 2,
+          outerLineBox!.y + outerLineBox!.height / 2,
+        );
         await expect(pane.locator('.cm-foldPlaceholder')).toBeVisible();
         await expect(pane.locator('.cm-content')).not.toContainText('inner');
         await expect(pane.locator('.cm-content')).toContainText('sibling');
