@@ -53,7 +53,7 @@ A widget's shared, type-independent fields: `title`, `subtitle`, `order`, `w`, `
 _Avoid_: Frontmatter (broader — includes `type` and Widget Payload scalars too)
 
 **Widget Size**:
-A widget's `w`/`h` Widget Metadata fields — its span in grid columns/rows. Clamped per widget `type` to `[type minimum, 12×8]`; each type's minimum is a fixed constant, not user-configurable. A widget file that predates these fields reads as its type's minimum (ADR-0009); raising a type's minimum later clamps a pre-existing, now-too-small explicit value up to it the same way, at the same parse-time boundary (ADR-0044).
+A widget's `w`/`h` Widget Metadata fields — its span in grid columns/rows. Clamped per widget `type` to `[type minimum, 12×8]`; each type's minimum is a fixed constant, not user-configurable. A widget file that predates these fields reads as its type's minimum, the same backward-compatible default pattern as Widget Source.
 _Avoid_: Dimensions, bounds
 
 **Edit Mode**:
