@@ -329,7 +329,7 @@ describe('store', () => {
       expect(markdown).to.deep.include({ w: 3, h: 2 });
       expect(bigNumber).to.deep.include({ w: 2, h: 2 });
       expect(lineGraph).to.deep.include({ w: 4, h: 3 });
-      expect(pieGraph).to.deep.include({ w: 6, h: 3 });
+      expect(pieGraph).to.deep.include({ w: 4, h: 3 });
       expect(spacer).to.deep.include({ w: 1, h: 1 });
     });
 

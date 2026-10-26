@@ -35,10 +35,7 @@ export const WIDGET_SIZE_MIN: Record<
 > = {
   'big-number': { w: 2, h: 2 },
   'line-graph': { w: 4, h: 3 },
-  // Wider than Line Graph's floor (ADR-0044) — room for the legend beside
-  // the chart (Pie Chart Legend & Linked Hover design) without it
-  // overflowing the card at the smallest usable size.
-  'pie-graph': { w: 6, h: 3 },
+  'pie-graph': { w: 4, h: 3 },
   markdown: { w: 3, h: 2 },
   // Shares Markdown's floor — a Metric's resolved shape (big-number or
   // markdown, for now) isn't known until read time, so the stored widget
