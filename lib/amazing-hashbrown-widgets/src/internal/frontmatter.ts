@@ -131,11 +131,13 @@ export function parseWidgetFile(raw: string): WidgetFileParseResult {
   // Widget Size backward compatibility (ADR-0009): a file predating `w`/`h`
   // defaults to its type's minimum, applied here rather than as a zod
   // `.default()` since the right default depends on the sibling `type`
-  // field, which a per-field zod default can't see.
+  // field, which a per-field zod default can't see. An explicit value
+  // below the type's (possibly since-raised) minimum is clamped up to it
+  // the same way, not rejected by the schema's `.min()` below (ADR-0044).
   const sizeMin = WIDGET_SIZE_MIN[data['type'] as keyof typeof WIDGET_SIZE_MIN];
   if (sizeMin) {
-    if (typeof data['w'] !== 'number') data['w'] = sizeMin.w;
-    if (typeof data['h'] !== 'number') data['h'] = sizeMin.h;
+    if (typeof data['w'] !== 'number' || data['w'] < sizeMin.w) data['w'] = sizeMin.w;
+    if (typeof data['h'] !== 'number' || data['h'] < sizeMin.h) data['h'] = sizeMin.h;
   }
 
   const result = WidgetFrontmatterSchema.safeParse(data);

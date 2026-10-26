@@ -251,7 +251,7 @@ describe('frontmatter', () => {
         ['markdown', 3, 2],
         ['big-number', 2, 2],
         ['line-graph', 4, 3],
-        ['pie-graph', 4, 3],
+        ['pie-graph', 6, 3],
         ['spacer', 1, 1],
       ];
       for (const [type, w, h] of cases) {
@@ -281,12 +281,6 @@ describe('frontmatter', () => {
       );
       expect(frontmatter.parseWidgetFile(atMinimum).ok).to.equal(true);
 
-      const belowMinimum = frontmatter.serialize(
-        { title: 'Count', type: 'big-number', order: 0, w: 1, h: 2 },
-        '',
-      );
-      expect(frontmatter.parseWidgetFile(belowMinimum).ok).to.equal(false);
-
       const atMaximum = frontmatter.serialize(
         { title: 'Count', type: 'big-number', order: 0, w: 12, h: 8 },
         '',
@@ -298,6 +292,26 @@ describe('frontmatter', () => {
         '',
       );
       expect(frontmatter.parseWidgetFile(aboveMaximum).ok).to.equal(false);
+    });
+
+    it('clamps an explicit w/h below the type minimum up to it, rather than rejecting it (ADR-0044)', () => {
+      const belowMinimum = frontmatter.serialize(
+        { title: 'Count', type: 'big-number', order: 0, w: 1, h: 2 },
+        '',
+      );
+      const result = frontmatter.parseWidgetFile(belowMinimum);
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.widget).to.include({ w: 2, h: 2 });
+    });
+
+    it('clamps a pie-graph widget file written under the old minimum up to the raised minimum (ADR-0044)', () => {
+      const raw = frontmatter.serialize(
+        { title: 'Pie', type: 'pie-graph', order: 0, w: 4, h: 3 },
+        'label,value\nA,1',
+      );
+      const result = frontmatter.parseWidgetFile(raw);
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.widget).to.include({ w: 6, h: 3 });
     });
   });
 

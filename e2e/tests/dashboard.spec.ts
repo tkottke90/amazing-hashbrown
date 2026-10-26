@@ -230,7 +230,13 @@ const chartWidgetsSuite: TestSuite = {
       tags: ['@user-workflow'],
       action: 'Add a Pie Graph widget with valid CSV data',
       expectedOutcome:
-        'Validate passes, the widget is created, an svg pie renders, persists across a reload',
+        'Validate passes, the widget is created, an svg pie and a matching legend render, persists across a reload',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: "Hover a Pie Graph widget's legend row",
+      expectedOutcome: "The tooltip appears showing that row's label (linked legend/slice hover)",
       test: () => {},
     },
     {
@@ -349,6 +355,7 @@ test.describe(
         const card = page.getByTestId('widget-card').filter({ hasText: title });
         await expect(card).toBeVisible();
         await expect(card.getByTestId('pie-graph-widget').locator('svg path')).toHaveCount(2);
+        await expect(card.getByTestId('pie-chart-legend-row')).toHaveCount(2);
 
         const widgets = await page.request.get('/api/v1/dashboards/default/widgets');
         const body = (await widgets.json()) as Array<{
@@ -360,6 +367,42 @@ test.describe(
 
         await page.reload();
         await expect(page.getByTestId('widget-card').filter({ hasText: title })).toBeVisible();
+      } finally {
+        if (widgetId) await deleteWidgetIfExists(page.request, widgetId);
+      }
+    });
+
+    test('hovering a pie-graph legend row shows the tooltip with its label (linked hover)', async ({
+      page,
+    }, testInfo) => {
+      const title = `E2E pie hover ${testInfo.testId}`;
+      let widgetId: string | null = null;
+
+      try {
+        await page.goto('/');
+        await pauseBeforeAction(page, testInfo);
+
+        await page.getByTestId('dashboard-add-widget').click();
+        const addDrawer = page.locator('dialog[open]');
+        await selectWidgetType(page, addDrawer, 'Pie Graph');
+        await addDrawer.getByLabel('Title', { exact: true }).fill(title);
+        await setCsvEditorContent(page, addDrawer, 'label,value\nQuery,30\nAnalysis,25');
+        await addDrawer.getByTestId('widget-drawer-validate').click();
+        await addDrawer.getByRole('button', { name: 'Save' }).click();
+
+        const card = page.getByTestId('widget-card').filter({ hasText: title });
+        await expect(card).toBeVisible();
+        await card.getByTestId('pie-chart-legend-row').filter({ hasText: 'Query' }).hover();
+        await expect(card.getByTestId('pie-chart-tooltip')).toBeVisible();
+        await expect(card.getByTestId('pie-chart-tooltip')).toContainText('Query');
+
+        const widgets = await page.request.get('/api/v1/dashboards/default/widgets');
+        const body = (await widgets.json()) as Array<{
+          status: string;
+          widget?: { id: string; title: string };
+        }>;
+        widgetId =
+          body.find((r) => r.status === 'ok' && r.widget?.title === title)?.widget?.id ?? null;
       } finally {
         if (widgetId) await deleteWidgetIfExists(page.request, widgetId);
       }
