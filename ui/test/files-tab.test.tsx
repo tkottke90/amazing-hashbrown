@@ -238,6 +238,28 @@ describe('FilesTab', () => {
     });
   });
 
+  describe('EditorPanel fold controls', () => {
+    it('Collapse All hides foldable content and Expand All restores it', () => {
+      const tab = makeTab('data.json', {
+        savedContent: '{\n  "a": {\n    "b": 1\n  }\n}',
+      });
+      openTabs.value = [tab];
+      activeTabPath.value = 'data.json';
+
+      const { container } = renderFilesTab();
+
+      screen.getByText('Collapse All').click();
+
+      expect(container.querySelector('.cm-foldPlaceholder')).toBeInTheDocument();
+      expect(container.querySelector('.cm-content')?.textContent).not.toContain('"b": 1');
+
+      screen.getByText('Expand All').click();
+
+      expect(container.querySelector('.cm-foldPlaceholder')).not.toBeInTheDocument();
+      expect(container.querySelector('.cm-content')?.textContent).toContain('"b": 1');
+    });
+  });
+
   describe('EditorPanel conflict banner and deleted-on-disk state', () => {
     it('shows "This file was deleted on disk" with a Close tab button for a deletedOnDisk tab', () => {
       const tab = makeTab('a.ts', { deletedOnDisk: true });

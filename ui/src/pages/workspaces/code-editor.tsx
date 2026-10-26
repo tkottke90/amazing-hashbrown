@@ -5,17 +5,23 @@ import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import {
   syntaxHighlighting,
   defaultHighlightStyle,
+  foldGutter,
+  codeFolding,
+  foldService,
   type LanguageSupport,
 } from '@codemirror/language';
+import type { Extension } from '@codemirror/state';
 import { javascript } from '@codemirror/lang-javascript';
 import { python } from '@codemirror/lang-python';
 import { json } from '@codemirror/lang-json';
 import { markdown } from '@codemirror/lang-markdown';
 import { html } from '@codemirror/lang-html';
 import { css } from '@codemirror/lang-css';
+import { yaml } from '@codemirror/lang-yaml';
 import type { Signal } from '@preact/signals';
 
 import { useTheme } from '@/hooks/use-theme';
+import { frontmatterFoldService } from '@/pages/workspaces/markdown-frontmatter-fold';
 
 const EXTENSION_LANGUAGE: Record<string, () => LanguageSupport> = {
   js: javascript,
@@ -31,12 +37,25 @@ const EXTENSION_LANGUAGE: Record<string, () => LanguageSupport> = {
   html: html,
   htm: html,
   css: css,
+  yaml: yaml,
+  yml: yaml,
 };
+
+const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown']);
 
 function languageForPath(path: string): LanguageSupport[] {
   const ext = path.split('.').pop()?.toLowerCase() ?? '';
   const factory = EXTENSION_LANGUAGE[ext];
   return factory ? [factory()] : [];
+}
+
+// Markdown frontmatter (a leading `--- ... ---` block) isn't a heading,
+// list, or fenced code block, so it needs its own fold rule on top of
+// @codemirror/lang-markdown's built-in folding — scoped to Markdown files
+// only, rather than registered globally.
+function extraFoldingForPath(path: string): Extension[] {
+  const ext = path.split('.').pop()?.toLowerCase() ?? '';
+  return MARKDOWN_EXTENSIONS.has(ext) ? [foldService.of(frontmatterFoldService)] : [];
 }
 
 // Builds an EditorView.theme(...) from this app's own CSS custom properties
@@ -75,6 +94,14 @@ export function themeFor(resolvedTheme: 'light' | 'dark') {
       '.cm-scroller': {
         fontFamily: 'ui-monospace, monospace',
       },
+      '.cm-foldGutter .cm-gutterElement': {
+        color: 'var(--muted-foreground)',
+      },
+      '.cm-foldPlaceholder': {
+        backgroundColor: 'var(--muted)',
+        color: 'var(--muted-foreground)',
+        border: '1px solid var(--border)',
+      },
     },
     { dark },
   );
@@ -104,10 +131,13 @@ export function CodeEditor({ path, initialContent, dirty, onReady }: CodeEditorP
         doc: initialContent,
         extensions: [
           lineNumbers(),
+          foldGutter(),
+          codeFolding(),
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
           syntaxHighlighting(defaultHighlightStyle),
           languageForPath(path),
+          extraFoldingForPath(path),
           themeCompartment.of(themeFor(resolvedTheme)),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) {
