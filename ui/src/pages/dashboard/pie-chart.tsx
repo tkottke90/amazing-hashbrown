@@ -29,7 +29,9 @@ export function PieChart({ labels, values, colors }: PieChartProps) {
   // categorical palette per label index. Shared by the D3 fill and the
   // legend swatch so the two can never disagree.
   function resolvedColor(i: number): string {
-    return colors && colors.length > 0 ? (colors[i % colors.length] ?? getDomainColor(i)) : getDomainColor(i);
+    return colors && colors.length > 0
+      ? (colors[i % colors.length] ?? getDomainColor(i))
+      : getDomainColor(i);
   }
 
   function cancelClose() {
@@ -102,12 +104,18 @@ export function PieChart({ labels, values, colors }: PieChartProps) {
     d3Selection
       .select(svg)
       .selectAll<SVGPathElement, d3Shape.PieArcDatum<number>>('path')
-      .attr('opacity', (d) => (hoveredIndex.value === null || hoveredIndex.value === d.index ? 1 : 0.35));
+      .attr('opacity', (d) =>
+        hoveredIndex.value === null || hoveredIndex.value === d.index ? 1 : 0.35,
+      );
   }, [hoveredIndex.value]);
 
   return (
     <div data-testid="pie-graph-widget" className="relative flex items-center gap-4">
-      <svg ref={svgRef} viewBox={`0 0 ${CHART_SIZE} ${CHART_SIZE}`} className="h-40 w-40 shrink-0" />
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${CHART_SIZE} ${CHART_SIZE}`}
+        className="h-40 w-40 shrink-0"
+      />
       <ul
         data-testid="pie-chart-legend"
         className="flex max-h-40 min-w-0 flex-1 flex-col gap-0.5 overflow-y-auto text-xs"
@@ -138,6 +146,7 @@ export function PieChart({ labels, values, colors }: PieChartProps) {
           className="absolute z-10 rounded-md border border-border bg-card px-2 py-1 text-xs shadow-lg"
           style={{ left: hoverPos.value.x + 8, top: hoverPos.value.y - 8 }}
           onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
         >
           <div className="font-medium">{labels[hoveredIndex.value]}</div>
           <div className="text-muted-foreground">
