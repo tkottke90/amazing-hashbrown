@@ -517,8 +517,8 @@ describe('services/provider-factory', () => {
   });
 
   describe('listModels()/fetchModelIds (private)', () => {
-    let close: (() => void) | undefined;
-    after(() => close?.());
+    const closers: Array<() => void> = [];
+    after(() => closers.forEach((close) => close()));
 
     it('resolves to [deploymentName] for azure-openai without making any HTTP call', async () => {
       // azureConfig's tokenUrl/endpoint point nowhere reachable — if this
@@ -532,7 +532,7 @@ describe('services/provider-factory', () => {
         object: 'list',
         data: [{ id: 'gpt-5.4-mini', object: 'model', owned_by: 'in-house' }],
       });
-      close = server.close;
+      closers.push(server.close);
 
       const models = await listModels({ ...openaiCompatibleApiKeyConfig, baseUrl: server.baseUrl });
       expect(models).to.deep.equal(['gpt-5.4-mini']);
@@ -543,7 +543,7 @@ describe('services/provider-factory', () => {
         object: 'list',
         data: [{ id: 'gpt-5.4-mini', object: 'model', owned_by: 'in-house' }],
       });
-      close = server.close;
+      closers.push(server.close);
       const { cache, calls } = stubTokenCache('tok-for-models');
 
       const models = await listModels(
@@ -927,8 +927,8 @@ describe('services/provider-factory', () => {
   });
 
   describe('fetchModelDetails()', () => {
-    let close: (() => void) | undefined;
-    after(() => close?.());
+    const closers: Array<() => void> = [];
+    after(() => closers.forEach((close) => close()));
 
     it('surfaces an extra field (labels) present on a real /models response', async () => {
       const server = await startModelsServer({
@@ -938,7 +938,7 @@ describe('services/provider-factory', () => {
           { id: 'text-model', object: 'model', owned_by: 'lemonade', labels: ['tool-calling'] },
         ],
       });
-      close = server.close;
+      closers.push(server.close);
 
       const details = await fetchModelDetails({
         name: 'lemonade',
@@ -963,7 +963,7 @@ describe('services/provider-factory', () => {
         object: 'list',
         data: [{ id: 'gpt-5.4-mini', object: 'model', owned_by: 'in-house', labels: ['vision'] }],
       });
-      close = server.close;
+      closers.push(server.close);
 
       const details = await fetchModelDetails({
         ...openaiCompatibleApiKeyConfig,
@@ -978,7 +978,7 @@ describe('services/provider-factory', () => {
         object: 'list',
         data: [{ id: 'gpt-5.4-mini' }],
       });
-      close = server.close;
+      closers.push(server.close);
       const { cache } = stubTokenCache('tok-for-details');
 
       const details = await fetchModelDetails(
