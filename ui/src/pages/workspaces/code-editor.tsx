@@ -5,8 +5,7 @@ import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import {
   syntaxHighlighting,
   defaultHighlightStyle,
-  // foldGutter, - DIAGNOSTIC (temporary): unused while foldGutter() is
-  // disabled below, see PR #359.
+  foldGutter,
   codeFolding,
   foldService,
   type LanguageSupport,
@@ -132,11 +131,7 @@ export function CodeEditor({ path, initialContent, dirty, onReady }: CodeEditorP
         doc: initialContent,
         extensions: [
           lineNumbers(),
-          // DIAGNOSTIC (temporary): foldGutter() disabled to test whether it
-          // is what hangs `ui`'s Jest run in CI with zero output - see PR
-          // #359. codeFolding() (state/commands, no viewport measurement)
-          // stays on so Collapse All/Expand All keep working.
-          // foldGutter(),
+          foldGutter(),
           codeFolding(),
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
