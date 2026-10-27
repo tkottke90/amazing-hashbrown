@@ -35,7 +35,10 @@ The outer `data-testid="pie-graph-widget"` div changes from a centered single-it
 ```tsx
 <div data-testid="pie-graph-widget" className="relative flex items-center gap-4">
   <svg ref={svgRef} viewBox={`0 0 ${CHART_SIZE} ${CHART_SIZE}`} className="h-40 w-40 shrink-0" />
-  <ul data-testid="pie-chart-legend" className="flex max-h-40 min-w-0 flex-1 flex-col gap-0.5 overflow-y-auto text-xs">
+  <ul
+    data-testid="pie-chart-legend"
+    className="flex max-h-40 min-w-0 flex-1 flex-col gap-0.5 overflow-y-auto text-xs"
+  >
     {/* one row per label */}
   </ul>
 </div>
@@ -110,19 +113,21 @@ Splitting this into its own effect — rather than adding `hoveredIndex.value` t
 A single floating tooltip, shown whenever `hoveredIndex.value !== null`, positioned from `hoverPos.value` the same way `graph-view.tsx` positions its node tooltip (clamped so it doesn't run off the chart+legend wrapper), with its own `onMouseEnter={cancelClose}` so hovering the tooltip itself doesn't close it:
 
 ```tsx
-{hoveredIndex.value !== null && hoverPos.value && (
-  <div
-    data-testid="pie-chart-tooltip"
-    className="absolute z-10 rounded-md border border-border bg-card px-2 py-1 text-xs shadow-lg"
-    style={{ left: hoverPos.value.x + 8, top: hoverPos.value.y - 8 }}
-    onMouseEnter={cancelClose}
-  >
-    <div className="font-medium">{labels[hoveredIndex.value]}</div>
-    <div className="text-muted-foreground">
-      {values[hoveredIndex.value]} ({percent(hoveredIndex.value)}%)
+{
+  hoveredIndex.value !== null && hoverPos.value && (
+    <div
+      data-testid="pie-chart-tooltip"
+      className="absolute z-10 rounded-md border border-border bg-card px-2 py-1 text-xs shadow-lg"
+      style={{ left: hoverPos.value.x + 8, top: hoverPos.value.y - 8 }}
+      onMouseEnter={cancelClose}
+    >
+      <div className="font-medium">{labels[hoveredIndex.value]}</div>
+      <div className="text-muted-foreground">
+        {values[hoveredIndex.value]} ({percent(hoveredIndex.value)}%)
+      </div>
     </div>
-  </div>
-)}
+  );
+}
 ```
 
 `percent(i)` is `Math.round((values[i] / values.reduce((a, b) => a + b, 0)) * 100)`. The outer wrapper div's `relative` (shown in Layout above) is what scopes the tooltip's `absolute` positioning to the chart+legend row, not the whole widget card.
@@ -137,7 +142,7 @@ Per ADR-0044, `WIDGET_SIZE_MIN['pie-graph']` (`lib/amazing-hashbrown-widgets/src
 
 The exact new `w` is a judgment call this spec deliberately doesn't hard-derive from pixel math: the dashboard grid's column width is computed live from the container's rendered width (`use-widget-resize.ts`'s `columnPx = node.getBoundingClientRect().width / w`), not a fixed constant, so there's no single "correct" column count that's exactly right at every viewport width. **Confirm the chosen value in a running `npm run dev` dashboard** (per `ui/AGENTS.md`'s "for UI-visible changes, also run the dev server and check in a browser" rule) at common widths, checking that chart + legend + `gap-4` + the card's `p-4` padding doesn't overflow a widget at its new minimum — `w: 6` (half the 12-column grid) is a reasonable starting point to try first.
 
-`parseWidgetFile` (`lib/amazing-hashbrown-widgets/src/internal/frontmatter.ts`) already defaults a *missing* `w`/`h` to the type's minimum before schema validation (ADR-0009). Extend that same pre-validation step so an explicit `w`/`h` that's now *below* the (raised) minimum is clamped up to it too, not just a missing one — this is exactly ADR-0044's scope, and is what makes already-placed Pie Graph widgets narrower than the new minimum load correctly instead of failing `WidgetFrontmatterSchema`'s `.min()` check (Q12):
+`parseWidgetFile` (`lib/amazing-hashbrown-widgets/src/internal/frontmatter.ts`) already defaults a _missing_ `w`/`h` to the type's minimum before schema validation (ADR-0009). Extend that same pre-validation step so an explicit `w`/`h` that's now _below_ the (raised) minimum is clamped up to it too, not just a missing one — this is exactly ADR-0044's scope, and is what makes already-placed Pie Graph widgets narrower than the new minimum load correctly instead of failing `WidgetFrontmatterSchema`'s `.min()` check (Q12):
 
 ```typescript
 const sizeMin = WIDGET_SIZE_MIN[data['type'] as keyof typeof WIDGET_SIZE_MIN];
@@ -174,16 +179,16 @@ Mouse-only for this pass (Q6): no `tabIndex`/`:focus` equivalent on slices or le
 
 ## 6. Files Changed
 
-| File | Change |
-| --- | --- |
-| `ui/src/pages/dashboard/pie-chart.tsx` | Add legend list, `hoveredIndex`/`hoverPos` signals, dimming effect, tooltip; extract `resolvedColor(i)` |
-| `ui/test/pie-chart.test.tsx` | Add legend-rendering, slice-hover-dims, legend-hover-links, empty-legend tests |
-| `lib/amazing-hashbrown-widgets/src/internal/widget-field-schemas.ts` | Raise `WIDGET_SIZE_MIN['pie-graph']` |
-| `lib/amazing-hashbrown-widgets/src/internal/frontmatter.ts` | Clamp an explicit too-small `w`/`h` up to the type minimum, not just a missing one (ADR-0044) |
-| `lib/amazing-hashbrown-widgets` test file for `parseWidgetFile` | Add clamp-of-explicit-value test |
-| `e2e/tests/dashboard.spec.ts` | Extend pie-graph test with legend-row-count assertion; add hover tooltip `@user-workflow` case |
-| `docs/GLOSSARY.md` | Already updated (Widget Size entry now cites ADR-0044) |
-| `docs/adr/0044-*.md` | Already added |
+| File                                                                 | Change                                                                                                  |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `ui/src/pages/dashboard/pie-chart.tsx`                               | Add legend list, `hoveredIndex`/`hoverPos` signals, dimming effect, tooltip; extract `resolvedColor(i)` |
+| `ui/test/pie-chart.test.tsx`                                         | Add legend-rendering, slice-hover-dims, legend-hover-links, empty-legend tests                          |
+| `lib/amazing-hashbrown-widgets/src/internal/widget-field-schemas.ts` | Raise `WIDGET_SIZE_MIN['pie-graph']`                                                                    |
+| `lib/amazing-hashbrown-widgets/src/internal/frontmatter.ts`          | Clamp an explicit too-small `w`/`h` up to the type minimum, not just a missing one (ADR-0044)           |
+| `lib/amazing-hashbrown-widgets` test file for `parseWidgetFile`      | Add clamp-of-explicit-value test                                                                        |
+| `e2e/tests/dashboard.spec.ts`                                        | Extend pie-graph test with legend-row-count assertion; add hover tooltip `@user-workflow` case          |
+| `docs/GLOSSARY.md`                                                   | Already updated (Widget Size entry now cites ADR-0044)                                                  |
+| `docs/adr/0044-*.md`                                                 | Already added                                                                                           |
 
 No change needed to `ui/src/pages/dashboard/widget-renderer.tsx`, `store.ts`, `pie-graph-widget.tsx`, `system-widget.tsx`, or `widget-drawer.tsx` — all three `PieChart` callers and the generic `WIDGET_SIZE_MIN`-driven sizing plumbing already pick this up without their own edits.
 
