@@ -32,7 +32,7 @@ export interface CronRepeatConfig {
   enabledAt: string; // server-owned
   lastFiredAt: string | null; // server-owned
   consecutiveFailures: number; // server-owned
-  pausedReason: 'consecutive_failures' | null; // server-owned
+  pausedReason: 'consecutive_failures' | 'no_further_runs_needed' | null; // server-owned
 }
 
 export type CronConfig = CronOnceConfig | CronRepeatConfig;
@@ -203,10 +203,19 @@ export function statusForSavedSchedule(
 }
 
 // Why a cron schedule will not fire again, for the drawer's banner:
-// turned off by hand, auto-paused after failures, out of runs, past
-// stopAfter (or a one-shot time that can no longer fire), or a one-shot that
-// already fired.
-export type ScheduleInactiveReason = 'disabled' | 'failures' | 'exhausted' | 'expired' | 'fired';
+// turned off by hand, auto-paused after failures, self-disabled by the
+// agent, out of runs, past stopAfter (or a one-shot time that can no longer
+// fire), or a one-shot that already fired.
+export type ScheduleInactiveReason =
+  'disabled' | 'failures' | 'completed' | 'exhausted' | 'expired' | 'fired';
+
+// Maps a cron_repeat CronRepeatConfig.pausedReason to its ScheduleInactiveReason
+// banner bucket. Anything not listed here (including a plain manual turn-off,
+// which carries no pausedReason) falls through to the generic 'disabled'.
+const PAUSED_REASON_TO_INACTIVE_REASON: Record<string, ScheduleInactiveReason> = {
+  consecutive_failures: 'failures',
+  no_further_runs_needed: 'completed',
+};
 
 export interface TaskSchedule {
   nextFireAt: string | null;
@@ -243,7 +252,7 @@ export function describeTaskSchedule(
 
   const c = config as CronRepeatConfig;
   if (!c.enabled) {
-    return inactive(c.pausedReason === 'consecutive_failures' ? 'failures' : 'disabled');
+    return inactive(PAUSED_REASON_TO_INACTIVE_REASON[c.pausedReason ?? ''] ?? 'disabled');
   }
   const next = nextFireAt(timing, now, iterationCount);
   if (!next) {

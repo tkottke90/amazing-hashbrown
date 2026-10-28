@@ -335,3 +335,17 @@ _Avoid_: Step (a single LLM call within a Turn, not the Turn itself), request, m
 **Turn Overflow**:
 The condition where a single Turn's own message history already exceeds the trim budget before `boundaryAwareTrim` even runs — so there is no earlier history left to cut, only the current Turn itself. Left unhandled, this produces an anchorless/empty trim result; handled, it triggers truncation and, as a last resort, a `context_length`-classified error.
 _Avoid_: Context overflow (too generic — doesn't distinguish "this Turn alone is too big" from ordinary cross-Turn trimming)
+
+# Cron Task Recurrence
+
+How a `cron_repeat` task's own repeating schedule continues, exhausts, or is stopped early — and why stopping it early is a distinct action from either finishing a Run or aborting one.
+
+## Language
+
+**Recurrence**:
+A `cron_repeat` task's own repeating future-fire schedule, carried in its `triggerConfig` — distinct from the Task itself and from any one Run. A Recurrence ends when it's exhausted (`maxIterations`/`stopAfter` run out), auto-paused after consecutive run failures, or explicitly Disabled.
+_Avoid_: Schedule (ambiguous — also names the task's cron expression/timing, e.g. `TaskSchedule`), cron job
+
+**Disable Recurrence**:
+A mid-run action a `cron_repeat` task's own agent takes on itself because it has determined no further Runs are needed, ending its Recurrence early. Resumable — a human can re-enable the schedule afterward, the same way a consecutive-failures auto-pause recovers. Distinct from Cancel (aborting a Run already in progress, an unrelated existing action) and from a Recurrence simply running out on its own.
+_Avoid_: Cancel recurrence, stop task, pause task

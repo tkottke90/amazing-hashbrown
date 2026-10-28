@@ -137,5 +137,7 @@ export function inactiveScheduleMessage(
       return c?.lastFiredAt ? `Fired on ${formatFireTime(c.lastFiredAt)}` : 'Already fired';
     case 'disabled':
       return 'Schedule is off';
+    case 'completed':
+      return 'Finished — the agent determined no further runs are needed.';
   }
 }

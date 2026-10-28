@@ -127,6 +127,14 @@ export const TOOL_CATALOG: CatalogEntry[] = [
     alwaysOn: true,
   },
   {
+    toolId: 'disable_recurrence',
+    name: 'Disable Recurrence',
+    description:
+      "Stop a cron_repeat task's own future runs because no further runs are needed. Task runs only, and only for a recurring schedule.",
+    category: 'built-in',
+    alwaysOn: true,
+  },
+  {
     toolId: 'write_task_note',
     name: 'Write Task Note',
     description:

@@ -83,5 +83,8 @@ describe('cron-drafts', () => {
       inactiveScheduleMessage('fired', schedule, { lastFiredAt: '2026-09-26T00:00:00.000Z' }),
     ).toMatch(/^Fired on /);
     expect(inactiveScheduleMessage('disabled', schedule, {})).toBe('Schedule is off');
+    expect(inactiveScheduleMessage('completed', schedule, {})).toBe(
+      'Finished — the agent determined no further runs are needed.',
+    );
   });
 });

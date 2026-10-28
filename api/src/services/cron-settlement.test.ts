@@ -163,6 +163,22 @@ describe('services/cron-settlement — settleCronRun()', () => {
       expect(result.status).to.equal('pending');
       expect(result.config).to.include({ enabled: false, pausedReason: 'consecutive_failures' });
     });
+
+    it("leaves a self-disabled recurrence at 'pending' with its pausedReason intact [unit]", () => {
+      const result = settleCronRun({
+        type: 'cron_repeat',
+        config: repeat({ enabled: false, pausedReason: 'no_further_runs_needed' }),
+        source: 'schedule',
+        outcome: 'done',
+        iterationCount: 5,
+        now: NOW,
+      });
+      expect(result.status).to.equal('pending');
+      expect(result.config).to.include({
+        enabled: false,
+        pausedReason: 'no_further_runs_needed',
+      });
+    });
   });
 
   describe('cron_once', () => {

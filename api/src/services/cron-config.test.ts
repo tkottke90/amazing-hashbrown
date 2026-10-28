@@ -266,6 +266,10 @@ describe('services/cron-config', () => {
       );
       const off = repeatConfig({ enabled: false });
       expect(describeTaskSchedule('cron_repeat', off, 4, NOW).inactiveReason).to.equal('disabled');
+      const selfDisabled = repeatConfig({ enabled: false, pausedReason: 'no_further_runs_needed' });
+      expect(describeTaskSchedule('cron_repeat', selfDisabled, 4, NOW).inactiveReason).to.equal(
+        'completed',
+      );
     });
 
     it('tells a used-up run budget apart from a passed stop date [unit]', () => {
