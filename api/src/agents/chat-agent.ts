@@ -61,6 +61,7 @@ import { makeCreateProjectTool } from './tools/create-project.tool.js';
 import { makeCompleteTaskTool, type CompleteTaskCall } from './tools/complete-task.tool.js';
 import { makeReadTaskRunTool } from './tools/read-task-run.tool.js';
 import { makeUpdatePlanTool, type UpdatePlanTaskFile } from './tools/update-plan.tool.js';
+import { makeDisableRecurrenceTool } from './tools/disable-recurrence.tool.js';
 import { makeWriteTaskNoteTool } from './tools/write-task-note.tool.js';
 import { makeReadTaskNotesTool } from './tools/read-task-notes.tool.js';
 import { createTaskFileStateMiddleware } from './task-file-state.middleware.js';
@@ -433,6 +434,15 @@ function buildSkillScopedTools() {
 // task in scope and can never be a cohort holder.
 export function buildWorkspaceScopedTools(callingTaskId?: string) {
   return [makeCreateTasksTool(undefined, undefined, undefined, callingTaskId)];
+}
+
+// disable_recurrence is bound only for a cron_repeat task — pulled out as
+// its own pure helper (same reasoning as buildTaskVisibilityTools below)
+// so the triggerType gate is directly unit-testable without buildTaskAgent's
+// createProvider() call. See
+// docs/superpowers/specs/2026-10-28-disable-recurrence-design.md.
+export function buildTaskRecurrenceTools(task: Task) {
+  return task.triggerType === 'cron_repeat' ? [makeDisableRecurrenceTool(task.id)] : [];
 }
 
 // Lets workspace chat answer "why did task X fail" and similar — list_tasks
@@ -833,6 +843,7 @@ export async function buildTaskAgent(
       ...STATIC_CHAT_TOOLS,
       ...buildSkillTools(skills),
       ...buildWorkspaceScopedTools(task.id),
+      ...buildTaskRecurrenceTools(task),
       ...buildGatedTools(),
       ...buildWikiWriteTools(),
       makeCompleteTaskTool(task.id, {

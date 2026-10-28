@@ -15,12 +15,14 @@ import {
   buildWorkspaceScopedTools,
   buildTaskVisibilityTools,
   buildFileConflictTools,
+  buildTaskRecurrenceTools,
   buildWorkspaceContextBlock,
   type WorkspaceChatContext,
 } from './chat-agent.js';
 import { formatRunTime } from './task-context.js';
 import { env, configManager } from '../config/env.js';
 import { logger } from '../config/logger.js';
+import type { Task, TriggerType } from '../services/workspace-store.js';
 import type { RegisteredTool } from '@tkottke90/tools-manager';
 import { makeMcpTool } from '@/tests/fixtures/registered-tool.fixture.js';
 import { getToolContent } from '../services/tool-content-store.js';
@@ -138,6 +140,23 @@ describe('agents/chat-agent', () => {
 
     it('buildWorkspaceScopedTools() (also bound in buildTaskAgent) never includes propose_file_merge', () => {
       expect(buildWorkspaceScopedTools().map((t) => t.name)).to.not.include('propose_file_merge');
+    });
+  });
+
+  describe('recurrence tool binding (disable_recurrence)', () => {
+    it('buildTaskRecurrenceTools() includes disable_recurrence for a cron_repeat task', () => {
+      const task = { id: 'task-1', triggerType: 'cron_repeat' } as Task;
+      expect(buildTaskRecurrenceTools(task).map((t) => t.name)).to.deep.equal([
+        'disable_recurrence',
+      ]);
+    });
+
+    it('buildTaskRecurrenceTools() is empty for every other trigger type', () => {
+      const others: TriggerType[] = ['manual', 'chat', 'cron_once', 'webhook'];
+      for (const triggerType of others) {
+        const task = { id: 'task-1', triggerType } as Task;
+        expect(buildTaskRecurrenceTools(task), `triggerType ${triggerType}`).to.deep.equal([]);
+      }
     });
   });
 

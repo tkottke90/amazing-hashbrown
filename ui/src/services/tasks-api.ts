@@ -23,7 +23,13 @@ export interface PlanStep {
 
 // Server-computed state of a cron task's schedule (see the API's
 // describeTaskSchedule): the UI never parses cron expressions itself.
-export type ScheduleInactiveReason = 'disabled' | 'failures' | 'exhausted' | 'expired' | 'fired';
+export type ScheduleInactiveReason =
+  | 'disabled'
+  | 'failures'
+  | 'completed'
+  | 'exhausted'
+  | 'expired'
+  | 'fired';
 
 export interface TaskSchedule {
   nextFireAt: string | null;
@@ -53,7 +59,7 @@ export interface CronRepeatConfig {
   enabledAt?: string;
   lastFiredAt?: string | null;
   consecutiveFailures?: number;
-  pausedReason?: 'consecutive_failures' | null;
+  pausedReason?: 'consecutive_failures' | 'no_further_runs_needed' | null;
 }
 
 export interface CronPreview {
@@ -64,7 +70,8 @@ export interface CronPreview {
 }
 
 export type CronPreviewRequest =
-  { expression: string; timezone: string } | { fireAt: string; timezone: string };
+  | { expression: string; timezone: string }
+  | { fireAt: string; timezone: string };
 
 // The Kanban board projection the API computes for every task — the server
 // owns which lane a task is in and where it may be dropped (see the API's

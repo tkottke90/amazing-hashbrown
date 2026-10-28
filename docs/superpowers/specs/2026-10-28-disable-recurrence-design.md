@@ -7,7 +7,7 @@ See `GLOSSARY.md`'s "Cron Task Recurrence" section for **Recurrence** and **Disa
 ## New tool: `disable_recurrence`
 
 - File: `api/src/agents/tools/disable-recurrence.tool.ts`, following `makeCompleteTaskTool`'s per-run factory pattern (built fresh per task run, closed over `taskId`).
-- Schema: no required parameters. The agent's companion `complete_task` call already requires a `summary`, which is the durable record of *why* — `disable_recurrence` doesn't duplicate it.
+- Schema: no required parameters. The agent's companion `complete_task` call already requires a `summary`, which is the durable record of _why_ — `disable_recurrence` doesn't duplicate it.
 - Behavior:
   1. Read the task's current `triggerConfig`. If `enabled` is already `false` (whatever the existing `pausedReason` — a human's manual pause, a prior `consecutive_failures` auto-pause, or an earlier `disable_recurrence` call), return a friendly no-op message ("Recurrence is already off.") and change nothing. Never overwrite an existing `pausedReason`.
   2. Otherwise, patch `triggerConfig` to `{ ...current, enabled: false, pausedReason: 'no_further_runs_needed' }` via `store.patchTask`.
@@ -30,7 +30,7 @@ Never bound for `manual`, `chat`, `cron_once`, or `webhook` tasks, and never bou
 - `api/src/services/cron-config.ts`: `CronRepeatConfig.pausedReason` widens from `'consecutive_failures' | null` to `'consecutive_failures' | 'no_further_runs_needed' | null`.
 - `api/src/services/cron-config.ts`: `ScheduleInactiveReason` gains `'completed'`. `describeTaskSchedule`'s `cron_repeat` branch maps `pausedReason === 'no_further_runs_needed'` to `'completed'` (alongside its existing `'consecutive_failures'` → `'failures'` mapping; anything else falls through to today's generic `'disabled'`).
 - `ui/src/services/tasks-api.ts`: mirror both widened types (`pausedReason`, `ScheduleInactiveReason`) to match the API shape.
-- `ui/src/lib/cron-drafts.ts`: `inactiveScheduleMessage` gains a `case 'completed':` returning *"Finished — the agent determined no further runs are needed."*
+- `ui/src/lib/cron-drafts.ts`: `inactiveScheduleMessage` gains a `case 'completed':` returning _"Finished — the agent determined no further runs are needed."_
 - `api/src/services/board-rules.ts`: `FINISHED_SCHEDULE` gains `'completed'`, so `isScheduleFinished` routes the task to the `done` lane (see ADR-0045).
 
 ## Out of scope

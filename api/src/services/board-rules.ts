@@ -125,7 +125,7 @@ type Source =
   | 'schedule_paused'
   | 'done';
 
-const FINISHED_SCHEDULE = new Set(['exhausted', 'expired', 'fired']);
+const FINISHED_SCHEDULE = new Set(['exhausted', 'expired', 'fired', 'completed']);
 
 function isCron(task: Task): boolean {
   return task.triggerType === 'cron_once' || task.triggerType === 'cron_repeat';

@@ -247,8 +247,8 @@ describe('services/board-rules', () => {
       });
     }
 
-    it(`puts a pending cron task whose schedule is exhausted, expired or fired in done ${TestTypes.UNIT}`, () => {
-      for (const inactiveReason of ['exhausted', 'expired', 'fired'] as const) {
+    it(`puts a pending cron task whose schedule is exhausted, expired, fired or self-disabled in done ${TestTypes.UNIT}`, () => {
+      for (const inactiveReason of ['exhausted', 'expired', 'fired', 'completed'] as const) {
         const board = boardFor(
           task({ triggerType: 'cron_repeat' }),
           ctx({ schedule: schedule({ active: false, inactiveReason, nextFireAt: null }) }),
