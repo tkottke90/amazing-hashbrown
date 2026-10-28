@@ -207,12 +207,7 @@ export function statusForSavedSchedule(
 // agent, out of runs, past stopAfter (or a one-shot time that can no longer
 // fire), or a one-shot that already fired.
 export type ScheduleInactiveReason =
-  | 'disabled'
-  | 'failures'
-  | 'completed'
-  | 'exhausted'
-  | 'expired'
-  | 'fired';
+  'disabled' | 'failures' | 'completed' | 'exhausted' | 'expired' | 'fired';
 
 // Maps a cron_repeat CronRepeatConfig.pausedReason to its ScheduleInactiveReason
 // banner bucket. Anything not listed here (including a plain manual turn-off,
