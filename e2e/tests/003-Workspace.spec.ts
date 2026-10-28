@@ -1170,6 +1170,64 @@ export const WorkspaceFileBrowser: TestSuite = {
         await page.request.delete(`/api/v1/workspaces/${ws.id}`);
       },
     },
+    {
+      action:
+        'Open a JSON file, collapse a nested object via its fold-gutter marker, then use Collapse All/Expand All',
+      expectedOutcome:
+        "Clicking the nested object's gutter marker hides only its own lines, leaving a sibling key visible; Collapse All then hides that sibling too; Expand All restores everything",
+      test: async ({ page }, testInfo) => {
+        const ws = await createWorkspace(
+          page.request,
+          {
+            name: `fb-fold-${Date.now()}`,
+            locationRoot: 'temporary',
+            directoryName: `fb-fold-${Date.now()}`,
+            git: false,
+          },
+          createdLocations,
+        );
+        await writeFileDirect(
+          ws.location,
+          'nested.json',
+          '{\n  "outer": {\n    "inner": "value"\n  },\n  "sibling": "stays visible"\n}\n',
+        );
+
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await openFilesTab(page, ws.id);
+        await fileRow(page, 'nested.json').click();
+        const pane = editorPane(page, 'nested.json');
+        await expect(pane.locator('.cm-content')).toContainText('sibling');
+
+        // Click the fold-gutter marker vertically aligned with the "outer"
+        // object's opening line specifically (not the root object's own
+        // marker on line 1) - .cm-foldGutter's rendered marker count isn't
+        // reliably 1:1 with .cm-gutterElement's index (a leading spacer
+        // element offsets it), so target by position instead of index.
+        const outerLineBox = await pane
+          .locator('.cm-line')
+          .filter({ hasText: '"outer"' })
+          .boundingBox();
+        const foldGutterBox = await pane.locator('.cm-foldGutter').boundingBox();
+        await page.mouse.click(
+          foldGutterBox!.x + foldGutterBox!.width / 2,
+          outerLineBox!.y + outerLineBox!.height / 2,
+        );
+        await expect(pane.locator('.cm-foldPlaceholder')).toBeVisible();
+        await expect(pane.locator('.cm-content')).not.toContainText('inner');
+        await expect(pane.locator('.cm-content')).toContainText('sibling');
+
+        await pauseForVideo(page, WorkspaceFileBrowser, testInfo);
+        await pane.getByRole('button', { name: 'Collapse All' }).click();
+        await expect(pane.locator('.cm-content')).not.toContainText('sibling');
+
+        await pane.getByRole('button', { name: 'Expand All' }).click();
+        await expect(pane.locator('.cm-foldPlaceholder')).toHaveCount(0);
+        await expect(pane.locator('.cm-content')).toContainText('inner');
+        await expect(pane.locator('.cm-content')).toContainText('sibling');
+
+        await page.request.delete(`/api/v1/workspaces/${ws.id}`);
+      },
+    },
   ],
 };
 

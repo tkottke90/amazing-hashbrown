@@ -1,6 +1,7 @@
 import { useEffect } from 'preact/hooks';
 import type { Signal } from '@preact/signals';
 import { X, Volume2, VolumeX, ArrowLeft } from 'lucide-preact';
+import { foldAll, unfoldAll } from '@codemirror/language';
 
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -231,6 +232,12 @@ function EditorPanel({
               </Button>
               <Button size="xs" variant="ghost" onClick={() => discardTab(tab.path)}>
                 Discard
+              </Button>
+              <Button size="xs" variant="outline" onClick={() => tab.view && foldAll(tab.view)}>
+                Collapse All
+              </Button>
+              <Button size="xs" variant="outline" onClick={() => tab.view && unfoldAll(tab.view)}>
+                Expand All
               </Button>
             </div>
             {tab.error && (

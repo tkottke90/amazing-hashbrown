@@ -146,6 +146,7 @@ export function PieChart({ labels, values, colors }: PieChartProps) {
           className="absolute z-10 rounded-md border border-border bg-card px-2 py-1 text-xs shadow-lg"
           style={{ left: hoverPos.value.x + 8, top: hoverPos.value.y - 8 }}
           onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
         >
           <div className="font-medium">{labels[hoveredIndex.value]}</div>
           <div className="text-muted-foreground">

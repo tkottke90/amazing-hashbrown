@@ -1,4 +1,4 @@
-import { render, screen, within, fireEvent } from '@testing-library/preact';
+import { render, screen, within, fireEvent, act } from '@testing-library/preact';
 import { PieChart } from '@/pages/dashboard/pie-chart';
 
 describe('PieChart', () => {
@@ -89,11 +89,15 @@ describe('PieChart', () => {
 
       fireEvent.mouseLeave(rows[0]!);
       fireEvent.mouseEnter(screen.getByTestId('pie-chart-tooltip'));
-      jest.advanceTimersByTime(200);
+      act(() => {
+        jest.advanceTimersByTime(200);
+      });
       expect(screen.getByTestId('pie-chart-tooltip')).toBeTruthy();
 
       fireEvent.mouseLeave(screen.getByTestId('pie-chart-tooltip'));
-      jest.advanceTimersByTime(200);
+      act(() => {
+        jest.advanceTimersByTime(200);
+      });
       expect(screen.queryByTestId('pie-chart-tooltip')).toBeNull();
     } finally {
       jest.useRealTimers();

@@ -20,6 +20,7 @@
     "@codemirror/lang-json": "^6",
     "@codemirror/lang-markdown": "^6",
     "@codemirror/lang-python": "^6",
+    "@codemirror/lang-yaml": "^6",
     "@codemirror/language": "^6",
     "@codemirror/state": "^6",
     "@codemirror/view": "^6",
