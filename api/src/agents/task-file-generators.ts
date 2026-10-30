@@ -4,6 +4,7 @@ import { buildTaskDescriptionBlock } from './plan-generation.js';
 import { formatPlanChecklist, type TaskContext } from './task-context.js';
 import type { TaskState } from '../services/task-file.js';
 import { logger, serializeError } from '../config/logger.js';
+import { getHistoryTokenBudget, capHistoryForPrompt } from './history-cap.js';
 
 // Two standalone, one-off LLM calls a Task File's pre-run/post-run steps
 // make outside the main task agent loop — structural siblings of
@@ -36,9 +37,17 @@ export async function generateTaskGoal(
   input: TaskGoalInput,
 ): Promise<string> {
   const sections = buildTaskContextLines(input.task);
-  if (input.previousTasks.length > 0) {
+  const { kept: keptPreviousTasks, omittedCount: omittedPreviousTasksCount } = capHistoryForPrompt(
+    input.previousTasks,
+    getHistoryTokenBudget(),
+  );
+  const previousTasksLines =
+    omittedPreviousTasksCount > 0
+      ? [`...and ${omittedPreviousTasksCount} earlier tasks not shown.`, ...keptPreviousTasks]
+      : keptPreviousTasks;
+  if (previousTasksLines.length > 0) {
     sections.push(
-      `Other tasks already done in this workspace:\n${input.previousTasks.map((t) => `- ${t}`).join('\n')}`,
+      `Other tasks already done in this workspace:\n${previousTasksLines.map((t) => `- ${t}`).join('\n')}`,
     );
   }
   sections.push(
@@ -92,11 +101,30 @@ export async function generateHandoffNotes(
 ): Promise<string> {
   const sections = buildTaskContextLines(input.task);
   sections.push(`This run's outcome: ${input.state.outcome}`);
-  const allNotes = input.state.notes.flat();
-  if (allNotes.length > 0) {
-    sections.push(
-      `Notes recorded across every run so far:\n${allNotes.map((n) => `- ${n}`).join('\n')}`,
-    );
+
+  const noteSegments = input.state.notes.map(
+    (segment, i) => `Run ${i + 1}:\n${segment.map((n) => `  - ${n}`).join('\n')}`,
+  );
+  const notesBudget = getHistoryTokenBudget();
+  let { kept: keptNoteSegments, omittedCount: omittedRunsCount } = capHistoryForPrompt(
+    noteSegments,
+    notesBudget,
+  );
+
+  if (keptNoteSegments.length === 0 && noteSegments.length > 0) {
+    // Even the single most-recent run's segment alone doesn't fit — fall
+    // back to trimming within that one segment (still newest-line-first)
+    // rather than dropping it entirely.
+    const lastSegment = input.state.notes[input.state.notes.length - 1]!;
+    const { kept: keptLines } = capHistoryForPrompt(lastSegment, notesBudget);
+    keptNoteSegments = [`Run ${noteSegments.length}:\n${keptLines.map((n) => `  - ${n}`).join('\n')}`];
+    omittedRunsCount = noteSegments.length - 1;
+  }
+
+  if (omittedRunsCount > 0 || keptNoteSegments.length > 0) {
+    const header =
+      omittedRunsCount > 0 ? `...and ${omittedRunsCount} earlier run(s) of notes not shown.\n\n` : '';
+    sections.push(`Notes recorded across every run so far:\n${header}${keptNoteSegments.join('\n\n')}`);
   }
   sections.push(
     'Write a short handoff note for whoever picks this task up next — what they should ' +

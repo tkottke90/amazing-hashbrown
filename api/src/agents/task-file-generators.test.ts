@@ -122,6 +122,52 @@ describe('task-file-generators', () => {
       const after = getObservabilityStore().find({}).length;
       expect(after).to.equal(before + 1);
     });
+
+    describe('token-budget capping of previousTasks [unit]', () => {
+      afterEach(() => {
+        configManager.set('chat', {});
+      });
+
+      it('omits the oldest previousTasks entries and adds the count marker when the budget is exceeded', async () => {
+        configManager.set('chat', { contextWindow: { maxTokens: 4000 } }); // budget ~1000 tokens
+        let capturedPrompt = '';
+        class CapturingModel extends FakeListChatModel {
+          override async invoke(input: unknown, options?: unknown) {
+            capturedPrompt = String(input);
+            return super.invoke(input, options as never);
+          }
+        }
+        const model = new CapturingModel({ responses: ['A goal'] });
+        const previousTasks = Array.from({ length: 50 }, (_, i) => `task-${i}: ${'x'.repeat(200)}`);
+
+        await generateTaskGoal(model, 'local', 'default-model', {
+          task: { title: 'T', description: null, outcome: null, plan: null },
+          previousTasks,
+        });
+
+        expect(capturedPrompt).to.include('earlier tasks not shown.');
+        expect(capturedPrompt).to.include(previousTasks[previousTasks.length - 1]!);
+        expect(capturedPrompt).to.not.include(previousTasks[0]!);
+      });
+
+      it('includes no marker when previousTasks fits entirely within budget', async () => {
+        let capturedPrompt = '';
+        class CapturingModel extends FakeListChatModel {
+          override async invoke(input: unknown, options?: unknown) {
+            capturedPrompt = String(input);
+            return super.invoke(input, options as never);
+          }
+        }
+        const model = new CapturingModel({ responses: ['A goal'] });
+
+        await generateTaskGoal(model, 'local', 'default-model', {
+          task: { title: 'T', description: null, outcome: null, plan: null },
+          previousTasks: ['task-1: small'],
+        });
+
+        expect(capturedPrompt).to.not.include('not shown');
+      });
+    });
   });
 
   describe('generateHandoffNotes', () => {
@@ -179,6 +225,83 @@ describe('task-file-generators', () => {
 
       const after = getObservabilityStore().find({}).length;
       expect(after).to.equal(before + 1);
+    });
+
+    describe('token-budget capping of notes [unit]', () => {
+      afterEach(() => {
+        configManager.set('chat', {});
+      });
+
+      it('omits the oldest run segments and adds the run-count marker when the budget is exceeded', async () => {
+        configManager.set('chat', { contextWindow: { maxTokens: 4000 } });
+        let capturedPrompt = '';
+        class CapturingModel extends FakeListChatModel {
+          override async invoke(input: unknown, options?: unknown) {
+            capturedPrompt = String(input);
+            return super.invoke(input, options as never);
+          }
+        }
+        const model = new CapturingModel({ responses: ['Notes'] });
+        const manyRunsState: TaskState = {
+          ...EMPTY_TASK_STATE,
+          outcome: 'It worked.',
+          notes: Array.from({ length: 30 }, (_, i) => [`run ${i} note: ${'x'.repeat(200)}`]),
+        };
+
+        await generateHandoffNotes(model, 'local', 'default-model', {
+          task: { title: 'T', description: null, outcome: null, plan: null },
+          state: manyRunsState,
+        });
+
+        expect(capturedPrompt).to.include('earlier run(s) of notes not shown.');
+        expect(capturedPrompt).to.include('run 29 note');
+        expect(capturedPrompt).to.not.include('run 0 note');
+      });
+
+      it('falls back to a partial last segment when even the single most-recent run does not fit', async () => {
+        configManager.set('chat', { contextWindow: { maxTokens: Math.ceil('small recent note'.length / 4) * 4 } });
+        let capturedPrompt = '';
+        class CapturingModel extends FakeListChatModel {
+          override async invoke(input: unknown, options?: unknown) {
+            capturedPrompt = String(input);
+            return super.invoke(input, options as never);
+          }
+        }
+        const model = new CapturingModel({ responses: ['Notes'] });
+        const oneHugeRunState: TaskState = {
+          ...EMPTY_TASK_STATE,
+          outcome: 'It worked.',
+          notes: [['x'.repeat(2000), 'small recent note']],
+        };
+
+        await generateHandoffNotes(model, 'local', 'default-model', {
+          task: { title: 'T', description: null, outcome: null, plan: null },
+          state: oneHugeRunState,
+        });
+
+        expect(capturedPrompt).to.include('Run 1:');
+        expect(capturedPrompt).to.include('small recent note');
+        expect(capturedPrompt).to.not.include('x'.repeat(2000));
+      });
+
+      it('includes no marker when all note segments fit entirely within budget', async () => {
+        let capturedPrompt = '';
+        class CapturingModel extends FakeListChatModel {
+          override async invoke(input: unknown, options?: unknown) {
+            capturedPrompt = String(input);
+            return super.invoke(input, options as never);
+          }
+        }
+        const model = new CapturingModel({ responses: ['Notes'] });
+        const smallState: TaskState = { ...EMPTY_TASK_STATE, outcome: 'It worked.', notes: [['a note']] };
+
+        await generateHandoffNotes(model, 'local', 'default-model', {
+          task: { title: 'T', description: null, outcome: null, plan: null },
+          state: smallState,
+        });
+
+        expect(capturedPrompt).to.not.include('not shown');
+      });
     });
   });
 });
