@@ -259,9 +259,11 @@ describe('task-file-generators', () => {
       });
 
       it('falls back to a partial last segment when even the single most-recent run does not fit', async () => {
-        configManager.set('chat', {
-          contextWindow: { maxTokens: Math.ceil('small recent note'.length / 4) * 4 },
-        });
+        // maxTokens has a schema-enforced minimum of 4000 (ContextWindowSchema);
+        // use that floor directly so the override actually validates, rather than
+        // silently falling back to the 32000 default. Budget is 25% of that, i.e.
+        // 1000 tokens (~4000 chars) — 'x'.repeat(5000) alone already exceeds it.
+        configManager.set('chat', { contextWindow: { maxTokens: 4000 } });
         let capturedPrompt = '';
         class CapturingModel extends FakeListChatModel {
           override async invoke(input: unknown, options?: unknown) {
@@ -273,7 +275,7 @@ describe('task-file-generators', () => {
         const oneHugeRunState: TaskState = {
           ...EMPTY_TASK_STATE,
           outcome: 'It worked.',
-          notes: [['x'.repeat(2000), 'small recent note']],
+          notes: [['x'.repeat(5000), 'small recent note']],
         };
 
         await generateHandoffNotes(model, 'local', 'default-model', {
@@ -283,7 +285,7 @@ describe('task-file-generators', () => {
 
         expect(capturedPrompt).to.include('Run 1:');
         expect(capturedPrompt).to.include('small recent note');
-        expect(capturedPrompt).to.not.include('x'.repeat(2000));
+        expect(capturedPrompt).to.not.include('x'.repeat(5000));
       });
 
       it('includes no marker when all note segments fit entirely within budget', async () => {
