@@ -117,14 +117,20 @@ export async function generateHandoffNotes(
     // rather than dropping it entirely.
     const lastSegment = input.state.notes[input.state.notes.length - 1]!;
     const { kept: keptLines } = capHistoryForPrompt(lastSegment, notesBudget);
-    keptNoteSegments = [`Run ${noteSegments.length}:\n${keptLines.map((n) => `  - ${n}`).join('\n')}`];
+    keptNoteSegments = [
+      `Run ${noteSegments.length}:\n${keptLines.map((n) => `  - ${n}`).join('\n')}`,
+    ];
     omittedRunsCount = noteSegments.length - 1;
   }
 
   if (omittedRunsCount > 0 || keptNoteSegments.length > 0) {
     const header =
-      omittedRunsCount > 0 ? `...and ${omittedRunsCount} earlier run(s) of notes not shown.\n\n` : '';
-    sections.push(`Notes recorded across every run so far:\n${header}${keptNoteSegments.join('\n\n')}`);
+      omittedRunsCount > 0
+        ? `...and ${omittedRunsCount} earlier run(s) of notes not shown.\n\n`
+        : '';
+    sections.push(
+      `Notes recorded across every run so far:\n${header}${keptNoteSegments.join('\n\n')}`,
+    );
   }
   sections.push(
     'Write a short handoff note for whoever picks this task up next — what they should ' +

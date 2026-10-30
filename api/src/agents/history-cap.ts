@@ -9,9 +9,7 @@ export const DEFAULT_HISTORY_BUDGET_FRACTION = 0.25;
 // env.chat.contextWindow is optional — the config getter does not backfill
 // its nested defaults when the whole key is absent, so this must use the
 // same `?? 32000` guard every existing consumer uses (chat-agent.ts).
-export function getHistoryTokenBudget(
-  fraction: number = DEFAULT_HISTORY_BUDGET_FRACTION,
-): number {
+export function getHistoryTokenBudget(fraction: number = DEFAULT_HISTORY_BUDGET_FRACTION): number {
   const maxTokens = env.chat.contextWindow?.maxTokens ?? 32000;
   return Math.floor(maxTokens * fraction);
 }

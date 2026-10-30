@@ -259,7 +259,9 @@ describe('task-file-generators', () => {
       });
 
       it('falls back to a partial last segment when even the single most-recent run does not fit', async () => {
-        configManager.set('chat', { contextWindow: { maxTokens: Math.ceil('small recent note'.length / 4) * 4 } });
+        configManager.set('chat', {
+          contextWindow: { maxTokens: Math.ceil('small recent note'.length / 4) * 4 },
+        });
         let capturedPrompt = '';
         class CapturingModel extends FakeListChatModel {
           override async invoke(input: unknown, options?: unknown) {
@@ -293,7 +295,11 @@ describe('task-file-generators', () => {
           }
         }
         const model = new CapturingModel({ responses: ['Notes'] });
-        const smallState: TaskState = { ...EMPTY_TASK_STATE, outcome: 'It worked.', notes: [['a note']] };
+        const smallState: TaskState = {
+          ...EMPTY_TASK_STATE,
+          outcome: 'It worked.',
+          notes: [['a note']],
+        };
 
         await generateHandoffNotes(model, 'local', 'default-model', {
           task: { title: 'T', description: null, outcome: null, plan: null },

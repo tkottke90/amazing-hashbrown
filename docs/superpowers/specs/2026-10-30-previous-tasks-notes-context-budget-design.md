@@ -6,7 +6,7 @@
 
 Research during grilling corrected that framing. Previous Tasks is workspace-wide by design (GLOSSARY.md) and is rebuilt fresh every run (ADR-0038) — Task Files are YAML, not JSON, so there is no stringify-on-stringify path. The real bug is simpler and still serious: nothing caps how many sibling one-liners `previousTasks` can hold, nothing caps how large any individual entry can be, and the same unbounded-growth shape exists for Task Notes (the one field the prior Task Files design explicitly left uncapped). Both fields are consumed by one-off `model.invoke()` calls (`generateTaskGoal`, `generateHandoffNotes`) that sit entirely outside the chat agent's context-window middleware, so there is no budget enforcement anywhere on this path today.
 
-This spec adds that enforcement. See GLOSSARY.md for Previous Tasks, Task Notes, Task Goal, and Handoff Notes; ADR-0038 for why Previous Tasks is scoped and re-derived the way it is; ADR-0039 for the precedent this spec deliberately does *not* follow; and ADR-0046 for the capping decision and its rejected alternatives. This spec implements ADR-0046 rather than re-arguing it, and was reached through a full grilling (design-interview) pass with the repo owner, with a parallel domain-modeling pass settling the ADR/glossary questions — every section below reflects an explicit answer, not an assumption.
+This spec adds that enforcement. See GLOSSARY.md for Previous Tasks, Task Notes, Task Goal, and Handoff Notes; ADR-0038 for why Previous Tasks is scoped and re-derived the way it is; ADR-0039 for the precedent this spec deliberately does _not_ follow; and ADR-0046 for the capping decision and its rejected alternatives. This spec implements ADR-0046 rather than re-arguing it, and was reached through a full grilling (design-interview) pass with the repo owner, with a parallel domain-modeling pass settling the ADR/glossary questions — every section below reflects an explicit answer, not an assumption.
 
 ## Existing system (facts gathered during research)
 
@@ -25,9 +25,7 @@ This spec adds that enforcement. See GLOSSARY.md for Previous Tasks, Task Notes,
 ```ts
 export const DEFAULT_HISTORY_BUDGET_FRACTION = 0.25;
 
-export function getHistoryTokenBudget(
-  fraction: number = DEFAULT_HISTORY_BUDGET_FRACTION,
-): number {
+export function getHistoryTokenBudget(fraction: number = DEFAULT_HISTORY_BUDGET_FRACTION): number {
   return Math.floor(env.chat.contextWindow.maxTokens * fraction);
 }
 
@@ -56,9 +54,12 @@ At `task-file-generators.ts:38-48`, before building the "Other tasks already don
 ```ts
 const budget = getHistoryTokenBudget();
 const { kept, omittedCount } = capHistoryForPrompt(input.previousTasks, budget);
-const lines = omittedCount > 0 ? [`...and ${omittedCount} earlier tasks not shown.`, ...kept] : kept;
+const lines =
+  omittedCount > 0 ? [`...and ${omittedCount} earlier tasks not shown.`, ...kept] : kept;
 if (lines.length > 0) {
-  sections.push(`Other tasks already done in this workspace:\n${lines.map((t) => `- ${t}`).join('\n')}`);
+  sections.push(
+    `Other tasks already done in this workspace:\n${lines.map((t) => `- ${t}`).join('\n')}`,
+  );
 }
 ```
 
@@ -86,7 +87,8 @@ if (kept.length === 0 && segments.length > 0) {
 }
 
 if (omittedCount > 0 || kept.length > 0) {
-  const header = omittedCount > 0 ? `...and ${omittedCount} earlier run(s) of notes not shown.\n\n` : '';
+  const header =
+    omittedCount > 0 ? `...and ${omittedCount} earlier run(s) of notes not shown.\n\n` : '';
   sections.push(`Notes recorded across every run so far:\n${header}${kept.join('\n\n')}`);
 }
 ```

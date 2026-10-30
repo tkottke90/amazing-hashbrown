@@ -4,7 +4,7 @@ Generating a Task Goal (from Previous Tasks) and Handoff Notes (from Task Notes)
 
 We cap each field, at the point it's assembled into its respective prompt, to ~25% of the existing `env.chat.contextWindow.maxTokens` budget: walk backward from the most recent entry (Previous Tasks: by Task File creation order; Task Notes: by Run segment, kept or dropped as a whole) until the next entry would exceed the ceiling, then stop and prepend a single flat count marker (e.g. "...and 187 earlier tasks not shown."). The full, uncapped data stays untouched on disk in the Task File — only what's fed into these two prompts is bounded.
 
-We deliberately did *not* follow ADR-0039's precedent of surfacing a referenceable manifest for omitted entries: ADR-0039's manifest works because the workspace-chat agent has a tool to go fetch what's manifested. Neither `generateTaskGoal` nor `generateHandoffNotes` binds any tool, so a manifest the model can't act on would just be inert noise — a flat count is the honest equivalent here.
+We deliberately did _not_ follow ADR-0039's precedent of surfacing a referenceable manifest for omitted entries: ADR-0039's manifest works because the workspace-chat agent has a tool to go fetch what's manifested. Neither `generateTaskGoal` nor `generateHandoffNotes` binds any tool, so a manifest the model can't act on would just be inert noise — a flat count is the honest equivalent here.
 
 ## Considered Options
 
