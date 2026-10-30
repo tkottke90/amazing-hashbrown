@@ -747,6 +747,9 @@ export function ChatInput({
             placeholder={placeholder}
             disabled={disabled}
             rows={2}
+            autoComplete="off"
+            data-lpignore="true"
+            data-form-type="other"
             className="max-h-40 resize-none overflow-y-auto border-none bg-transparent px-1 py-1 shadow-none focus-visible:ring-0 dark:bg-transparent"
           />
         </div>
