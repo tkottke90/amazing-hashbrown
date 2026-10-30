@@ -285,7 +285,7 @@ The five fields a Task File holds — Task Goal, Previous Tasks, Task Notes, Tas
 _Avoid_: Frontmatter (too generic — doesn't say what it holds), task metadata
 
 **Task Goal**:
-A Task File's own restatement, in the task's own words, of what the Task is trying to do. Regenerated at the start of every Run from the Task's title/description/outcome/plan and its Previous Tasks, and overwritten each time — it reflects the Task as currently understood, not a history of how that understanding changed.
+A Task File's own restatement, in the task's own words, of what the Task is trying to do. Regenerated at the start of every Run from the Task's title/description/outcome/plan and the most recent of its Previous Tasks, and overwritten each time — it reflects the Task as currently understood, not a history of how that understanding changed.
 _Avoid_: Objective, intent
 
 **Previous Tasks**:
