@@ -539,12 +539,12 @@ async function buildChatAgent(provider?: string, model?: string) {
         escalationMode: 'interrupt',
       }),
       createSkillExpansionMiddleware(globalSkills),
-      // Schema-only, no hooks (see its own header comment) — a no-op here
-      // and in buildWorkspaceChatAgent, since neither binds
-      // write_task_note/read_task_notes/a taskFile-aware update_plan. Rides
-      // along purely so ChatAgent's tuple type stays in lockstep across
-      // buildChatAgent/buildWorkspaceChatAgent/buildTaskAgent, the same
-      // reason attachmentAwarenessMiddleware/binaryContentFetchMiddleware
+      // No-op here and in buildWorkspaceChatAgent (see its own header
+      // comment) — called with no taskId/taskFile, since neither builder
+      // binds write_task_note/read_task_notes/a taskFile-aware update_plan.
+      // Rides along purely so ChatAgent's tuple type stays in lockstep
+      // across buildChatAgent/buildWorkspaceChatAgent/buildTaskAgent, the
+      // same reason attachmentAwarenessMiddleware/binaryContentFetchMiddleware
       // ride along in buildTaskAgent despite being a no-op there.
       createTaskFileStateMiddleware(),
       attachmentAwarenessMiddleware,
@@ -854,9 +854,7 @@ export async function buildTaskAgent(
       }),
       makeUpdatePlanTool(task.id, undefined, taskFile),
       ...(run?.hasPreviousRun ? [makeReadTaskRunTool(task.id, run.runId)] : []),
-      ...(taskFile
-        ? [makeWriteTaskNoteTool(task.id, taskFile.filePath), makeReadTaskNotesTool(task.id)]
-        : []),
+      ...(taskFile ? [makeWriteTaskNoteTool(), makeReadTaskNotesTool(task.id)] : []),
       ...mcpTools,
     ],
     systemPrompt,
@@ -871,12 +869,13 @@ export async function buildTaskAgent(
         taskId: task.id,
       }),
       createSkillExpansionMiddleware(skills),
-      // Schema-only — see its own header comment. Bound unconditionally
-      // (not just when taskFile is set) so buildTaskAgent's middleware
-      // tuple shape never depends on a runtime branch; the two tools that
-      // actually use it are still gated on taskFile above, so this is a
-      // harmless no-op when there's no Task File for this run.
-      createTaskFileStateMiddleware(),
+      // Owns the taskState graph channel's reducer and (per ADR-0047) the
+      // Task File's disk persistence. Bound unconditionally (not just when
+      // taskFile is set) so buildTaskAgent's middleware tuple shape never
+      // depends on a runtime branch; passing taskFile through lets its
+      // hooks persist, and it's a harmless no-op when there's no Task File
+      // for this run.
+      createTaskFileStateMiddleware(task.id, taskFile),
       // Harmless no-op here (an automated task run never carries a chat
       // attachmentId, so pendingImageFetch never gets set either), but
       // buildTaskAgent's declared return type pins `agent` to the exact

@@ -205,7 +205,7 @@ describe('agents/tools/update-plan', () => {
       const agent = createAgent({
         model: new ScriptedChatModel({}),
         tools: [makeUpdatePlanTool(task.id, store, { filePath })],
-        middleware: [createTaskFileStateMiddleware()],
+        middleware: [createTaskFileStateMiddleware(task.id, { filePath }, store)],
         checkpointer,
       });
       const config = { configurable: { thread_id: 'thread-1' } };

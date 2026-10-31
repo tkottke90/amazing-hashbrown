@@ -22,7 +22,7 @@ This was reached through a full grilling (design-interview) pass with the repo o
 
 ### 1. `taskState` channel gets a reducer, tools send deltas
 
-`api/src/agents/task-file-state.middleware.ts` wraps `taskState` in `withLangGraph(TaskStateSchema.default(cloneEmptyTaskState), { reducer: { fn: mergeTaskState, inputSchema: TaskStateAppendSchema }, default: cloneEmptyTaskState })`, turning the channel into a `BinaryOperatorAggregate`.
+`api/src/agents/task-file-state.middleware.ts` wraps `taskState` in `withLangGraph(TaskStateSchema.default(cloneEmptyTaskState), { reducer: { fn: mergeTaskState, schema: TaskStateAppendSchema }, default: cloneEmptyTaskState })`, turning the channel into a `BinaryOperatorAggregate`.
 
 `TaskStateAppendSchema` (new, same file) is the write-side shape both tools send instead of a full `TaskState` snapshot:
 
@@ -35,6 +35,8 @@ const TaskStateAppendSchema = z.object({
 `mergeTaskState(current: TaskState, delta: { appendNotes: string[] }): TaskState` appends `delta.appendNotes` onto the last entry of `current.notes` and returns a new object (new array references for `notes` and its last segment — this is what makes the reference-equality dirty check in §2 correct). No diffing or prefix-matching against a stale base is needed, because the reducer always folds against the real accumulated value (per the `BinaryOperatorAggregate.update` semantics above), not against two independent candidates. Two or more concurrent appends in the same step are folded in whatever order LangGraph processes that step's writes — unspecified order, but no entry from either write is ever lost.
 
 `write_task_note` and `update_plan` both change their `Command` to `update: { taskState: { appendNotes: [...] }, messages: [...] }` and drop their own `nextState` computation for the `taskState` field entirely (both still keep their other existing side effects — `update_plan`'s `store.patchTask`/`broadcast()` are a separate concern, untouched).
+
+**Correction found during implementation:** `task-execution.ts` also writes `taskState` — as a *full* `TaskState` object, passed as part of the top-level `agent.invoke()` input at the start of a fresh run (`{ messages: [...], taskState: taskFileScope.state }`). That seed goes through the exact same channel-update path as a tool's Command (LangGraph's `mapInput` turns top-level invoke input into the same kind of channel write a node's `Command` produces), so `mergeTaskState`'s delta parameter must accept either shape: `TaskStateUpdateSchema = z.union([TaskStateSchema, TaskStateAppendSchema])`, with the reducer treating a value that lacks `appendNotes` as a full replace. This is always safe — the seed happens once, before any node (including a tool) has run, so it can never be concurrent with an append.
 
 ### 2. Task File disk write moves to `beforeModel` + `afterAgent`
 
