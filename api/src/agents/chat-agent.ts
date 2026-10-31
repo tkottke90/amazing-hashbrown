@@ -955,6 +955,7 @@ export async function buildSubAgentAgent(
   task: Task,
   roleConfig: RoleConfig,
   workspaceScope?: TaskWorkspaceScope,
+  hooks?: TaskAgentHooks,
 ) {
   const llm = createProvider(roleConfig.provider, roleConfig.model);
 
@@ -996,7 +997,7 @@ export async function buildSubAgentAgent(
     // here (though the identical pattern is fine elsewhere in this file
     // with more/longer spreads around it); order has no runtime effect
     // either way.
-    tools: [makeCompleteTaskTool(task.id), ...tools],
+    tools: [makeCompleteTaskTool(task.id, { onAccepted: hooks?.onTaskComplete }), ...tools],
     systemPrompt,
     checkpointer: getCheckpointer(),
     middleware: [

@@ -9,7 +9,13 @@ import { getThreadStore } from '../../services/thread-store.js';
 import { recordSubAgentMarker } from '../thread-message-writer.js';
 
 const SpawnSubAgentSchema = z.object({
-  role: z.string().describe('The sub-agent role to delegate to — one of the configured roles.'),
+  role: z
+    .string()
+    .optional()
+    .describe(
+      'The sub-agent role to delegate to — one of the configured roles. Omit it, or pass an ' +
+        'unknown name, to use the Default Role.',
+    ),
   goal: z
     .string()
     .describe(
@@ -71,15 +77,38 @@ export function resolveDispatchGroupId(
   return id;
 }
 
+// Resolves a requested role (possibly absent, empty, or unknown) against
+// the configured Roles, falling back to agent.defaultRole — never erroring
+// as long as *some* usable Role can be found (the boot-time backfill in
+// roles.handlers.ts's ensureDefaultRole() guarantees at least one always
+// exists; see ADR-0049/ADR-0050). Returns null only when no usable Role
+// exists at all, which should be unreachable outside a direct bug.
+function resolveRole(requested: string | undefined): {
+  roleName: string;
+  usedFallback: boolean;
+  originalRole?: string;
+} | null {
+  const roles = env.agent.roles;
+  const trimmed = requested?.trim();
+  if (trimmed && roles[trimmed]) return { roleName: trimmed, usedFallback: false };
+
+  const defaultRoleName = env.agent.defaultRole;
+  if (defaultRoleName && roles[defaultRoleName]) {
+    return { roleName: defaultRoleName, usedFallback: true, originalRole: trimmed || undefined };
+  }
+  return null;
+}
+
 export const spawnSubAgentTool = tool(
   async ({ role, goal }, config) => {
-    const roleConfig = env.roles[role];
-    if (!roleConfig) {
-      const available = Object.keys(env.roles);
+    const resolved = resolveRole(role);
+    if (!resolved) {
+      const available = Object.keys(env.agent.roles);
       return available.length
-        ? `Unknown role "${role}". Configured roles: ${available.join(', ')}.`
-        : `Unknown role "${role}". No sub-agent roles are configured.`;
+        ? `Unknown role "${role ?? ''}". Configured roles: ${available.join(', ')}.`
+        : `Unknown role "${role ?? ''}". No sub-agent roles are configured.`;
     }
+    const { roleName, usedFallback, originalRole } = resolved;
 
     const parentThreadId = config?.configurable?.thread_id as string | undefined;
     if (!parentThreadId) {
@@ -92,14 +121,14 @@ export const spawnSubAgentTool = tool(
     let task;
     try {
       task = getWorkspaceStore().createSubAgentTask({
-        role,
+        role: roleName,
         goal,
         parentThreadId,
         dispatchGroupId,
         workspaceId: workspaceId ?? null,
       });
     } catch (err) {
-      logger.error('spawn_sub_agent: dispatch failed', { role, err: serializeError(err) });
+      logger.error('spawn_sub_agent: dispatch failed', { role: roleName, err: serializeError(err) });
       return `Failed to dispatch sub-agent: ${(err as Error).message}`;
     }
 
@@ -107,11 +136,20 @@ export const spawnSubAgentTool = tool(
 
     recordSubAgentMarker(getThreadStore(), parentThreadId, randomUUID(), {
       taskId: task.id,
-      role,
+      role: roleName,
       phase: 'dispatch',
     });
 
-    return JSON.stringify({ dispatched: { id: task.id, role } });
+    const payload: Record<string, unknown> = { dispatched: { id: task.id, role: roleName } };
+    if (usedFallback) {
+      const available = Object.keys(env.agent.roles);
+      payload['notice'] = originalRole
+        ? `Unknown role "${originalRole}" — dispatched to the Default Role "${roleName}" instead. ` +
+          `Configured roles: ${available.join(', ')}.`
+        : `No role was given — dispatched to the Default Role "${roleName}". ` +
+          `Configured roles: ${available.join(', ')}.`;
+    }
+    return JSON.stringify(payload);
   },
   {
     name: 'spawn_sub_agent',

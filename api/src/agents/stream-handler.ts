@@ -365,8 +365,13 @@ export async function pipeEvents(
 
 // ---- Finalize the assistant row, then emit either a HITL prompt or done ----
 
-// Structural interface — any LangGraph-based agent satisfies this.
-interface AgentWithGraph {
+// Structural interface — any LangGraph-based agent satisfies this. Exported
+// so callers whose agent variable can hold more than one createAgent()
+// result shape (e.g. task-execution.ts choosing between buildTaskAgent's
+// and buildSubAgentAgent's differently-tupled middleware) can type that
+// variable against this looser interface instead of the specific ChatAgent
+// alias. See buildSubAgentAgent's own header comment in chat-agent.ts.
+export interface AgentWithGraph {
   graph: Pick<ChatAgent['graph'], 'getState'>;
 }
 

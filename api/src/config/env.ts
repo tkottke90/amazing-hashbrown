@@ -479,6 +479,17 @@ export const AgentSchema = z.object({
     stagnationReflectionThreshold: 5,
     streakReflectionThreshold: 10,
   }),
+  // spawn_sub_agent Roles and which configured Role is the Default Role —
+  // nested here rather than AppConfigSchema's root, same precedent as
+  // subAgentRecursionLimit above. See ADR-0047-0052
+  // (docs/adr/0047-*.md-0052-*.md) and GLOSSARY.md § Sub-Agent Roles.
+  // No .refine() tying defaultRole to an existing roles key: the `agent`
+  // getter below swallows any AgentSchema parse failure to bare defaults,
+  // so a refine would risk silently wiping a user's entire agent section
+  // over one stale defaultRole value. That invariant is enforced only
+  // where it's mutated (routes/v1/roles.handlers.ts).
+  roles: RolesConfigSchema,
+  defaultRole: z.string().optional(),
 });
 
 export type AgentConfig = z.infer<typeof AgentSchema>;
@@ -608,7 +619,6 @@ const AppConfigSchema = z.object({
   costs: z.record(z.string(), CostEntrySchema).default({}),
   tools: ToolsConfigSchema,
   workspaces: WorkspacesSchema.optional(),
-  roles: RolesConfigSchema.optional(),
 });
 
 // config.yaml is the primary config source. Use ${ENV_VAR} syntax in the file
@@ -824,17 +834,6 @@ export const env = {
         'costs',
         z.record(z.string(), CostEntrySchema),
       ) as Record<string, CostEntry>;
-    } catch {
-      return {};
-    }
-  },
-  get roles(): Record<string, RoleConfig> {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return (configManager as any).getSection('roles', RolesConfigSchema) as Record<
-        string,
-        RoleConfig
-      >;
     } catch {
       return {};
     }

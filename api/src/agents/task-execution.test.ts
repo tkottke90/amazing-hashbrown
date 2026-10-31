@@ -24,7 +24,7 @@ import { getTaskAbort, setAbortIntent, type AbortIntent } from './active-task-ab
 import { drainPendingTurns } from './pending-thread-turns.js';
 import { executeTask, finishTaskFile, type QueueEntryWithTask } from './task-execution.js';
 import { loadTaskState, listWorkspaceTaskFiles, EMPTY_TASK_STATE } from '../services/task-file.js';
-import type { buildTaskAgent, TaskAgentHooks } from './chat-agent.js';
+import type { buildTaskAgent, buildSubAgentAgent, TaskAgentHooks } from './chat-agent.js';
 import { makeCompleteTaskTool } from './tools/complete-task.tool.js';
 import { registerBroadcastClient, unregisterBroadcastClient } from '../services/broadcast.js';
 import type { AppBroadcastEvent } from '@tkottke90/llm-common-types/chat';
@@ -278,6 +278,42 @@ function fakeBuildTaskAgent(agent: any): typeof buildTaskAgent {
       getPlan: () => getWorkspaceStore().getTask(task.id)?.plan ?? null,
       onAccepted: hooks?.onTaskComplete,
     });
+    return {
+      agent: {
+        ...agent,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        streamEvents: (...args: any[]): AsyncIterable<RawEvent> => {
+          const inner: AsyncIterable<RawEvent> = agent.streamEvents(...args);
+          async function* gen() {
+            for await (const e of inner) {
+              if (e.event === 'on_tool_start' && e.name === 'complete_task') {
+                await completeTask.invoke(e.data.input);
+              }
+              yield e;
+            }
+          }
+          return gen();
+        },
+      },
+      systemPrompt: 'test',
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  }) as any;
+}
+
+// Same wiring as fakeBuildTaskAgent above, but matching buildSubAgentAgent's
+// own (task, roleConfig, workspaceScope?, hooks?) signature — used for an
+// origin: 'agent' task, where executeTask() calls buildSubAgentAgent instead
+// of buildTaskAgent.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function fakeBuildSubAgentAgent(agent: any): typeof buildSubAgentAgent {
+  return (async (
+    task: Task,
+    _roleConfig?: unknown,
+    _workspaceScope?: unknown,
+    hooks?: TaskAgentHooks,
+  ) => {
+    const completeTask = makeCompleteTaskTool(task.id, { onAccepted: hooks?.onTaskComplete });
     return {
       agent: {
         ...agent,
@@ -1266,6 +1302,20 @@ describe('agents/task-execution', () => {
     // tests assert on the synchronous, provider-independent part of that
     // flow: the sub_agent_marker written into the parent thread before the
     // agent build is even attempted.
+    //
+    // executeTask() resolves an origin='agent' task's agent via
+    // buildSubAgentAgent, not buildTaskAgent — so every test below injects
+    // buildSubAgentAgent (via fakeBuildSubAgentAgent) instead, and this
+    // block's own beforeEach configures the 'researcher' role every
+    // makeSubAgentEntry() call defaults to, so role resolution succeeds.
+    beforeEach(() => {
+      configManager.set('agent', { roles: { researcher: {} } });
+    });
+
+    afterEach(() => {
+      configManager.set('agent', { roles: {} });
+    });
+
     function makeSubAgentEntry(
       opts: {
         role?: string;
@@ -1299,7 +1349,7 @@ describe('agents/task-execution', () => {
       const entry = makeSubAgentEntry({ parentThreadId: 'parent-a', dispatchGroupId: 'group-a' });
 
       await executeTask(entry, {
-        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+        buildSubAgentAgent: fakeBuildSubAgentAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
       });
 
       expect(store.getTask(entry.task.id)!.status).to.equal('done');
@@ -1324,7 +1374,7 @@ describe('agents/task-execution', () => {
       });
 
       await executeTask(first, {
-        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+        buildSubAgentAgent: fakeBuildSubAgentAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
       });
 
       const markers = completionMarkers('parent-b');
@@ -1338,7 +1388,7 @@ describe('agents/task-execution', () => {
         { event: 'on_chat_model_stream', data: { chunk: { content: 'Still thinking...' } } },
       ]);
 
-      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+      await executeTask(entry, { buildSubAgentAgent: fakeBuildSubAgentAgent(agent) });
 
       expect(store.getTask(entry.task.id)!.status).to.equal('failed');
       const markers = completionMarkers('parent-c');
@@ -1352,7 +1402,7 @@ describe('agents/task-execution', () => {
         { event: 'on_chat_model_stream', data: { chunk: { content: 'partial' } } },
       ]);
 
-      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+      await executeTask(entry, { buildSubAgentAgent: fakeBuildSubAgentAgent(agent) });
 
       expect(store.getTask(entry.task.id)!.status).to.equal('cancelled');
       const markers = completionMarkers('parent-d');
@@ -1381,7 +1431,7 @@ describe('agents/task-execution', () => {
       });
       const agent = fakeThrowingAgent([], stagnationError);
 
-      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+      await executeTask(entry, { buildSubAgentAgent: fakeBuildSubAgentAgent(agent) });
 
       expect(store.getTask(entry.task.id)!.status).to.equal('failed');
       // Same provider-independent scope as the adjacent tests in this
@@ -1404,7 +1454,7 @@ describe('agents/task-execution', () => {
       );
       const agent = fakeThrowingAgent([], contextBudgetError);
 
-      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+      await executeTask(entry, { buildSubAgentAgent: fakeBuildSubAgentAgent(agent) });
 
       expect(store.getTask(entry.task.id)!.status).to.equal('failed');
       const markers = completionMarkers('parent-f');
@@ -1414,6 +1464,40 @@ describe('agents/task-execution', () => {
       // the generic catch-all would run classifyChatError and prefix the
       // summary with "Run failed: ", losing the error's own message.
       expect(store.getQueueEntry(entry.id)!.summary).to.equal(contextBudgetError.message);
+    });
+
+    it('fails cleanly, with neither builder invoked, when the dispatched role no longer exists', async () => {
+      // Dispatched, then the role was deleted before this run started —
+      // spawn_sub_agent already validates/falls back at dispatch time, so
+      // this can only happen from a role deletion racing an already-queued
+      // run, not a bad role name reaching executeTask() directly.
+      configManager.set('agent', { roles: {} });
+      const entry = makeSubAgentEntry({ parentThreadId: 'parent-g', dispatchGroupId: 'group-g' });
+
+      let taskBuilderCalled = false;
+      let subAgentBuilderCalled = false;
+      await executeTask(entry, {
+        buildTaskAgent: ((...args: unknown[]) => {
+          taskBuilderCalled = true;
+          return fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS))(
+            ...(args as Parameters<typeof buildTaskAgent>),
+          );
+        }) as typeof buildTaskAgent,
+        buildSubAgentAgent: ((...args: unknown[]) => {
+          subAgentBuilderCalled = true;
+          return fakeBuildSubAgentAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS))(
+            ...(args as Parameters<typeof buildSubAgentAgent>),
+          );
+        }) as typeof buildSubAgentAgent,
+      });
+
+      expect(taskBuilderCalled).to.equal(false);
+      expect(subAgentBuilderCalled).to.equal(false);
+      expect(store.getTask(entry.task.id)!.status).to.equal('failed');
+      expect(store.getQueueEntry(entry.id)!.summary).to.include('no longer exists');
+      const markers = completionMarkers('parent-g');
+      expect(markers).to.have.length(1);
+      expect((markers[0]!.payload as Record<string, unknown>).outcome).to.equal('failed');
     });
   });
 
