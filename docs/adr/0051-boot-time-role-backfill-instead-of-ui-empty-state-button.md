@@ -1,0 +1,5 @@
+# A missing Role is backfilled at boot, not surfaced as a UI empty-state button
+
+Issue #375 originally proposed a UI empty-state with a one-click "Create default role" action for when zero Roles are configured. Instead, server boot itself checks for zero Roles and creates one automatically (and sets it as Default Role) before the UI or `spawn_sub_agent` ever sees an empty state — the same enforcement point as the "at least one Role" invariant (ADR-0050), since a hand-edited `config.yaml` could otherwise still reach zero Roles between restarts. The UI's Sub-Agents card therefore never needs to render a true empty state in normal operation.
+
+The backfilled Role uses a fixed name (`default`), no `provider`/`model` override (inherits the system default per ADR-0049), and is immediately set as `defaultRole` — a Role existing with nothing pointed at it as Default would leave `spawn_sub_agent`'s empty/unknown-role fallback exactly as broken as having zero Roles. Because the UI can now rely on at least one Role always existing, its Sub-Agents card drops the empty-state branch entirely rather than defending against a condition the backend guarantees can't happen.

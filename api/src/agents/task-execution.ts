@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { Command } from '@langchain/langgraph';
 import { logger, serializeError } from '../config/logger.js';
-import { env, type AnyProviderConfig } from '../config/env.js';
+import { env, type AnyProviderConfig, type RoleConfig } from '../config/env.js';
 import { getThreadStore, type ThreadStore } from '../services/thread-store.js';
 import {
   getWorkspaceStore,
@@ -23,7 +23,12 @@ import {
 } from './stream-handler.js';
 import { applyPersistedSseEvents } from './persisted-sse-events.js';
 import { classifyChatError } from './error-classification.js';
-import { buildTaskAgent, type WorkspaceChatContext, type ChatAgent } from './chat-agent.js';
+import {
+  buildTaskAgent,
+  buildSubAgentAgent,
+  type WorkspaceChatContext,
+  type ChatAgent,
+} from './chat-agent.js';
 import type { StagnationLimitError } from './recursion-guard.middleware.js';
 import { getProviderQueue } from '../services/provider-queue.js';
 import { resolveProviderConfig, createProvider } from '../services/provider-factory.js';
@@ -195,6 +200,9 @@ export interface ExecuteTaskDeps {
   // createAgent() machinery, which a unit test driving a fake event stream
   // cannot exercise directly. Defaults to the real implementation.
   buildTaskAgent?: typeof buildTaskAgent;
+  // Test-only seam, same rationale as buildTaskAgent above — used instead
+  // of it for an origin: 'agent' (sub-agent) run.
+  buildSubAgentAgent?: typeof buildSubAgentAgent;
   // Test-only seam — finishTaskFile() makes a real createProvider()/model
   // call (Handoff Notes generation) a unit test driving a fake event stream
   // cannot exercise directly. Defaults to the real implementation.
@@ -210,6 +218,7 @@ export async function executeTask(
   deps: ExecuteTaskDeps = {},
 ): Promise<void> {
   const buildAgent = deps.buildTaskAgent ?? buildTaskAgent;
+  const buildSubAgent = deps.buildSubAgentAgent ?? buildSubAgentAgent;
   const finishFileImpl = deps.finishTaskFile ?? finishTaskFile;
   // The real finishTaskFile already catches everything internally, but a
   // test (or any future caller) injecting a different implementation via
@@ -444,8 +453,33 @@ export async function executeTask(
       // docs/superpowers/specs/2026-10-14-task-model-switching-design.md),
       // in which case that takes precedence. A pin naming a provider no
       // longer configured falls back to the default rather than failing
-      // the run — same handling a legacy task with no pin gets.
-      if (task.provider && task.model) {
+      // the run — same handling a legacy task with no pin gets. An
+      // origin='agent' (sub-agent) run instead resolves through its Role
+      // (ADR-0049: a Role's own provider/model, or the system default when
+      // unset — never the parent thread's). `role` was already validated
+      // against the configured Roles at dispatch time
+      // (spawn-sub-agent.tool.ts), so a missing Role here means it was
+      // deleted after dispatch but before this run started — a genuine
+      // run-time failure (thrown, caught by this closure's own catch block
+      // below, which already handles task.origin === 'agent' notification
+      // for every other thrown-error case), not one to silently recover from.
+      let roleConfig: RoleConfig | undefined;
+      if (runTask.origin === 'agent') {
+        roleConfig = env.agent.roles[runTask.role ?? ''];
+        if (!roleConfig) {
+          throw new Error(`Role "${runTask.role}" no longer exists.`);
+        }
+        try {
+          ({ provider, model } = resolveTurnModel(roleConfig.provider, roleConfig.model));
+        } catch (err) {
+          logger.warn(
+            `Sub-agent task ${task.id}'s role "${runTask.role}" has a provider/model that is ` +
+              `no longer configured — falling back to the system default: ` +
+              `${err instanceof Error ? err.message : String(err)}`,
+          );
+          ({ provider, model } = resolveTurnModel(env.defaultProvider));
+        }
+      } else if (task.provider && task.model) {
         try {
           ({ provider, model } = resolveTurnModel(task.provider, task.model));
         } catch (err) {
@@ -518,19 +552,35 @@ export async function executeTask(
         taskFileScope = { filePath: absPath, state };
       }
 
-      const built = await buildAgent(
-        runTask,
-        provider,
-        model,
-        workspaceScope ? { workspaceContext: workspaceScope.workspaceContext } : undefined,
-        {
-          onTaskComplete: (call) => {
-            completeTaskBox.current = call;
-          },
+      const taskCompleteHook = {
+        onTaskComplete: (call: CompleteTaskCall) => {
+          completeTaskBox.current = call;
         },
-        { runId: entry.id, hasPreviousRun: previousRuns.length > 0 },
-        taskFileScope ? { filePath: taskFileScope.filePath } : undefined,
-      );
+      };
+      // buildSubAgentAgent's result isn't typed as ChatAgent (it carries a
+      // structurally different, shorter middleware tuple — see its own
+      // header comment in chat-agent.ts), but both it and buildTaskAgent
+      // build via the identical createAgent() call underneath, so the
+      // externally-consumed shape (streamEvents()/graph.getState(), all
+      // this file ever touches) is the same at runtime regardless of which
+      // middleware tuple was passed. See stream-handler.ts's AgentWithGraph.
+      const built =
+        runTask.origin === 'agent'
+          ? ((await buildSubAgent(
+              runTask,
+              roleConfig!,
+              workspaceScope ? { workspaceContext: workspaceScope.workspaceContext } : undefined,
+              taskCompleteHook,
+            )) as unknown as { agent: ChatAgent; systemPrompt: string })
+          : await buildAgent(
+              runTask,
+              provider,
+              model,
+              workspaceScope ? { workspaceContext: workspaceScope.workspaceContext } : undefined,
+              taskCompleteHook,
+              { runId: entry.id, hasPreviousRun: previousRuns.length > 0 },
+              taskFileScope ? { filePath: taskFileScope.filePath } : undefined,
+            );
       agent = built.agent;
       turnObs = startTurnObservability({
         threadId,

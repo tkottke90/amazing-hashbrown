@@ -7,6 +7,7 @@ import { useSettingsSection } from './use-settings-section';
 import { SaveDiscardBar } from './save-discard-bar';
 import { FieldError } from './field-error';
 import { FormLayout } from '@/components/form-layout';
+import { SubAgentRolesCard } from './sub-agent-roles-card';
 
 interface AgentBehaviorSettings {
   afterAgent: { enabled: boolean };
@@ -193,6 +194,8 @@ export function AgentBehaviorPanel() {
             </FormLayout>
           </CardContent>
         </Card>
+
+        <SubAgentRolesCard />
       </div>
 
       <SaveDiscardBar

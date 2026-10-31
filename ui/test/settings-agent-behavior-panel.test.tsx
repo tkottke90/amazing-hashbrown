@@ -16,6 +16,20 @@ jest.mock('@/services/settings-api', () => {
   };
 });
 jest.mock('@/lib/toast', () => ({ showToast: jest.fn() }));
+// The Sub-Agents card (rendered inside this page) fetches its own Roles
+// list on mount, independent of the batched settings-section fetch above —
+// mocked here purely so it doesn't make a real, unmocked network call.
+jest.mock('@/services/roles-api', () => ({
+  fetchRoles: jest.fn().mockResolvedValue({ roles: [{ name: 'default' }], defaultRole: 'default' }),
+  createRole: jest.fn(),
+  patchRole: jest.fn(),
+  deleteRole: jest.fn(),
+  setDefaultRole: jest.fn(),
+}));
+jest.mock('@/hooks/use-providers', () => ({
+  providers: { value: [] },
+  fetchProviders: jest.fn(),
+}));
 
 import { AgentBehaviorPanel } from '@/pages/settings/agent-behavior-panel';
 import * as api from '@/services/settings-api';
@@ -34,13 +48,14 @@ describe('AgentBehaviorPanel', () => {
     mockFetch.mockResolvedValue(DEFAULT_DATA);
   });
 
-  it('renders 3 card headings', async () => {
+  it('renders 4 card headings', async () => {
     render(<AgentBehaviorPanel />);
     await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument());
 
     expect(screen.getByText('Background processing')).toBeInTheDocument();
     expect(screen.getByText('Conversation history')).toBeInTheDocument();
     expect(screen.getByText('Observability')).toBeInTheDocument();
+    expect(screen.getByText('Sub-Agents')).toBeInTheDocument();
   });
 
   it('hides spanOutputPreviewChars when observability.enabled is false', async () => {

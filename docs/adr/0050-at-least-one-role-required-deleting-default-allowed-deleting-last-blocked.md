@@ -1,0 +1,5 @@
+# The system requires at least one Role to exist; deleting the Default Role is fine, deleting the last Role is not
+
+Deleting the Role currently set as Default Role is allowed — `spawn_sub_agent` only needs _some_ Default Role to exist, not this specific one. What it can't tolerate is zero Roles at all, since that's the exact unrecoverable state issue #375 exists to fix. So the delete endpoint's one hard rule is: reject deleting the last remaining Role (400), regardless of whether it's the Default. This is deliberately a different rule than "block deleting whichever Role is currently Default" — that would needlessly stop a user from pruning down to one Role of their choosing.
+
+Deleting a non-last Role that happens to be the current Default clears `defaultRole` to unset rather than auto-promoting one of the remaining Roles. There's no principled way to pick which remaining Role should inherit the title, and a silently-reassigned default is a more confusing failure mode than a visible "no default set" state the UI can flag and the user can resolve deliberately.

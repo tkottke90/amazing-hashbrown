@@ -37,11 +37,13 @@ describe('agents/tools/spawn-sub-agent', () => {
     // actually enqueued and woke the scheduler) and then stops rather than
     // trying to run a real agent turn.
     bootTaskScheduler();
-    configManager.set('roles', { researcher: { provider: 'test-provider', model: 'test-model' } });
+    configManager.set('agent', {
+      roles: { researcher: { provider: 'test-provider', model: 'test-model' } },
+    });
   });
 
   afterEach(() => {
-    configManager.set('roles', {});
+    configManager.set('agent', { roles: {} });
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -138,6 +140,97 @@ describe('agents/tools/spawn-sub-agent', () => {
     expect(store.getTask(p1.dispatched.id)!.dispatchGroupId).to.not.equal(
       store.getTask(p2.dispatched.id)!.dispatchGroupId,
     );
+  });
+});
+
+describe('agents/tools/spawn-sub-agent — Default Role fallback', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'spawn-sub-agent-tool-fallback-test-'));
+    const db = openDatabase(join(dir, 'test.db'));
+    bootWorkspaceStore(db);
+    bootThreadStore(db);
+    getThreadStore().upsertThreadOnFirstMessage(THREAD_ID, 'Calling thread', 'chat');
+    bootTaskScheduler();
+  });
+
+  afterEach(() => {
+    configManager.set('agent', { roles: {} });
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function seedRolesWithDefault(): void {
+    configManager.set('agent', {
+      roles: {
+        researcher: { provider: 'test-provider', model: 'test-model' },
+        default: {},
+      },
+      defaultRole: 'default',
+    });
+  }
+
+  it('dispatches to the Default Role and includes a notice when role is omitted', async () => {
+    seedRolesWithDefault();
+    const result = await spawnSubAgentTool.invoke({ goal: 'Find something' }, invokeConfig());
+    const parsed = JSON.parse(String(result)) as {
+      dispatched: { role: string };
+      notice?: string;
+    };
+    expect(parsed.dispatched.role).to.equal('default');
+    expect(parsed.notice).to.include('Default Role');
+    expect(parsed.notice).to.include('default');
+  });
+
+  it('dispatches to the Default Role and includes a notice when role is an empty string', async () => {
+    seedRolesWithDefault();
+    const result = await spawnSubAgentTool.invoke(
+      { role: '', goal: 'Find something' },
+      invokeConfig(),
+    );
+    const parsed = JSON.parse(String(result)) as { dispatched: { role: string } };
+    expect(parsed.dispatched.role).to.equal('default');
+  });
+
+  it('dispatches to the Default Role when an unknown role is given, with a notice naming it', async () => {
+    seedRolesWithDefault();
+    const result = await spawnSubAgentTool.invoke(
+      { role: 'no-such-role', goal: 'Find something' },
+      invokeConfig(),
+    );
+    const parsed = JSON.parse(String(result)) as {
+      dispatched: { role: string };
+      notice?: string;
+    };
+    expect(parsed.dispatched.role).to.equal('default');
+    expect(parsed.notice).to.include('no-such-role');
+    expect(parsed.notice).to.include('default');
+  });
+
+  it('dispatches normally with no notice when a known, non-default role is given', async () => {
+    seedRolesWithDefault();
+    const result = await spawnSubAgentTool.invoke(
+      { role: 'researcher', goal: 'Find something' },
+      invokeConfig(),
+    );
+    const parsed = JSON.parse(String(result)) as {
+      dispatched: { role: string };
+      notice?: string;
+    };
+    expect(parsed.dispatched.role).to.equal('researcher');
+    expect(parsed.notice).to.equal(undefined);
+  });
+
+  it('keeps the legacy "Unknown role" error when no Default Role is configured', async () => {
+    configManager.set('agent', {
+      roles: { researcher: { provider: 'test-provider', model: 'test-model' } },
+    });
+    const result = await spawnSubAgentTool.invoke(
+      { role: 'no-such-role', goal: 'Find something' },
+      invokeConfig(),
+    );
+    expect(String(result)).to.include('Unknown role');
+    expect(getWorkspaceStore().listTasks({}).length).to.equal(0);
   });
 });
 

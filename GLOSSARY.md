@@ -354,6 +354,20 @@ _Avoid_: Schedule (ambiguous — also names the task's cron expression/timing, e
 A mid-run action a `cron_repeat` task's own agent takes on itself because it has determined no further Runs are needed, ending its Recurrence early. Resumable — a human can re-enable the schedule afterward, the same way a consecutive-failures auto-pause recovers. Distinct from Cancel (aborting a Run already in progress, an unrelated existing action) and from a Recurrence simply running out on its own.
 _Avoid_: Cancel recurrence, stop task, pause task
 
+# Sub-Agent Roles
+
+How `spawn_sub_agent` resolves a calling model's `role` string to a fixed provider/model/system-prompt without ever letting the model choose its own infrastructure.
+
+## Language
+
+**Role**:
+A named, server-side config entry (provider, model, system prompt) that `spawn_sub_agent`'s `role` argument resolves against. Its name is a slug (lowercase, hyphen-separated, same convention as an MCP Server's own name) and is the entry's only identifier — renaming a Role deletes the old entry and creates a new one under the new name. Never a value the calling model supplies directly for provider/model selection.
+_Avoid_: Sub-agent profile, agent persona
+
+**Default Role**:
+The one Role `spawn_sub_agent` dispatches to when the calling model supplies an unknown or empty `role`, instead of erroring. The system never allows zero Roles to exist, so a Default Role can always be resolved — see ADR-0050 and ADR-0051.
+_Avoid_: Fallback role, catch-all role
+
 # Live SSE Events
 
 How a running turn's live events reach a client and, for some event types, also become durable history — the one registered writer every live turn's events flow through, and the two event kinds that must leave a record behind.
