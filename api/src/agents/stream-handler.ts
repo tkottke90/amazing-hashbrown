@@ -28,9 +28,9 @@ import {
   recordHitlPrompt,
   resolveHitlPrompt,
   recordWikiUpdate,
-  recordResourceCard,
   type AssistantMetrics,
 } from './thread-message-writer.js';
+import { applyPersistedSseEvents } from './persisted-sse-events.js';
 import { extractToolResultContent } from './tool-output.js';
 import { markArtifactReferenced } from '../artifacts/artifact-store.js';
 import { resolveProviderConfig } from '../services/provider-factory.js';
@@ -838,10 +838,9 @@ export function drainAndRecordWikiUpdates(
 
 // Live, in-turn SSE events (as opposed to drainAndRecordWikiUpdates' deferred
 // after-agent queue above) go through this writer. Most event types are a
-// pure passthrough, but resource_created also needs a thread_messages row —
-// unlike wiki_domain_created, which only ever streams live and is never
-// persisted — so the persisting write happens here rather than tripling this
-// branch across the three setActiveSseWriter call sites below.
+// pure passthrough; resource_created and wiki_updated also need a
+// thread_messages row — see applyPersistedSseEvents/ADR-0047 for the shared
+// mechanism every Active SSE Writer sink applies for this.
 export function makeLiveSseWriter(
   res: Response,
   threadStore: ThreadStore,
@@ -850,23 +849,7 @@ export function makeLiveSseWriter(
   const rawWrite: SseWriter = (event) => {
     res.write(`data: ${JSON.stringify(event)}\n\n`);
   };
-  return (event: ChatSSEEvent) => {
-    if (event.type === 'resource_created') {
-      const seq = recordResourceCard(
-        threadStore,
-        threadId,
-        randomUUID(),
-        event.resourceType,
-        event.name,
-        event.goal,
-        event.location,
-        event.workspaceId,
-      );
-      rawWrite(seq !== null ? { ...event, seq } : event);
-      return;
-    }
-    rawWrite(event);
-  };
+  return applyPersistedSseEvents(rawWrite, threadStore, threadId);
 }
 
 // ---- Public handlers ----

@@ -518,6 +518,141 @@ describe('agents/workspace-chat-stream-handler — abort handling', () => {
   });
 });
 
+// Regression coverage for #363: a direct, in-turn wiki_create_page/
+// wiki_update_page tool call emits its wiki_updated event straight to
+// getActiveSseWriter(threadId) mid-turn (bypassing pipeEvents entirely) —
+// this proves that event now reaches the client AND lands as a persisted
+// wiki_update row via this file's sink, not just the stream.
+describe('agents/workspace-chat-stream-handler — wiki write persistence (#363)', () => {
+  const TEST_PROVIDER = 'workspace-chat-wiki-write-test-provider';
+  let dir: string;
+  let workspaceStore: WorkspaceStore;
+  let workspace: Workspace;
+  let threadId: string;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type RawEvent = Record<string, any>;
+
+  // Mirrors the real wiki-create-page.tool.ts/wiki-update-page.tool.ts: on a
+  // successful write it calls getActiveSseWriter(threadId)?.(event) directly,
+  // mid-tool-call — not through pipeEvents. Throws afterward purely so the
+  // turn ends deterministically; this test only cares what happened before
+  // that, which classifyChatError/expectClassifiedTurnError in this suite
+  // already knows how to unwrap.
+  function fakeAgentEmittingWikiUpdate(tid: string) {
+    return {
+      streamEvents: (): AsyncIterable<RawEvent> => {
+        async function* gen() {
+          yield* [];
+          getActiveSseWriter(tid)?.({
+            type: 'wiki_updated',
+            pageTitle: 'Router',
+            pageKind: 'created',
+            wikiName: 'self',
+            path: 'entities/router.md',
+          });
+          throw new Error('simulated stream failure');
+        }
+        return gen();
+      },
+      graph: {
+        getState: async () => ({
+          tasks: [],
+          config: { configurable: { checkpoint_id: 'cp-test' } },
+        }),
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any;
+  }
+
+  function depsFor(agent: unknown): WorkspaceChatStreamDeps {
+    return {
+      getWorkspaceChatAgent: async () => ({ agent, systemPrompt: 'test system prompt' }) as never,
+    };
+  }
+
+  async function expectClassifiedTurnError(promise: Promise<void>): Promise<ClassifiedTurnError> {
+    try {
+      await promise;
+    } catch (err) {
+      expect(err).to.be.instanceOf(ClassifiedTurnError);
+      return err as ClassifiedTurnError;
+    }
+    throw new Error('expected the handler to throw');
+  }
+
+  before(() => {
+    configManager.set('providers', [
+      {
+        name: TEST_PROVIDER,
+        type: 'ollama',
+        baseUrl: 'http://localhost:11434',
+        defaultModel: 'test-model',
+      },
+    ]);
+    configManager.set('defaultProvider', TEST_PROVIDER);
+  });
+
+  after(() => {
+    configManager.set('providers', []);
+    configManager.set('defaultProvider', '');
+  });
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'workspace-chat-stream-wiki-write-test-'));
+    const db = openDatabase(join(dir, 'test.db'));
+    workspaceStore = new WorkspaceStore(db);
+    bootWorkspaceStore(db);
+    bootThreadStore(db);
+    bootObservability(db);
+    bootTaskScheduler();
+
+    threadId = randomUUID();
+    workspace = workspaceStore.createWorkspace({ name: 'W', location: '/tmp/w' });
+    workspace = workspaceStore.patchWorkspace(workspace.id, { threadId })!;
+  });
+
+  afterEach(() => {
+    clearActiveSseWriter(threadId);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('persists a wiki_updated event emitted mid-turn and forwards it with seq to the client [orchestration]', async () => {
+    const { res, events } = fakeRes();
+
+    await expectClassifiedTurnError(
+      streamWorkspaceChatToSse(
+        res,
+        workspace,
+        threadId,
+        'hello',
+        Date.now(),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        depsFor(fakeAgentEmittingWikiUpdate(threadId)),
+      ),
+    );
+
+    const emitted = events().find((e) => e.type === 'wiki_updated');
+    expect(emitted, 'expected the wiki_updated event to reach the client').to.not.equal(undefined);
+    expect((emitted as unknown as { seq?: number }).seq).to.be.a('number');
+
+    // No Wiki Domain is special-cased (#363) — deliberately uses "self".
+    const persisted = getThreadStore()
+      .getThreadMessages(threadId)
+      .find((m) => m.kind === 'wiki_update');
+    expect(persisted, 'expected a persisted wiki_update row').to.not.equal(undefined);
+    expect(persisted!.payload).to.deep.equal({
+      pageTitle: 'Router',
+      pageKind: 'created',
+      wikiName: 'self',
+      path: 'entities/router.md',
+    });
+  });
+});
+
 // Regression coverage for the PDF-upload bug report: workspace chat never
 // threaded attachmentId through at all before this fix, so an attachment's
 // UI record and observability span simply never existed for this pipeline —

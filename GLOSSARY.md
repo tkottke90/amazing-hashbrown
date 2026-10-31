@@ -104,6 +104,10 @@ The background pipeline that inspects each conversational turn for durable knowl
 
 ## Language
 
+**Wiki Domain**:
+One named knowledge base an agent can read or write. `user` and `self` are the two built-in Wiki Domains, scaffolded at boot; any further one is created on demand via `wiki_create_domain`/`wiki_register_domain`. No Wiki Domain, including `self`, is special-cased anywhere in the write or persistence path — only Write Scope narrows which Wiki Domains a given write may target.
+_Avoid_: Wiki, knowledge base, domain id
+
 **Write Scope**:
 The set of wiki domains a given turn may write to, resolved fresh on every write (by `resolveWikiWriteScope`) from the originating thread/workspace — never fixed once when an agent is built, since an unbound workspace's exclusions depend on other workspaces' bindings, which can change independently. One of three kinds: Locked Scope, Open Scope, Unresolved Scope.
 _Avoid_: Permission, access level, write policy
@@ -353,3 +357,29 @@ _Avoid_: Cancel recurrence, stop task, pause task
 **Lapsed Fire**:
 A fire time inside today's window — local midnight through the moment a Recurrence is created or re-enabled, in the schedule's own timezone — that will never run, because it falls before the `enabledAt` the catch-up arithmetic treats as its floor. Never recovered, by design — only ever surfaced as a warning at the moment of creation/re-enable.
 _Avoid_: Missed fire time (that term already names the downtime/catch-up case, which boot catch-up *does* recover as one run — a Lapsed Fire never is), slot, skipped run
+
+# Live SSE Events
+
+How a running turn's live events reach a client and, for some event types, also become durable history — the one registered writer every live turn's events flow through, and the two event kinds that must leave a record behind.
+
+## Language
+
+**Active SSE Writer**:
+The one `SseWriter` function registered per thread via `setActiveSseWriter` (read back via `getActiveSseWriter`) for the duration of a turn. Every live, in-turn event is sent through it, whichever turn kind currently holds the thread — chat, workspace chat, wiki chat, or a scheduled task run.
+_Avoid_: SSE sink, stream writer, live writer
+
+**Persisted Event**:
+An SSE event type that, beyond streaming live to whatever client is listening, must also leave a durable `thread_messages` row behind — `resource_created` (via `recordResourceCard`) and `wiki_updated` (via `recordWikiUpdate`) are the two. Every Active SSE Writer applies the same persister for a given event type, regardless of which turn kind registered it (see ADR-0047).
+_Avoid_: durable event, recorded event
+
+**Streamed-Only Event**:
+An SSE event type with no durable counterpart — it exists only for whichever client happens to be listening when it fires, e.g. `wiki_domain_created`. The Active SSE Writer passes these through unchanged.
+_Avoid_: ephemeral event, passthrough event, live-only event
+
+**Wiki Update Event**:
+The `wiki_updated` SSE event type, emitted the instant a wiki write tool call succeeds or AfterAgent completes a write. On its own this is only a signal of what happened — it carries no history unless something also turns it into a Wiki Update Message.
+_Avoid_: wiki_updated, wiki write event
+
+**Wiki Update Message**:
+The durable `wiki_update`-kind `thread_messages` row a Wiki Update Event becomes once persisted (`recordWikiUpdate()`). `wikiWriteCount` and the `wiki_mismatch` anomaly both read only these rows, never a Wiki Update Event directly — a Wiki Update Event that's never turned into one is invisible to both, which was the entire defect behind Issue #363.
+_Avoid_: wiki_update, wiki write record (see Wiki Update Event — the live signal, not the stored row)

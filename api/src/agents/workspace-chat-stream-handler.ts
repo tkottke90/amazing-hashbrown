@@ -17,6 +17,7 @@ import {
   recoverThrownInterrupt,
   ClassifiedTurnError,
 } from './stream-handler.js';
+import { applyPersistedSseEvents } from './persisted-sse-events.js';
 import { classifyChatError } from './error-classification.js';
 import { env } from '../config/env.js';
 import { getThreadStore } from '../services/thread-store.js';
@@ -149,9 +150,13 @@ export async function streamWorkspaceChatToSse(
   const resolveWorkspaceChatAgent = deps.getWorkspaceChatAgent ?? getWorkspaceChatAgent;
   const workspaceStore = getWorkspaceStore();
   const threadStore = getThreadStore();
-  const sink: SseWriter = (event) => {
-    res.write(`data: ${JSON.stringify(event)}\n\n`);
-  };
+  const sink: SseWriter = applyPersistedSseEvents(
+    (event) => {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    },
+    threadStore,
+    threadId,
+  );
 
   // Another turn currently owns this exact thread (a chat turn still
   // streaming, or a headless sub-agent notification) — reject rather than
@@ -402,9 +407,13 @@ export async function resumeWorkspaceChatToSse(
   const resolveWorkspaceChatAgent = deps.getWorkspaceChatAgent ?? getWorkspaceChatAgent;
   const workspaceStore = getWorkspaceStore();
   const threadStore = getThreadStore();
-  const sink: SseWriter = (event) => {
-    res.write(`data: ${JSON.stringify(event)}\n\n`);
-  };
+  const sink: SseWriter = applyPersistedSseEvents(
+    (event) => {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    },
+    threadStore,
+    threadId,
+  );
 
   if (getActiveSseWriter(threadId)) {
     writeSseEvent(sink, {
@@ -619,9 +628,13 @@ export async function retryWorkspaceChatToSse(
   const resolveWorkspaceChatAgent = deps.getWorkspaceChatAgent ?? getWorkspaceChatAgent;
   const workspaceStore = getWorkspaceStore();
   const threadStore = getThreadStore();
-  const sink: SseWriter = (event) => {
-    res.write(`data: ${JSON.stringify(event)}\n\n`);
-  };
+  const sink: SseWriter = applyPersistedSseEvents(
+    (event) => {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    },
+    threadStore,
+    threadId,
+  );
 
   if (getActiveSseWriter(threadId)) {
     writeSseEvent(sink, {
