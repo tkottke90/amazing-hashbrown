@@ -354,6 +354,10 @@ _Avoid_: Schedule (ambiguous — also names the task's cron expression/timing, e
 A mid-run action a `cron_repeat` task's own agent takes on itself because it has determined no further Runs are needed, ending its Recurrence early. Resumable — a human can re-enable the schedule afterward, the same way a consecutive-failures auto-pause recovers. Distinct from Cancel (aborting a Run already in progress, an unrelated existing action) and from a Recurrence simply running out on its own.
 _Avoid_: Cancel recurrence, stop task, pause task
 
+**Lapsed Fire**:
+A fire time inside today's window — local midnight through the moment a Recurrence is created or re-enabled, in the schedule's own timezone — that will never run, because it falls before the `enabledAt` the catch-up arithmetic treats as its floor. Never recovered, by design — only ever surfaced as a warning at the moment of creation/re-enable.
+_Avoid_: Missed fire time (that term already names the downtime/catch-up case, which boot catch-up _does_ recover as one run — a Lapsed Fire never is), slot, skipped run
+
 # Sub-Agent Roles
 
 How `spawn_sub_agent` resolves a calling model's `role` string to a fixed provider/model/system-prompt without ever letting the model choose its own infrastructure.

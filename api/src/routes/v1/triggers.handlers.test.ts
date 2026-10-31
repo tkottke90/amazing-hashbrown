@@ -137,6 +137,26 @@ describe('routes/v1/triggers.handlers', () => {
         status: 400,
       });
     });
+
+    it('includes a Lapsed Fire warning for a cron_repeat preview whose expression already fired today [unit]', () => {
+      // NOW is noon UTC — 09:00 today has already passed.
+      const result = previewCronHandler({ expression: '0 9 * * *', timezone: 'UTC' }, NOW);
+      expect(result.ok && result.data.warning).to.match(/09:00/);
+    });
+
+    it('omits the warning for a cron_repeat preview with no Lapsed Fires [unit]', () => {
+      // 18:00 today is still ahead of NOW (noon UTC).
+      const result = previewCronHandler({ expression: '0 18 * * *', timezone: 'UTC' }, NOW);
+      expect(result.ok && 'warning' in result.data).to.equal(false);
+    });
+
+    it('never carries a warning field for a cron_once preview [unit]', () => {
+      const future = previewCronHandler(
+        { fireAt: '2026-10-01T15:00:00.000Z', timezone: 'UTC' },
+        NOW,
+      );
+      expect(future.ok && 'warning' in future.data).to.equal(false);
+    });
   });
 
   describe('POST /api/v1/triggers/cron/preview', () => {

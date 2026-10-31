@@ -2,8 +2,10 @@ import { describe, it } from 'mocha';
 import { expect } from 'chai';
 import {
   cronExpressionError,
+  describeLapsedFires,
   describeSchedule,
   isValidTimeZone,
+  lapsedFiresToday,
   latestMissedFireAt,
   nextFireAt,
   type CronOnceTiming,
@@ -186,6 +188,119 @@ describe('services/cron-schedule', () => {
         4,
       );
       expect(result.nextFireTimes).to.have.length(1);
+    });
+  });
+
+  describe('lapsedFiresToday() — fire times already passed today, before enablement', () => {
+    it('returns nothing when no match has happened yet today [unit]', () => {
+      const timing = repeat({ expression: '0 6,11,14 * * *' });
+      expect(lapsedFiresToday(timing, new Date('2026-09-26T05:30:00Z'))).to.deep.equal([]);
+    });
+
+    it('collects every match between local midnight and now, oldest first [unit]', () => {
+      // Created at 14:10 Chicago time: all three of today's named times
+      // (06:00, 11:00, 14:00) have already passed, not just the first two.
+      const timing = repeat({ expression: '0 6,11,14 * * *', timezone: 'America/Chicago' });
+      const result = lapsedFiresToday(timing, new Date('2026-09-26T19:10:00Z')); // 14:10 CDT
+      expect(result.map(iso)).to.deep.equal([
+        '2026-09-26T11:00:00.000Z', // 06:00 CDT
+        '2026-09-26T16:00:00.000Z', // 11:00 CDT
+        '2026-09-26T19:00:00.000Z', // 14:00 CDT
+      ]);
+    });
+
+    it('treats a fire time exactly at "now" as lapsed, not yet-to-fire [unit]', () => {
+      const timing = repeat({ expression: '0 6,11,14 * * *' });
+      const result = lapsedFiresToday(timing, new Date('2026-09-26T11:00:00Z'));
+      expect(result.map(iso)).to.deep.equal([
+        '2026-09-26T06:00:00.000Z',
+        '2026-09-26T11:00:00.000Z',
+      ]);
+    });
+
+    it('uses the schedule\'s own time zone for "today", not UTC — a zone west of UTC [unit]', () => {
+      // 18:00 PDT on Sept 26 is already Sept 27 in UTC, but it's still
+      // "today" (Sept 26) where the schedule lives, and still gets reported.
+      const timing = repeat({ expression: '0 6,18 * * *', timezone: 'America/Los_Angeles' });
+      const result = lapsedFiresToday(timing, new Date('2026-09-27T03:00:00Z')); // 20:00 PDT Sept 26
+      expect(result.map(iso)).to.deep.equal([
+        '2026-09-26T13:00:00.000Z', // 06:00 PDT Sept 26
+        '2026-09-27T01:00:00.000Z', // 18:00 PDT Sept 26
+      ]);
+    });
+
+    it('uses the schedule\'s own time zone for "today" — a zone east of UTC [unit]', () => {
+      // 06:00 JST on Sept 26 is still Sept 25 in UTC, but it's "today"
+      // (Sept 26) in Tokyo, where the schedule lives.
+      const timing = repeat({ expression: '0 6 * * *', timezone: 'Asia/Tokyo' });
+      const result = lapsedFiresToday(timing, new Date('2026-09-26T00:30:00Z')); // 09:30 JST Sept 26
+      expect(result.map(iso)).to.deep.equal(['2026-09-25T21:00:00.000Z']); // 06:00 JST Sept 26
+    });
+
+    it('stops at local midnight even when a DST transition happens later the same day [unit]', () => {
+      // Nov 1 2026: Chicago falls back from CDT to CST between 1am and 2am.
+      // Midnight (still CDT) and noon (already CST) are both "today."
+      const timing = repeat({ expression: '0 0,12 * * *', timezone: 'America/Chicago' });
+      const result = lapsedFiresToday(timing, new Date('2026-11-01T18:30:00Z')); // 12:30 CST
+      expect(result.map(iso)).to.deep.equal([
+        '2026-11-01T05:00:00.000Z', // 00:00 CDT
+        '2026-11-01T18:00:00.000Z', // 12:00 CST
+      ]);
+    });
+
+    it('handles a high-frequency expression across nearly a full day without hanging [unit]', () => {
+      const timing = repeat({ expression: '* * * * *' });
+      const result = lapsedFiresToday(timing, new Date('2026-09-26T23:59:00Z'));
+      expect(result).to.have.length(1440);
+      expect(iso(result[0]!)).to.equal('2026-09-26T00:00:00.000Z');
+      expect(iso(result[result.length - 1]!)).to.equal('2026-09-26T23:59:00.000Z');
+    });
+  });
+
+  describe('describeLapsedFires()', () => {
+    it('returns undefined when there is nothing to warn about [unit]', () => {
+      expect(describeLapsedFires([], 'UTC')).to.equal(undefined);
+    });
+
+    it('names a single lapsed time, singular [unit]', () => {
+      const result = describeLapsedFires([new Date('2026-09-26T06:00:00Z')], 'UTC');
+      expect(result).to.equal(
+        "Heads up: today's 06:00 run already passed and won't fire. The schedule will run " +
+          'normally starting with its next fire time.',
+      );
+    });
+
+    it('joins two lapsed times with "and", plural [unit]', () => {
+      const result = describeLapsedFires(
+        [new Date('2026-09-26T06:00:00Z'), new Date('2026-09-26T11:00:00Z')],
+        'UTC',
+      );
+      expect(result).to.equal(
+        "Heads up: today's 06:00 and 11:00 runs already passed and won't fire. The schedule " +
+          'will run normally starting with its next fire time.',
+      );
+    });
+
+    it('lists up to 5 times with no overflow suffix [unit]', () => {
+      const lapsed = ['06:00', '07:00', '08:00', '09:00', '10:00'].map(
+        (t) => new Date(`2026-09-26T${t}:00Z`),
+      );
+      const result = describeLapsedFires(lapsed, 'UTC');
+      expect(result).to.equal(
+        "Heads up: today's 06:00, 07:00, 08:00, 09:00 and 10:00 runs already passed and " +
+          "won't fire. The schedule will run normally starting with its next fire time.",
+      );
+    });
+
+    it('caps at 5 named times and appends a "+N more" tail beyond that [unit]', () => {
+      const lapsed = ['06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00'].map(
+        (t) => new Date(`2026-09-26T${t}:00Z`),
+      );
+      const result = describeLapsedFires(lapsed, 'UTC');
+      expect(result).to.equal(
+        "Heads up: today's 06:00, 07:00, 08:00, 09:00, 10:00, +3 more runs already passed " +
+          "and won't fire. The schedule will run normally starting with its next fire time.",
+      );
     });
   });
 });

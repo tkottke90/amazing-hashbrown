@@ -60,7 +60,8 @@ function conflict(error: string): HandlerFailure {
   return { ok: false, status: 409, error };
 }
 
-type TriggerConfigResult = { ok: true; triggerConfig: unknown } | { ok: false; error: string };
+type TriggerConfigResult =
+  { ok: true; triggerConfig: unknown; warning?: string } | { ok: false; error: string };
 
 // Resolves the trigger_config to store for a create or patch. The server is
 // the sole source of truth for a webhook task's token — a client can never
@@ -103,7 +104,11 @@ function resolveTriggerConfig(
       now,
     );
     return resolved.ok
-      ? { ok: true, triggerConfig: resolved.config }
+      ? {
+          ok: true,
+          triggerConfig: resolved.config,
+          ...(resolved.warning ? { warning: resolved.warning } : {}),
+        }
       : { ok: false, error: `Invalid schedule: ${resolved.error}` };
   }
 
@@ -134,6 +139,7 @@ export type RunOutcome = 'done' | 'failed' | 'cancelled';
 
 export type TaskResponse = Task & {
   schedule?: TaskSchedule & { lastRunOutcome: RunOutcome | null };
+  warning?: string;
 };
 
 const RUN_OUTCOMES: ReadonlySet<string> = new Set(['done', 'failed', 'cancelled']);
@@ -178,19 +184,22 @@ export function getTaskHandler(store: WorkspaceStore, id: string) {
 export function createTaskHandler(
   store: WorkspaceStore,
   body: Partial<NewTaskInput>,
+  now: Date = new Date(),
 ): HandlerResult<TaskResponse> {
   if (!body.title || typeof body.title !== 'string') return badRequest('title is required');
-  const trigger = resolveTriggerConfig(null, body);
+  const trigger = resolveTriggerConfig(null, body, now);
   if (!trigger.ok) return badRequest(trigger.error);
   const task = store.createTask({ ...body, triggerConfig: trigger.triggerConfig } as NewTaskInput);
-  const status = statusAfterTriggerSave(store, task);
-  return ok(withSchedule(store, status ? store.patchTask(task.id, { status })! : task));
+  const status = statusAfterTriggerSave(store, task, now);
+  const result = withSchedule(store, status ? store.patchTask(task.id, { status })! : task, now);
+  return ok(trigger.warning ? { ...result, warning: trigger.warning } : result);
 }
 
 export function patchTaskHandler(
   store: WorkspaceStore,
   id: string,
   patch: PatchTaskInput & { regenerateWebhookToken?: boolean },
+  now: Date = new Date(),
 ): HandlerResult<TaskResponse> {
   const current = store.getTask(id);
   if (!current) return notFound(`Task ${id} not found`);
@@ -288,11 +297,11 @@ export function patchTaskHandler(
   }
 
   const { regenerateWebhookToken, ...rest } = patch;
-  const trigger = resolveTriggerConfig(current, { ...rest, regenerateWebhookToken });
+  const trigger = resolveTriggerConfig(current, { ...rest, regenerateWebhookToken }, now);
   if (!trigger.ok) return badRequest(trigger.error);
   let task = store.patchTask(id, { ...rest, triggerConfig: trigger.triggerConfig });
   if (!task) return notFound(`Task ${id} not found`);
-  const scheduleStatus = statusAfterTriggerSave(store, task);
+  const scheduleStatus = statusAfterTriggerSave(store, task, now);
   if (scheduleStatus && scheduleStatus !== task.status) {
     task = store.patchTask(id, { status: scheduleStatus }) ?? task;
   }
@@ -321,7 +330,8 @@ export function patchTaskHandler(
     if (!alreadyQueued) store.enqueueTask(id);
   }
 
-  return ok(withSchedule(store, task));
+  const result = withSchedule(store, task, now);
+  return ok(trigger.warning ? { ...result, warning: trigger.warning } : result);
 }
 
 export function deleteTaskHandler(

@@ -1307,6 +1307,79 @@ describe('routes/v1/tasks.handlers', () => {
       expect(store.listTasks()).to.have.length(0);
     });
 
+    describe('Lapsed Fire warning (#366)', () => {
+      const NOW = new Date('2026-09-26T12:00:00.000Z'); // noon UTC
+
+      it('surfaces a Lapsed Fire warning on create, and the task still ends up scheduled [unit]', () => {
+        const result = createTaskHandler(
+          store,
+          {
+            title: 'Morning briefing',
+            triggerType: 'cron_repeat',
+            triggerConfig: { expression: '0 9 * * *', timezone: 'UTC' }, // 09:00 already passed
+          },
+          NOW,
+        );
+        expect(result.ok && result.data!.warning).to.match(/09:00/);
+        expect(result.ok && result.data!.status).to.equal('scheduled');
+      });
+
+      it('omits the warning field entirely when there are no Lapsed Fires [unit]', () => {
+        const result = createTaskHandler(
+          store,
+          {
+            title: 'Evening briefing',
+            triggerType: 'cron_repeat',
+            triggerConfig: { expression: '0 18 * * *', timezone: 'UTC' }, // still ahead of NOW
+          },
+          NOW,
+        );
+        expect(result.ok && 'warning' in result.data!).to.equal(false);
+      });
+
+      it('surfaces the warning on a re-enable patch (enabled: false → true) [unit]', () => {
+        const created = createTaskHandler(
+          store,
+          {
+            title: 'Morning briefing',
+            triggerType: 'cron_repeat',
+            triggerConfig: { expression: '0 9 * * *', timezone: 'UTC', enabled: false },
+          },
+          NOW,
+        );
+        const id = created.ok ? created.data!.id : '';
+        const result = patchTaskHandler(
+          store,
+          id,
+          { triggerConfig: { expression: '0 9 * * *', timezone: 'UTC', enabled: true } },
+          NOW,
+        );
+        expect(result.ok && result.data!.warning).to.match(/09:00/);
+      });
+
+      it('omits the warning on a patch that edits the schedule without re-enabling it [unit]', () => {
+        const created = createTaskHandler(
+          store,
+          {
+            title: 't',
+            triggerType: 'cron_repeat',
+            triggerConfig: { expression: '0 0 * * *', timezone: 'UTC' },
+          },
+          NOW,
+        );
+        const id = created.ok ? created.data!.id : '';
+        // Already enabled — this edit doesn't re-enable it, even though the
+        // new expression's 09:00 today has, by NOW, already passed.
+        const result = patchTaskHandler(
+          store,
+          id,
+          { triggerConfig: { expression: '0 9 * * *', timezone: 'UTC' } },
+          NOW,
+        );
+        expect(result.ok && 'warning' in result.data!).to.equal(false);
+      });
+    });
+
     it('requires a config when switching a task onto a schedule [unit]', () => {
       const task = store.createTask({ title: 't' });
       const result = patchTaskHandler(store, task.id, { triggerType: 'cron_repeat' });

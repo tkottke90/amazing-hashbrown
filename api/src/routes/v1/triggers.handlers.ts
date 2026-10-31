@@ -3,8 +3,11 @@ import type { HandlerFailure, HandlerResult } from './threads.handlers.js';
 import { enqueueTaskHandler } from './tasks.handlers.js';
 import {
   cronExpressionError,
+  describeLapsedFires,
   describeSchedule,
   isValidTimeZone,
+  lapsedFiresToday,
+  type CronRepeatTiming,
 } from '../../services/cron-schedule.js';
 
 function ok<T>(data: T): HandlerResult<T> {
@@ -36,6 +39,7 @@ export interface CronPreview {
   error?: string;
   description: string;
   nextFireTimes: string[];
+  warning?: string;
 }
 
 // Validates a schedule as the user types it and reads it back: the
@@ -57,22 +61,22 @@ export function previewCronHandler(
   if (typeof expression === 'string') {
     const error = cronExpressionError(expression, timezone);
     if (error) return invalid(error);
-    const { description, nextFireTimes } = describeSchedule(
-      {
-        kind: 'cron_repeat',
-        expression,
-        timezone,
-        enabledAt: now.toISOString(),
-        lastFiredAt: null,
-        maxIterations: null,
-        stopAfter: null,
-      },
-      now,
-    );
+    const timing: CronRepeatTiming = {
+      kind: 'cron_repeat',
+      expression,
+      timezone,
+      enabledAt: now.toISOString(),
+      lastFiredAt: null,
+      maxIterations: null,
+      stopAfter: null,
+    };
+    const { description, nextFireTimes } = describeSchedule(timing, now);
+    const warning = describeLapsedFires(lapsedFiresToday(timing, now), timezone);
     return ok({
       valid: true,
       description,
       nextFireTimes: nextFireTimes.map((d) => d.toISOString()),
+      ...(warning ? { warning } : {}),
     });
   }
 

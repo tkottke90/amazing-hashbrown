@@ -3,9 +3,12 @@ import { env } from '../config/env.js';
 import type { TaskStatus, TriggerType } from './workspace-store.js';
 import {
   cronExpressionError,
+  describeLapsedFires,
   isValidTimeZone,
+  lapsedFiresToday,
   latestMissedFireAt,
   nextFireAt,
+  type CronRepeatTiming,
   type CronTiming,
 } from './cron-schedule.js';
 
@@ -78,7 +81,8 @@ const CronRepeatInputSchema = z
     if (err) ctx.addIssue({ code: 'custom', path: ['expression'], message: err });
   });
 
-export type CronConfigResult = { ok: true; config: CronConfig } | { ok: false; error: string };
+export type CronConfigResult =
+  { ok: true; config: CronConfig; warning?: string } | { ok: false; error: string };
 
 function firstIssue(error: z.ZodError): string {
   const issue = error.issues[0]!;
@@ -131,10 +135,34 @@ export function resolveCronConfig(
   const prev = current as CronRepeatConfig | null;
   const enabled = parsed.data.enabled ?? true;
   const turnedOn = enabled && !(prev?.enabled ?? false);
+  const enabling = turnedOn || !prev;
+  const enabledAt = enabling ? nowIso : prev!.enabledAt;
+  const expression = parsed.data.expression.trim();
+
+  // Only at the moment enabledAt is (re)stamped: today's matches that
+  // already passed are Lapsed Fires — they will never fire or be caught
+  // up (see GLOSSARY.md). Warn about them rather than silently dropping
+  // them, same as #366 found. A plain edit that doesn't re-enable the
+  // schedule gets no such check — it keeps whatever partial catch-up
+  // latestMissedFireAt already gives it.
+  let warning: string | undefined;
+  if (enabling) {
+    const timing: CronRepeatTiming = {
+      kind: 'cron_repeat',
+      expression,
+      timezone: parsed.data.timezone,
+      enabledAt,
+      lastFiredAt: null,
+      maxIterations: null,
+      stopAfter: null,
+    };
+    warning = describeLapsedFires(lapsedFiresToday(timing, now), parsed.data.timezone);
+  }
+
   return {
     ok: true,
     config: {
-      expression: parsed.data.expression.trim(),
+      expression,
       timezone: parsed.data.timezone,
       enabled,
       maxIterations: parsed.data.maxIterations ?? null,
@@ -143,11 +171,12 @@ export function resolveCronConfig(
         parsed.data.maxConsecutiveFailures === undefined
           ? DEFAULT_MAX_CONSECUTIVE_FAILURES
           : parsed.data.maxConsecutiveFailures,
-      enabledAt: turnedOn || !prev ? nowIso : prev.enabledAt,
+      enabledAt,
       lastFiredAt: prev?.lastFiredAt ?? null,
       consecutiveFailures: turnedOn ? 0 : (prev?.consecutiveFailures ?? 0),
       pausedReason: turnedOn ? null : (prev?.pausedReason ?? null),
     },
+    ...(warning ? { warning } : {}),
   };
 }
 
