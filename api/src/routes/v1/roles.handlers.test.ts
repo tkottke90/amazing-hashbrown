@@ -106,7 +106,7 @@ describe('routes/v1/roles.handlers', () => {
       expect(result.ok).to.equal(false);
       if (result.ok) return;
       expect(result.status).to.equal(400);
-      expect(result.fieldErrors?.['name']).to.exist;
+      expect(result.fieldErrors?.['name']).to.not.equal(undefined);
     });
 
     it('rejects an invalid slug name [unit]', () => {
@@ -121,7 +121,7 @@ describe('routes/v1/roles.handlers', () => {
       expect(result.ok).to.equal(false);
       if (result.ok) return;
       expect(result.status).to.equal(400);
-      expect(result.fieldErrors?.['provider']).to.exist;
+      expect(result.fieldErrors?.['provider']).to.not.equal(undefined);
     });
   });
 
@@ -190,7 +190,7 @@ describe('routes/v1/roles.handlers', () => {
       expect(result.ok).to.equal(true);
       const roles = readAgent()['roles'] as Record<string, unknown>;
       expect(roles['reviewer']).to.equal(undefined);
-      expect(roles['researcher']).to.exist;
+      expect(roles['researcher']).to.not.equal(undefined);
     });
 
     it('rejects deleting the last remaining role, even when it is not the Default [unit]', () => {
