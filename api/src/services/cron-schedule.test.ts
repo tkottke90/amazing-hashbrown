@@ -237,7 +237,7 @@ describe('services/cron-schedule', () => {
       expect(result.map(iso)).to.deep.equal(['2026-09-25T21:00:00.000Z']); // 06:00 JST Sept 26
     });
 
-    it("stops at local midnight even when a DST transition happens later the same day [unit]", () => {
+    it('stops at local midnight even when a DST transition happens later the same day [unit]', () => {
       // Nov 1 2026: Chicago falls back from CDT to CST between 1am and 2am.
       // Midnight (still CDT) and noon (already CST) are both "today."
       const timing = repeat({ expression: '0 0,12 * * *', timezone: 'America/Chicago' });

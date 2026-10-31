@@ -356,7 +356,7 @@ _Avoid_: Cancel recurrence, stop task, pause task
 
 **Lapsed Fire**:
 A fire time inside today's window — local midnight through the moment a Recurrence is created or re-enabled, in the schedule's own timezone — that will never run, because it falls before the `enabledAt` the catch-up arithmetic treats as its floor. Never recovered, by design — only ever surfaced as a warning at the moment of creation/re-enable.
-_Avoid_: Missed fire time (that term already names the downtime/catch-up case, which boot catch-up *does* recover as one run — a Lapsed Fire never is), slot, skipped run
+_Avoid_: Missed fire time (that term already names the downtime/catch-up case, which boot catch-up _does_ recover as one run — a Lapsed Fire never is), slot, skipped run
 
 # Live SSE Events
 

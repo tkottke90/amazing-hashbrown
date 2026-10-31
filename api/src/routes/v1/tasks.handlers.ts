@@ -61,8 +61,7 @@ function conflict(error: string): HandlerFailure {
 }
 
 type TriggerConfigResult =
-  | { ok: true; triggerConfig: unknown; warning?: string }
-  | { ok: false; error: string };
+  { ok: true; triggerConfig: unknown; warning?: string } | { ok: false; error: string };
 
 // Resolves the trigger_config to store for a create or patch. The server is
 // the sole source of truth for a webhook task's token — a client can never

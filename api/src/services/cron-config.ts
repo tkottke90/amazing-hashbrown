@@ -82,8 +82,7 @@ const CronRepeatInputSchema = z
   });
 
 export type CronConfigResult =
-  | { ok: true; config: CronConfig; warning?: string }
-  | { ok: false; error: string };
+  { ok: true; config: CronConfig; warning?: string } | { ok: false; error: string };
 
 function firstIssue(error: z.ZodError): string {
   const issue = error.issues[0]!;
