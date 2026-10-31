@@ -25,7 +25,9 @@ function notFound(error: string): HandlerFailure {
 }
 
 function badRequest(error: string, fieldErrors?: Record<string, string[]>): HandlerFailure {
-  return fieldErrors ? { ok: false, status: 400, error, fieldErrors } : { ok: false, status: 400, error };
+  return fieldErrors
+    ? { ok: false, status: 400, error, fieldErrors }
+    : { ok: false, status: 400, error };
 }
 
 // ---- Validation -------------------------------------------------------------
@@ -38,7 +40,8 @@ export function isValidRoleName(name: string): boolean {
   return name.length > 0 && slugifyServerName(name) === name;
 }
 
-const ROLE_NAME_MESSAGE = 'Role name must be lowercase letters, digits and hyphens (e.g. "code-reviewer").';
+const ROLE_NAME_MESSAGE =
+  'Role name must be lowercase letters, digits and hyphens (e.g. "code-reviewer").';
 
 const roleNameSchema = z.string().min(1).refine(isValidRoleName, { message: ROLE_NAME_MESSAGE });
 
@@ -149,7 +152,9 @@ export function createRoleHandler(
 
   const { roles, defaultRole } = readRawAgentSection(configDir);
   if (roles[name]) {
-    return badRequest(`Role "${name}" already exists.`, { name: [`Role "${name}" already exists.`] });
+    return badRequest(`Role "${name}" already exists.`, {
+      name: [`Role "${name}" already exists.`],
+    });
   }
   const providerError = providerFieldError(fields.provider);
   if (providerError) {

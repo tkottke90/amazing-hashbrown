@@ -1705,6 +1705,7 @@ describe('agents/task-execution', () => {
 
     afterEach(() => {
       clearActiveSseWriter(THREAD_ID);
+      configManager.set('agent', { roles: {} });
     });
 
     // A run that already has its thread (e.g. one continuing after a HITL
@@ -1758,6 +1759,7 @@ describe('agents/task-execution', () => {
       // sub-agent (which dequeueNext()'s scope guard doesn't serialize) had
       // to defer behind a live chat turn. With one thread per run there is
       // nothing shared left to race on.
+      configManager.set('agent', { roles: { researcher: {} } });
       const workspace = store.createWorkspace({ name: 'W', location: '/tmp/w' });
       store.patchWorkspace(workspace.id, { threadId: THREAD_ID });
       store.createSubAgentTask({
@@ -1772,7 +1774,7 @@ describe('agents/task-execution', () => {
 
       setActiveSseWriter(THREAD_ID, () => {});
       await executeTask(entry, {
-        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+        buildSubAgentAgent: fakeBuildSubAgentAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
       });
 
       expect(store.getTask(entry.task.id)!.status).to.equal('done');

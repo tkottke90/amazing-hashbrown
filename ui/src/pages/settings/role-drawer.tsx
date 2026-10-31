@@ -133,8 +133,7 @@ function RoleForm({ mode, initial, onSave, openCount }: RoleFormProps) {
             required
           />
           <p class="text-xs text-muted-foreground">
-            Lowercase letters, digits and hyphens — the name the agent passes as{' '}
-            <code>role</code>.
+            Lowercase letters, digits and hyphens — the name the agent passes as <code>role</code>.
           </p>
         </div>
 

@@ -128,7 +128,10 @@ export const spawnSubAgentTool = tool(
         workspaceId: workspaceId ?? null,
       });
     } catch (err) {
-      logger.error('spawn_sub_agent: dispatch failed', { role: roleName, err: serializeError(err) });
+      logger.error('spawn_sub_agent: dispatch failed', {
+        role: roleName,
+        err: serializeError(err),
+      });
       return `Failed to dispatch sub-agent: ${(err as Error).message}`;
     }
 

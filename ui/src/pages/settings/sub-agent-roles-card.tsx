@@ -108,7 +108,11 @@ export function SubAgentRolesCard() {
             {roles.value.map((role) => {
               const isDefault = defaultRole.value === role.name;
               return (
-                <li key={role.name} data-slot={`role-row-${role.name}`} class="flex flex-col gap-2 py-3">
+                <li
+                  key={role.name}
+                  data-slot={`role-row-${role.name}`}
+                  class="flex flex-col gap-2 py-3"
+                >
                   <div class="flex items-center justify-between gap-3">
                     <div class="flex min-w-0 items-center gap-2">
                       <span data-slot="role-row-name" class="text-sm font-medium">
@@ -156,7 +160,9 @@ export function SubAgentRolesCard() {
                     </div>
                   </div>
                   <p class="text-xs text-muted-foreground">
-                    {role.provider && role.model ? `${role.provider} / ${role.model}` : 'System default'}
+                    {role.provider && role.model
+                      ? `${role.provider} / ${role.model}`
+                      : 'System default'}
                   </p>
                 </li>
               );

@@ -43,7 +43,9 @@ describe('SubAgentRolesCard', () => {
     expect(screen.getByText('researcher')).toBeInTheDocument();
     expect(screen.getByText('default')).toBeInTheDocument();
     expect(
-      container.querySelector('[data-slot="role-row-default"] [data-slot="role-row-default-badge"]'),
+      container.querySelector(
+        '[data-slot="role-row-default"] [data-slot="role-row-default-badge"]',
+      ),
     ).toBeInTheDocument();
     expect(
       container.querySelector(
