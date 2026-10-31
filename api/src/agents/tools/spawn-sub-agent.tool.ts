@@ -81,7 +81,7 @@ export function resolveDispatchGroupId(
 // the configured Roles, falling back to agent.defaultRole — never erroring
 // as long as *some* usable Role can be found (the boot-time backfill in
 // roles.handlers.ts's ensureDefaultRole() guarantees at least one always
-// exists; see ADR-0049/ADR-0050). Returns null only when no usable Role
+// exists; see ADR-0050/ADR-0051). Returns null only when no usable Role
 // exists at all, which should be unreachable outside a direct bug.
 function resolveRole(requested: string | undefined): {
   roleName: string;

@@ -1,0 +1,8 @@
+# Shared persister registry for live SSE events, replacing per-sink special-casing
+
+`makeLiveSseWriter` already hand-rolls persistence for exactly one Persisted Event type (`resource_created`, via `recordResourceCard`) inline, with a comment explaining why: avoid tripling that branch across its own three call sites. The same special-casing was never added for `wiki_updated` at any of this app's other Active SSE Writer sites (workspace chat's turn/HITL/retry variants, wiki chat, the scheduled task-run writer) — which is exactly how Issue #363 happened: a Wiki Update Event with nowhere persisting it is invisible to `wikiWriteCount` and the `wiki_mismatch` anomaly alike. Rather than hand-adding a second inline branch at each site (repeating the same mistake for a second event type), we introduce one shared event-kind → persister registry that every Active SSE Writer applies uniformly, and move `resource_created`'s existing persistence into it alongside `wiki_updated`'s.
+
+## Considered Options
+
+- Duplicate a second inline `if (event.type === 'wiki_updated') recordWikiUpdate(...)` branch at each site alongside the existing `resource_created` one — rejected: multiplies the exact failure mode that caused this bug, and leaves any future Persisted Event type one copy-paste omission away from the same bug.
+- Have every sink call AfterAgent's own `drainAndRecordWikiUpdates` directly for a live `wiki_updated` event — rejected: that function is shaped around draining a deferred queue, not reacting to a single live event, and wiring a one-off call to it from every sink reintroduces the same per-sink duplication this ADR exists to avoid.

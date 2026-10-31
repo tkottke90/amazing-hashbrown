@@ -17,9 +17,16 @@ import { makeWriteTaskNoteTool } from './write-task-note.tool.js';
 
 // Drives a real tool call deterministically through a real createAgent()
 // graph, without a live LLM — same pattern as thread-fork.test.ts's
-// ScriptedChatModel. The first human turn triggers write_task_note; the
-// next (post-tool) turn ends with plain text.
+// ScriptedChatModel. The first human turn triggers write_task_note (with
+// `notes` entries consumed in order, one per non-tool turn, repeating the
+// last one once exhausted); the next (post-tool) turn ends with plain text.
 class ScriptedChatModel extends BaseChatModel {
+  private turn = 0;
+
+  constructor(private notes: string[] = ['Found the bug']) {
+    super({});
+  }
+
   _llmType() {
     return 'scripted-fake';
   }
@@ -32,14 +39,14 @@ class ScriptedChatModel extends BaseChatModel {
       const text = 'Noted.';
       return { generations: [{ message: new AIMessage(text), text }] };
     }
+    const note = this.notes[Math.min(this.turn, this.notes.length - 1)]!;
+    this.turn += 1;
     return {
       generations: [
         {
           message: new AIMessage({
             content: '',
-            tool_calls: [
-              { id: 'call_1', name: 'write_task_note', args: { note: 'Found the bug' } },
-            ],
+            tool_calls: [{ id: `call_${this.turn}`, name: 'write_task_note', args: { note } }],
           }),
           text: '',
         },
@@ -79,9 +86,9 @@ describe('agents/tools/write-task-note', () => {
       const checkpointDb = new Database(join(fsDir, 'checkpoints.db'));
       const checkpointer = new SqliteSaver(checkpointDb);
       const agent = createAgent({
-        model: new ScriptedChatModel({}),
-        tools: [makeWriteTaskNoteTool(task.id, filePath, store)],
-        middleware: [createTaskFileStateMiddleware()],
+        model: new ScriptedChatModel(),
+        tools: [makeWriteTaskNoteTool()],
+        middleware: [createTaskFileStateMiddleware(task.id, { filePath }, store)],
         checkpointer,
       });
       const config = { configurable: { thread_id: 'thread-1' } };
@@ -113,46 +120,21 @@ describe('agents/tools/write-task-note', () => {
       const checkpointDb = new Database(join(fsDir, 'checkpoints.db'));
       const checkpointer = new SqliteSaver(checkpointDb);
       const agent = createAgent({
-        model: new ScriptedChatModel({}),
-        tools: [makeWriteTaskNoteTool(task.id, filePath, store)],
-        middleware: [createTaskFileStateMiddleware()],
+        model: new ScriptedChatModel(['first', 'Found the bug']),
+        tools: [makeWriteTaskNoteTool()],
+        middleware: [createTaskFileStateMiddleware(task.id, { filePath }, store)],
         checkpointer,
       });
       const config = { configurable: { thread_id: 'thread-2' } };
-      await agent.updateState(config, {
-        taskState: { goal: '', previousTasks: [], notes: [['first']], outcome: '', handoff: '' },
-      });
 
-      await agent.invoke({ messages: [{ role: 'human', content: 'please note this' }] }, config);
+      await agent.invoke(
+        { messages: [{ role: 'human', content: 'note the first thing' }] },
+        config,
+      );
+      await agent.invoke({ messages: [{ role: 'human', content: 'now note this too' }] }, config);
 
       const state = await agent.getState(config);
       expect(state.values.taskState.notes).to.deep.equal([['first', 'Found the bug']]);
-    });
-
-    it('does not throw when the Task File write fails [unit]', async () => {
-      const task = store.createTask({ title: 'T' });
-      // A plain file sitting where a directory component needs to be —
-      // mkdir(dirname(filePath), { recursive: true }) fails against this,
-      // so writeTaskFile rejects.
-      const { writeFileSync } = await import('node:fs');
-      const blocker = join(fsDir, 'blocker-file');
-      writeFileSync(blocker, 'not a directory', 'utf8');
-      const badPath = join(blocker, 'sub', 'file.md');
-
-      const checkpointDb = new Database(join(fsDir, 'checkpoints.db'));
-      const checkpointer = new SqliteSaver(checkpointDb);
-      const agent = createAgent({
-        model: new ScriptedChatModel({}),
-        tools: [makeWriteTaskNoteTool(task.id, badPath, store)],
-        middleware: [createTaskFileStateMiddleware()],
-        checkpointer,
-      });
-      const config = { configurable: { thread_id: 'thread-3' } };
-
-      await agent.invoke({ messages: [{ role: 'human', content: 'please note this' }] }, config);
-
-      const state = await agent.getState(config);
-      expect(state.values.taskState.notes).to.deep.equal([['Found the bug']]);
     });
   });
 });

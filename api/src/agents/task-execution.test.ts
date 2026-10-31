@@ -430,6 +430,63 @@ describe('agents/task-execution', () => {
     expect(queue).to.equal(undefined); // 'done' entries fall out of the active-status filter
   });
 
+  // Regression coverage for #363: a scheduler-triggered run has no live SSE
+  // client (no `res`, unlike every other turn-runner in this app) — before
+  // this fix, a wiki_updated event emitted mid-run via a direct
+  // wiki_create_page/wiki_update_page tool call (getActiveSseWriter(threadId)
+  // ?.(event), the same thing the real tools do) was silently dropped
+  // entirely rather than just un-persisted, since this sink only ever
+  // forwards to previousWriter (undefined here). This is the scenario
+  // closest to the gmail-labeler retrospective that originally reported #363.
+  it('persists a wiki_updated event emitted mid-run even with no live SSE client [orchestration]', async () => {
+    function fakeAgentEmittingWikiUpdate(getThreadId: () => string, events: RawEvent[]) {
+      return {
+        streamEvents: (): AsyncIterable<RawEvent> => {
+          async function* gen() {
+            getActiveSseWriter(getThreadId())?.({
+              type: 'wiki_updated',
+              pageTitle: 'Router',
+              pageKind: 'created',
+              wikiName: 'self',
+              path: 'entities/router.md',
+            });
+            for (const e of events) yield e;
+          }
+          return gen();
+        },
+        graph: {
+          getState: async () => ({
+            tasks: [],
+            config: { configurable: { checkpoint_id: 'cp-test' } },
+          }),
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any;
+    }
+
+    const entry = makeGlobalEntry();
+    await executeTask(entry, {
+      buildTaskAgent: fakeBuildTaskAgent(
+        fakeAgentEmittingWikiUpdate(() => runThreadOf(entry), COMPLETE_TASK_DONE_EVENTS),
+      ),
+    });
+
+    const task = store.getTask(entry.task.id)!;
+    expect(task.status).to.equal('done');
+
+    // No Wiki Domain is special-cased (#363) — deliberately uses "self".
+    const persisted = threadStore
+      .getThreadMessages(runThreadOf(entry))
+      .find((m) => m.kind === 'wiki_update');
+    expect(persisted, 'expected a persisted wiki_update row').to.not.equal(undefined);
+    expect(persisted!.payload).to.deep.equal({
+      pageTitle: 'Router',
+      pageKind: 'created',
+      wikiName: 'self',
+      path: 'entities/router.md',
+    });
+  });
+
   it('marks the task failed when complete_task is called with outcome "failed"', async () => {
     const entry = makeGlobalEntry();
     await executeTask(entry, {

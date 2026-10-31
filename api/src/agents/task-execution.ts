@@ -21,6 +21,7 @@ import {
   drainAndRecordWikiUpdates,
   extractPartialAssistantState,
 } from './stream-handler.js';
+import { applyPersistedSseEvents } from './persisted-sse-events.js';
 import { classifyChatError } from './error-classification.js';
 import {
   buildTaskAgent,
@@ -37,6 +38,7 @@ import {
   writeTaskFile,
   listWorkspaceTaskFiles,
   formatTaskFileTimestamp,
+  cloneEmptyTaskState,
   type TaskState,
 } from '../services/task-file.js';
 import { generateTaskGoal, generateHandoffNotes } from './task-file-generators.js';
@@ -383,9 +385,13 @@ export async function executeTask(
     // inside the closure would return `sink` itself once registered, causing
     // unbounded self-recursion on every event.
     const previousWriter = getActiveSseWriter(threadId);
-    const sink: SseWriter = (event) => {
-      previousWriter?.(event);
-    };
+    const sink: SseWriter = applyPersistedSseEvents(
+      (event) => {
+        previousWriter?.(event);
+      },
+      threadStore,
+      threadId,
+    );
     setActiveSseWriter(threadId, sink);
 
     let finalOutcome: 'done' | 'failed' | 'waiting_on_user' | 'cancelled' | 'blocked' = 'failed';
@@ -449,7 +455,7 @@ export async function executeTask(
       // longer configured falls back to the default rather than failing
       // the run — same handling a legacy task with no pin gets. An
       // origin='agent' (sub-agent) run instead resolves through its Role
-      // (ADR-0048: a Role's own provider/model, or the system default when
+      // (ADR-0049: a Role's own provider/model, or the system default when
       // unset — never the parent thread's). `role` was already validated
       // against the configured Roles at dispatch time
       // (spawn-sub-agent.tool.ts), so a missing Role here means it was
@@ -633,12 +639,16 @@ export async function executeTask(
       // checkpoint, which already has this run's correct taskState from
       // before the pause (every mutation writes through immediately) — no
       // need to re-seed it there. The plain-message branch seeds it
-      // explicitly since that's a fresh top-level invoke() input.
+      // explicitly since that's a fresh top-level invoke() input — a
+      // reducer-backed channel's TS-inferred input type is required, not
+      // optional, regardless of runtime defaulting (see
+      // task-file-state.middleware.ts), so a run with no Task File passes
+      // the bare empty default instead of omitting the key.
       const input = resumeAnswer
         ? new Command({ resume: resumeAnswer })
         : {
             messages: [{ role: 'human', content: kickoff }],
-            ...(taskFileScope ? { taskState: taskFileScope.state } : {}),
+            taskState: taskFileScope ? taskFileScope.state : cloneEmptyTaskState(),
           };
 
       // Local consts — msgId/turnSentAt/agent/config are outer `let`s just

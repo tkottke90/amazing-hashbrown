@@ -244,11 +244,11 @@ export function setDefaultRoleHandler(
   return ok({ defaultRole: name });
 }
 
-// Boot-time invariant (ADR-0049/ADR-0050): the system never allows zero
+// Boot-time invariant (ADR-0050/ADR-0051): the system never allows zero
 // Roles to exist. Called once at server boot (src/index.ts) — if config.yaml
 // has no Roles at all (a fresh install, or a hand-edited file that dropped
 // to zero between restarts), create exactly one named "default" with no
-// provider/model override (inherits the system default, ADR-0048) and set
+// provider/model override (inherits the system default, ADR-0049) and set
 // it as the Default Role immediately, so spawn_sub_agent's fallback always
 // has somewhere to go.
 export function ensureDefaultRole(configDir: string, reload: () => void = () => {}): void {

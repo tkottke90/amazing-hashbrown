@@ -16,6 +16,7 @@ import {
 } from './active-sse-writer.js';
 import { ClassifiedTurnError } from './stream-handler.js';
 import { recordAssistantStart } from './thread-message-writer.js';
+import { queueWikiUpdate } from './after-agent.js';
 import { bootArtifactStore, storeArtifact } from '../artifacts/artifact-store.js';
 import {
   streamWikiChatToSse,
@@ -397,6 +398,189 @@ describe('agents/wiki-stream-handler — abort handling', () => {
       );
 
       expectTraceIdPassed(captured);
+    });
+  });
+});
+
+// Regression coverage for #363: wiki-stream-handler.ts never persisted a
+// wiki_updated event, by either of the two ways one can be produced —
+// (a) a direct, in-turn wiki_create_page/wiki_update_page tool call, which
+// emits straight to getActiveSseWriter(threadId) mid-turn, bypassing
+// pipeEvents entirely, and (b) AfterAgent's deferred queue (queueWikiUpdate),
+// which this file never drained at all until this fix added the missing
+// drainAndRecordWikiUpdates call alongside the other two turn handlers.
+describe('agents/wiki-stream-handler — wiki write persistence (#363)', () => {
+  const TEST_PROVIDER = 'wiki-chat-wiki-write-test-provider';
+  let dir: string;
+  let threadId: string;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type RawEvent = Record<string, any>;
+
+  function depsFor(agent: unknown): WikiChatStreamDeps {
+    return {
+      getWikiIngestionAgent: async () => ({ agent, systemPrompt: 'test system prompt' }) as never,
+    };
+  }
+
+  async function expectClassifiedTurnError(promise: Promise<void>): Promise<ClassifiedTurnError> {
+    try {
+      await promise;
+    } catch (err) {
+      expect(err).to.be.instanceOf(ClassifiedTurnError);
+      return err as ClassifiedTurnError;
+    }
+    throw new Error('expected the handler to throw');
+  }
+
+  before(() => {
+    configManager.set('providers', [
+      {
+        name: TEST_PROVIDER,
+        type: 'ollama',
+        baseUrl: 'http://localhost:11434',
+        defaultModel: 'test-model',
+      },
+    ]);
+    configManager.set('defaultProvider', TEST_PROVIDER);
+  });
+
+  after(() => {
+    configManager.set('providers', []);
+    configManager.set('defaultProvider', '');
+  });
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'wiki-stream-wiki-write-test-'));
+    const db = openDatabase(join(dir, 'test.db'));
+    bootThreadStore(db);
+    bootObservability(db);
+    threadId = randomUUID();
+  });
+
+  afterEach(() => {
+    clearActiveSseWriter(threadId);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('persists a wiki_updated event emitted mid-turn via a direct tool call [orchestration]', async () => {
+    // Mirrors the real wiki-create-page.tool.ts/wiki-update-page.tool.ts: on
+    // a successful write it calls getActiveSseWriter(threadId)?.(event)
+    // directly, mid-tool-call — not through pipeEvents. Throws afterward
+    // purely so the turn ends deterministically.
+    function fakeAgentEmittingWikiUpdate(tid: string) {
+      return {
+        streamEvents: (): AsyncIterable<RawEvent> => {
+          async function* gen() {
+            yield* [];
+            getActiveSseWriter(tid)?.({
+              type: 'wiki_updated',
+              pageTitle: 'Router',
+              pageKind: 'created',
+              wikiName: 'self',
+              path: 'entities/router.md',
+            });
+            throw new Error('simulated stream failure');
+          }
+          return gen();
+        },
+        graph: {
+          getState: async () => ({
+            tasks: [],
+            config: { configurable: { checkpoint_id: 'cp-test' } },
+          }),
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any;
+    }
+
+    const { res, events } = fakeRes();
+
+    await expectClassifiedTurnError(
+      streamWikiChatToSse(
+        res,
+        threadId,
+        'hello',
+        Date.now(),
+        undefined,
+        undefined,
+        undefined,
+        depsFor(fakeAgentEmittingWikiUpdate(threadId)),
+      ),
+    );
+
+    const emitted = events().find((e) => e.type === 'wiki_updated');
+    expect(emitted, 'expected the wiki_updated event to reach the client').to.not.equal(undefined);
+    expect((emitted as unknown as { seq?: number }).seq).to.be.a('number');
+
+    // No Wiki Domain is special-cased (#363) — deliberately uses "self".
+    const persisted = getThreadStore()
+      .getThreadMessages(threadId)
+      .find((m) => m.kind === 'wiki_update');
+    expect(persisted, 'expected a persisted wiki_update row').to.not.equal(undefined);
+    expect(persisted!.payload).to.deep.equal({
+      pageTitle: 'Router',
+      pageKind: 'created',
+      wikiName: 'self',
+      path: 'entities/router.md',
+    });
+  });
+
+  it('drains and persists an AfterAgent-queued wiki_updated event at the start of a turn [orchestration]', async () => {
+    function fakeThrowingAgent() {
+      return {
+        streamEvents: (): AsyncIterable<RawEvent> => {
+          async function* gen() {
+            yield* [];
+            throw new Error('simulated stream failure');
+          }
+          return gen();
+        },
+        graph: {
+          getState: async () => ({
+            tasks: [],
+            config: { configurable: { checkpoint_id: 'cp-test' } },
+          }),
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any;
+    }
+
+    queueWikiUpdate(threadId, {
+      type: 'wiki_updated',
+      pageTitle: 'Switch',
+      pageKind: 'updated',
+      wikiName: 'homelab',
+      path: 'entities/switch.md',
+    });
+
+    const { res } = fakeRes();
+
+    await expectClassifiedTurnError(
+      streamWikiChatToSse(
+        res,
+        threadId,
+        'hello',
+        Date.now(),
+        undefined,
+        undefined,
+        undefined,
+        depsFor(fakeThrowingAgent()),
+      ),
+    );
+
+    const persisted = getThreadStore()
+      .getThreadMessages(threadId)
+      .find((m) => m.kind === 'wiki_update');
+    expect(
+      persisted,
+      'expected the deferred wiki_updated event to be drained and persisted',
+    ).to.not.equal(undefined);
+    expect(persisted!.payload).to.deep.equal({
+      pageTitle: 'Switch',
+      pageKind: 'updated',
+      wikiName: 'homelab',
+      path: 'entities/switch.md',
     });
   });
 });

@@ -6,13 +6,13 @@ import { taskFileStateSchema } from '../task-file-state.middleware.js';
 
 const ReadTaskNotesSchema = z.object({});
 
-// Built fresh per automated task run, closed over that task's id (same
-// per-construction factory pattern as makeWriteTaskNoteTool). Returns the
-// current rendered Task File content straight from in-memory graph state,
-// never the disk — every mutation path (write_task_note, update_plan)
-// writes through to the file immediately, so the two are identical by
-// construction. Bound only in buildTaskAgent, alwaysOn in the tool
-// catalog — never in interactive chat, workspace chat, or sub-agent runs.
+// Built fresh per automated task run, closed over that task's id. Returns
+// the current rendered Task File content straight from in-memory graph
+// state, never the disk — TaskFileStateMiddleware's beforeModel/afterAgent
+// hooks (ADR-0047) keep the on-disk file caught up to this same graph
+// state once per step, so the two only ever lag by at most one step, never
+// diverge. Bound only in buildTaskAgent, alwaysOn in the tool catalog —
+// never in interactive chat, workspace chat, or sub-agent runs.
 export function makeReadTaskNotesTool(taskId: string, store?: WorkspaceStore) {
   return tool(
     async (

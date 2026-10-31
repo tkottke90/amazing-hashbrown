@@ -481,7 +481,7 @@ export const AgentSchema = z.object({
   }),
   // spawn_sub_agent Roles and which configured Role is the Default Role —
   // nested here rather than AppConfigSchema's root, same precedent as
-  // subAgentRecursionLimit above. See ADR-0047-0052
+  // subAgentRecursionLimit above. See ADR-0048-0053
   // (docs/adr/0047-*.md-0052-*.md) and GLOSSARY.md § Sub-Agent Roles.
   // No .refine() tying defaultRole to an existing roles key: the `agent`
   // getter below swallows any AgentSchema parse failure to bare defaults,

@@ -14,7 +14,7 @@ import {
 } from '@/services/roles-api';
 
 // No empty-state branch: the server guarantees at least one Role always
-// exists (boot-time backfill, ADR-0049/ADR-0050) — this list is never
+// exists (boot-time backfill, ADR-0050/ADR-0051) — this list is never
 // actually empty in normal operation.
 export function SubAgentRolesCard() {
   const roles = useSignal<Role[]>([]);

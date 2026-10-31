@@ -9,10 +9,12 @@ import {
   writeSseEvent,
   pipeEvents,
   finalizeTurn,
+  drainAndRecordWikiUpdates,
   extractPartialAssistantState,
   recoverThrownInterrupt,
   ClassifiedTurnError,
 } from './stream-handler.js';
+import { applyPersistedSseEvents } from './persisted-sse-events.js';
 import { classifyChatError } from './error-classification.js';
 import { env } from '../config/env.js';
 import { getThreadStore } from '../services/thread-store.js';
@@ -99,11 +101,16 @@ export async function streamWikiChatToSse(
     resolvedModel,
   );
 
-  const sink: SseWriter = (event) => {
-    res.write(`data: ${JSON.stringify(event)}\n\n`);
-  };
+  const sink: SseWriter = applyPersistedSseEvents(
+    (event) => {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    },
+    threadStore,
+    threadId,
+  );
   const controller = new AbortController();
   setActiveSseWriter(threadId, sink, controller);
+  drainAndRecordWikiUpdates(sink, threadStore, threadId);
   let turnError: string | null = null;
   try {
     const eventStream = agent.streamEvents(
@@ -257,11 +264,16 @@ export async function resumeWikiChatToSse(
     resolvedModel,
   );
 
-  const sink: SseWriter = (event) => {
-    res.write(`data: ${JSON.stringify(event)}\n\n`);
-  };
+  const sink: SseWriter = applyPersistedSseEvents(
+    (event) => {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    },
+    threadStore,
+    threadId,
+  );
   const controller = new AbortController();
   setActiveSseWriter(threadId, sink, controller);
+  drainAndRecordWikiUpdates(sink, threadStore, threadId);
   let turnError: string | null = null;
   try {
     const eventStream = agent.streamEvents(
@@ -410,11 +422,16 @@ export async function retryWikiChatToSse(
     systemPrompt,
   });
 
-  const sink: SseWriter = (event) => {
-    res.write(`data: ${JSON.stringify(event)}\n\n`);
-  };
+  const sink: SseWriter = applyPersistedSseEvents(
+    (event) => {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    },
+    threadStore,
+    threadId,
+  );
   const controller = new AbortController();
   setActiveSseWriter(threadId, sink, controller);
+  drainAndRecordWikiUpdates(sink, threadStore, threadId);
   let turnError: string | null = null;
   try {
     const eventStream = agent.streamEvents(

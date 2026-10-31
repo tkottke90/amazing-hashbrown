@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Response } from 'express';
 import { Command } from '@langchain/langgraph';
 import { logger, serializeError } from '../config/logger.js';
+import { cloneEmptyTaskState } from '../services/task-file.js';
 import type {
   ChatSSEEvent,
   ChatErrorCategory,
@@ -27,9 +28,9 @@ import {
   recordHitlPrompt,
   resolveHitlPrompt,
   recordWikiUpdate,
-  recordResourceCard,
   type AssistantMetrics,
 } from './thread-message-writer.js';
+import { applyPersistedSseEvents } from './persisted-sse-events.js';
 import { extractToolResultContent } from './tool-output.js';
 import { markArtifactReferenced } from '../artifacts/artifact-store.js';
 import { resolveProviderConfig } from '../services/provider-factory.js';
@@ -842,10 +843,9 @@ export function drainAndRecordWikiUpdates(
 
 // Live, in-turn SSE events (as opposed to drainAndRecordWikiUpdates' deferred
 // after-agent queue above) go through this writer. Most event types are a
-// pure passthrough, but resource_created also needs a thread_messages row —
-// unlike wiki_domain_created, which only ever streams live and is never
-// persisted — so the persisting write happens here rather than tripling this
-// branch across the three setActiveSseWriter call sites below.
+// pure passthrough; resource_created and wiki_updated also need a
+// thread_messages row — see applyPersistedSseEvents/ADR-0047 for the shared
+// mechanism every Active SSE Writer sink applies for this.
 export function makeLiveSseWriter(
   res: Response,
   threadStore: ThreadStore,
@@ -854,23 +854,7 @@ export function makeLiveSseWriter(
   const rawWrite: SseWriter = (event) => {
     res.write(`data: ${JSON.stringify(event)}\n\n`);
   };
-  return (event: ChatSSEEvent) => {
-    if (event.type === 'resource_created') {
-      const seq = recordResourceCard(
-        threadStore,
-        threadId,
-        randomUUID(),
-        event.resourceType,
-        event.name,
-        event.goal,
-        event.location,
-        event.workspaceId,
-      );
-      rawWrite(seq !== null ? { ...event, seq } : event);
-      return;
-    }
-    rawWrite(event);
-  };
+  return applyPersistedSseEvents(rawWrite, threadStore, threadId);
 }
 
 // ---- Public handlers ----
@@ -999,7 +983,13 @@ export async function streamChatToSse(
       'sync',
       async () => {
         const eventStream = agent.streamEvents(
-          { messages: [{ role: 'human', content }] },
+          // taskState has no bearing on a chat agent — the TaskFileStateMiddleware
+          // bound here is a structural no-op (see its own header comment) —
+          // but a reducer-backed channel's TS-inferred input type is
+          // required, not optional, regardless of runtime defaulting
+          // (see task-file-state.middleware.ts), so every agent built with
+          // it has to pass something.
+          { messages: [{ role: 'human', content }], taskState: cloneEmptyTaskState() },
           turnObs.attach({
             ...config,
             version: 'v2',

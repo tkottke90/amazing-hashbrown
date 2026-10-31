@@ -1,5 +1,5 @@
 ---
-status: superseded by ADR-0052
+status: superseded by ADR-0053
 ---
 
 # Sub-Agent Roles get their own Settings nav entry, not a card on Agent Behavior

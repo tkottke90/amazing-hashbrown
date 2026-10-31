@@ -4,10 +4,8 @@ import { Command } from '@langchain/langgraph';
 import { z } from 'zod';
 import { broadcast } from '../../services/broadcast.js';
 import { getWorkspaceStore, type WorkspaceStore } from '../../services/workspace-store.js';
-import { writeTaskFile, type TaskState } from '../../services/task-file.js';
 import { taskFileStateSchema } from '../task-file-state.middleware.js';
 import { formatPlanChecklist } from '../task-context.js';
-import { logger, serializeError } from '../../config/logger.js';
 
 const UpdatePlanSchema = z.object({
   updates: z
@@ -41,9 +39,13 @@ export interface UpdatePlanTaskFile {
 // `taskFile` is only passed for a workspace-scoped, non-Sub-Agent-Task run
 // (see task-execution.ts's taskFileEligible guard) — when present, every
 // changed step also gets a mechanical entry in the Task File's Task Notes
-// log, interleaved with the agent's own write_task_note entries in call
-// order (Round 1 Q9 of the grilling session). When omitted, behavior is
-// byte-for-byte unchanged from before Task Files existed. See
+// log, interleaved with the agent's own write_task_note entries. The entry
+// is sent as a Command appending to the graph's own taskState.notes via the
+// taskState channel's reducer (ADR-0047); Task File persistence is handled
+// once per step by TaskFileStateMiddleware's beforeModel/afterAgent hooks,
+// not by this tool — `taskFile` here only gates whether this tool touches
+// taskState at all, it's no longer read for a filePath. When omitted,
+// behavior is byte-for-byte unchanged from before Task Files existed. See
 // docs/superpowers/specs/2026-10-21-workspace-task-files-design.md §4.
 export function makeUpdatePlanTool(
   taskId: string,
@@ -85,30 +87,13 @@ export function makeUpdatePlanTool(
       const result = `Plan updated:\n${formatPlanChecklist(next)}`;
       if (!taskFile) return result;
 
-      const current = runtime.state.taskState;
-      const notes = current.notes.length > 0 ? current.notes : [[]];
-      const lastSegment = notes[notes.length - 1] ?? [];
       const mechanicalNotes = updates.map(
         (u) => `Step ${u.step} marked ${u.done ? 'done' : 'not done'}.`,
       );
-      const nextState: TaskState = {
-        ...current,
-        notes: [...notes.slice(0, -1), [...lastSegment, ...mechanicalNotes]],
-      };
-
-      try {
-        await writeTaskFile(taskFile.filePath, nextState, { taskId, title: task.title });
-      } catch (err) {
-        logger.warn('update-plan: failed to write Task File', {
-          taskId,
-          filePath: taskFile.filePath,
-          err: serializeError(err),
-        });
-      }
 
       return new Command({
         update: {
-          taskState: nextState,
+          taskState: { appendNotes: mechanicalNotes },
           messages: [
             new ToolMessage({
               content: result,
