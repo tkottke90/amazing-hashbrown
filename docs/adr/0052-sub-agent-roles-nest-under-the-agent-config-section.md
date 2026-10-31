@@ -1,0 +1,7 @@
+# Sub-Agent Roles nest under the existing `agent` config section, in both config.yaml and Settings
+
+Supersedes ADR-0051. `AgentSchema` (`api/src/config/env.ts:467`) already holds sub-agent-specific config (`subAgentRecursionLimit`) under the top-level `agent:` YAML key — Roles and Default Role belong there too (`agent.roles`, `agent.defaultRole`), not as siblings bolted onto `AppConfigSchema`'s root. This is a deliberate push against letting config.yaml accrue unrelated root-level keys when a logical parent already exists: the direction is to keep grouping config by behavior, not to default to "add a new root key" every time a feature needs storage.
+
+The Settings UI follows the same grouping: Sub-Agent Roles render as a new "Sub-Agents" Card on the existing single Agent Behavior page (`ui/src/pages/settings/agent-behavior-panel.tsx`), alongside Background processing / Conversation history / Task board / Observability — not a separate flat `settings-nav.tsx` entry (reversing ADR-0051's recommendation). The Card's CRUD list+drawer still talks to its own dedicated `/api/v1/roles` routes (ADR-0047 unchanged — a keyed collection still doesn't belong in that page's batched scalar-field save/discard flow), independent of the rest of that page.
+
+This is a breaking config change with no migration: a pre-existing root-level `roles:` block (there was never a UI for it) simply stops being read once `agent.roles` is the only source — consistent with this repo's stance against backwards-compatibility shims.
