@@ -1,16 +1,92 @@
 import { useEffect } from 'preact/hooks';
-import { useSignal } from '@preact/signals';
+import { useSignal, type Signal } from '@preact/signals';
 import { ChatInput, type StagedAttachment } from '@/components/chat-input';
 import { ChatMessageScrollWrapper } from '@/components/chat-message-scroll-wrapper';
 import { HitlPromptMessage } from '@/components/hitl-prompt-message';
 import { ThreadMessageItem } from '@/components/thread-message';
 import { ThreadReportButton } from '@/components/thread-report-button';
 import { Button } from '@/components/ui/button';
-import { favoriteModels, fetchProviders, providers } from '@/hooks/use-providers';
+import {
+  favoriteModels,
+  fetchProviders,
+  providers,
+  type FavoriteModel,
+  type ProviderInfo,
+} from '@/hooks/use-providers';
 import { useThreadInstance } from '@/hooks/use-thread';
 import { patchWorkspace, refreshWorkspaces } from '@/hooks/use-workspaces';
 import type { Workspace } from '@/services/workspaces-api';
 import { randomUUID } from '@/lib/utils';
+
+// Its own subcomponent so a keystroke here (which only flips `inputValue`)
+// re-renders just the composer, not the whole tab's message list — see
+// ui/src/pages/workspaces/files-tab.tsx's `TabButton` for the same
+// isolation pattern applied to a different signal.
+function ChatComposer({
+  inputValue,
+  stagedAttachments,
+  onSend,
+  onStop,
+  onFocus,
+  onBlur,
+  isGenerating,
+  disabled,
+  providers,
+  favoriteModels,
+  activeProvider,
+  activeModel,
+  onModelSelect,
+  threadId,
+  workspaceId,
+  autoApproveShell,
+  onToggleAutoApproveShell,
+}: {
+  inputValue: Signal<string>;
+  stagedAttachments: Signal<StagedAttachment[]>;
+  onSend: () => void;
+  onStop: () => void;
+  onFocus: () => void;
+  onBlur: () => void;
+  isGenerating: boolean;
+  disabled: boolean;
+  providers: ProviderInfo[];
+  favoriteModels: FavoriteModel[];
+  activeProvider?: string | null;
+  activeModel?: string | null;
+  onModelSelect: (provider: string, model: string) => void;
+  threadId?: string;
+  workspaceId: string;
+  autoApproveShell?: boolean;
+  onToggleAutoApproveShell: () => void;
+}) {
+  return (
+    <ChatInput
+      value={inputValue.value}
+      onValueChange={(v) => {
+        inputValue.value = v;
+      }}
+      onSend={onSend}
+      onStop={onStop}
+      onFocus={onFocus}
+      onBlur={onBlur}
+      isGenerating={isGenerating}
+      disabled={disabled}
+      providers={providers}
+      favoriteModels={favoriteModels}
+      activeProvider={activeProvider}
+      activeModel={activeModel}
+      onModelSelect={onModelSelect}
+      threadId={threadId}
+      workspaceId={workspaceId}
+      autoApproveShell={autoApproveShell}
+      onToggleAutoApproveShell={onToggleAutoApproveShell}
+      attachments={stagedAttachments.value}
+      onAttachmentsChange={(next) => {
+        stagedAttachments.value = next;
+      }}
+    />
+  );
+}
 
 export function WorkspaceChatTab({
   workspace,
@@ -158,11 +234,9 @@ export function WorkspaceChatTab({
               </Button>
             </div>
           </div>
-          <ChatInput
-            value={inputValue.value}
-            onValueChange={(v) => {
-              inputValue.value = v;
-            }}
+          <ChatComposer
+            inputValue={inputValue}
+            stagedAttachments={stagedAttachments}
             onSend={handleSend}
             onStop={thread.stopGeneration}
             onFocus={() => onInputFocusChange?.(true)}
@@ -180,10 +254,6 @@ export function WorkspaceChatTab({
             onToggleAutoApproveShell={() =>
               void patchWorkspace(workspace.id, { autoApproveShell: !workspace.autoApproveShell })
             }
-            attachments={stagedAttachments.value}
-            onAttachmentsChange={(next) => {
-              stagedAttachments.value = next;
-            }}
           />
         </div>
       </div>

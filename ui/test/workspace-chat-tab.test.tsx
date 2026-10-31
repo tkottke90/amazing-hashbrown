@@ -128,4 +128,21 @@ describe('WorkspaceChatTab', () => {
 
     expect(patchWorkspace).toHaveBeenCalledWith('ws-1', { autoApproveShell: false });
   });
+
+  it('lets the user type, enables Send, and clears the input after sending [unit]', () => {
+    const thread = stubThreadInstance();
+    mockUseThreadInstance.mockReturnValue(thread);
+    render(<WorkspaceChatTab workspace={baseWorkspace()} />);
+
+    const textarea = screen.getByPlaceholderText('Message...') as HTMLTextAreaElement;
+    fireEvent.input(textarea, { target: { value: 'hello workspace' } });
+    expect(textarea.value).toBe('hello workspace');
+
+    const sendButton = screen.getByRole('button', { name: 'Send message' });
+    expect(sendButton).not.toBeDisabled();
+
+    fireEvent.click(sendButton);
+    expect(thread.sendMessage).toHaveBeenCalledWith('hello workspace', []);
+    expect(textarea.value).toBe('');
+  });
 });

@@ -4,7 +4,13 @@ import { ChatMessageScrollWrapper } from '@/components/chat-message-scroll-wrapp
 import { HitlPromptMessage } from '@/components/hitl-prompt-message';
 import { Layout } from '@/components/layout';
 import { ThreadMessageItem } from '@/components/thread-message';
-import { favoriteModels, fetchProviders, providers } from '@/hooks/use-providers';
+import {
+  favoriteModels,
+  fetchProviders,
+  providers,
+  type FavoriteModel,
+  type ProviderInfo,
+} from '@/hooks/use-providers';
 import {
   activeThreadAfterAgentState,
   activeThreadId,
@@ -15,11 +21,66 @@ import {
   useThreadInstance,
 } from '@/hooks/use-thread';
 import { useTitle } from '@/hooks/use-title';
-import { useComputed, useSignal } from '@preact/signals';
+import { useComputed, useSignal, type Signal } from '@preact/signals';
 import { useLocation } from 'preact-iso';
 import { useEffect } from 'preact/hooks';
 import { TaskRunView } from './task-run-view';
 import { ArchivedThreadView } from './archived-thread-view';
+
+// Its own subcomponent so a keystroke here (which only flips `inputValue`)
+// re-renders just the composer, not the whole thread view's message list —
+// see ui/src/pages/workspaces/files-tab.tsx's `TabButton` for the same
+// isolation pattern applied to a different signal.
+function ChatComposer({
+  inputValue,
+  stagedAttachments,
+  onSend,
+  onStop,
+  isGenerating,
+  disabled,
+  providers,
+  favoriteModels,
+  activeProvider,
+  activeModel,
+  onModelSelect,
+  threadId,
+}: {
+  inputValue: Signal<string>;
+  stagedAttachments: Signal<StagedAttachment[]>;
+  onSend: () => void;
+  onStop: () => void;
+  isGenerating: boolean;
+  disabled: boolean;
+  providers: ProviderInfo[];
+  favoriteModels: FavoriteModel[];
+  activeProvider?: string | null;
+  activeModel?: string | null;
+  onModelSelect: (provider: string, model: string) => void;
+  threadId: string;
+}) {
+  return (
+    <ChatInput
+      value={inputValue.value}
+      onValueChange={(v) => {
+        inputValue.value = v;
+      }}
+      onSend={onSend}
+      onStop={onStop}
+      isGenerating={isGenerating}
+      disabled={disabled}
+      providers={providers}
+      favoriteModels={favoriteModels}
+      activeProvider={activeProvider}
+      activeModel={activeModel}
+      onModelSelect={onModelSelect}
+      threadId={threadId}
+      attachments={stagedAttachments.value}
+      onAttachmentsChange={(next) => {
+        stagedAttachments.value = next;
+      }}
+    />
+  );
+}
 
 export function ThreadView() {
   const { route } = useLocation();
@@ -105,11 +166,9 @@ export function ThreadView() {
       )}
 
       <div class="border-t border-border p-4">
-        <ChatInput
-          value={inputValue.value}
-          onValueChange={(v) => {
-            inputValue.value = v;
-          }}
+        <ChatComposer
+          inputValue={inputValue}
+          stagedAttachments={stagedAttachments}
           onSend={handleSend}
           onStop={thread.stopGeneration}
           isGenerating={thread.isStreaming.value || thread.backgroundTurnActive.value}
@@ -120,10 +179,6 @@ export function ThreadView() {
           activeModel={thread.activeThreadModel.value?.model}
           onModelSelect={thread.setThreadModel}
           threadId={activeThreadId.value}
-          attachments={stagedAttachments.value}
-          onAttachmentsChange={(next) => {
-            stagedAttachments.value = next;
-          }}
         />
         <AfterAgentIndicator state={activeThreadAfterAgentState.value} showLabel className="mt-2" />
       </div>
