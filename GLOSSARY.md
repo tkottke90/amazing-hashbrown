@@ -358,6 +358,20 @@ _Avoid_: Cancel recurrence, stop task, pause task
 A fire time inside today's window — local midnight through the moment a Recurrence is created or re-enabled, in the schedule's own timezone — that will never run, because it falls before the `enabledAt` the catch-up arithmetic treats as its floor. Never recovered, by design — only ever surfaced as a warning at the moment of creation/re-enable.
 _Avoid_: Missed fire time (that term already names the downtime/catch-up case, which boot catch-up _does_ recover as one run — a Lapsed Fire never is), slot, skipped run
 
+# Sub-Agent Roles
+
+How `spawn_sub_agent` resolves a calling model's `role` string to a fixed provider/model/system-prompt without ever letting the model choose its own infrastructure.
+
+## Language
+
+**Role**:
+A named, server-side config entry (provider, model, system prompt) that `spawn_sub_agent`'s `role` argument resolves against. Its name is a slug (lowercase, hyphen-separated, same convention as an MCP Server's own name) and is the entry's only identifier — renaming a Role deletes the old entry and creates a new one under the new name. Never a value the calling model supplies directly for provider/model selection.
+_Avoid_: Sub-agent profile, agent persona
+
+**Default Role**:
+The one Role `spawn_sub_agent` dispatches to when the calling model supplies an unknown or empty `role`, instead of erroring. The system never allows zero Roles to exist, so a Default Role can always be resolved — see ADR-0050 and ADR-0051.
+_Avoid_: Fallback role, catch-all role
+
 # Live SSE Events
 
 How a running turn's live events reach a client and, for some event types, also become durable history — the one registered writer every live turn's events flow through, and the two event kinds that must leave a record behind.

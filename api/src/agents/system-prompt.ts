@@ -1275,7 +1275,7 @@ that produces the same unmet promise.`;
 //
 // The "if you're unsure which role fits" paragraph is deliberately generic
 // rather than naming a real role: role is resolved against a deployment's
-// own configured env.roles (spawn-sub-agent.tool.ts), which this file has
+// own configured env.agent.roles (spawn-sub-agent.tool.ts), which this file has
 // no visibility into and can't assume. The tool's own "unknown role"
 // response already lists the real configured options, so the paragraph
 // points at that mechanism instead of inventing a role name that might not

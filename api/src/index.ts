@@ -28,7 +28,8 @@ import { getChatAgent, initChatAgent } from './agents/chat-agent.js';
 import { initWikiAgent } from './agents/wiki-ingestion-agent.js';
 import { executeTask } from './agents/task-execution.js';
 import { deliverSubAgentCompletion } from './agents/sub-agent-notification.js';
-import { env } from './config/env.js';
+import { ensureDefaultRole } from './routes/v1/roles.handlers.js';
+import { env, configManager } from './config/env.js';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { ShellExecutor, ShellExecutorConfigSchema } from '@tkottke90/shell-executor';
 
@@ -40,6 +41,8 @@ const db = openDatabase(env.database.path);
 
 await bootToolsManager();
 app.logger.info('Tools manager booted');
+ensureDefaultRole(configManager.getConfigDir(), () => configManager.reload());
+app.logger.info('Sub-agent Roles bootstrap checked');
 bootObservability(db);
 app.logger.info('Observability booted');
 bootShellAudit(db);
