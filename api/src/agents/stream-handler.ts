@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Response } from 'express';
 import { Command } from '@langchain/langgraph';
 import { logger, serializeError } from '../config/logger.js';
+import { cloneEmptyTaskState } from '../services/task-file.js';
 import type {
   ChatSSEEvent,
   ChatErrorCategory,
@@ -994,7 +995,13 @@ export async function streamChatToSse(
       'sync',
       async () => {
         const eventStream = agent.streamEvents(
-          { messages: [{ role: 'human', content }] },
+          // taskState has no bearing on a chat agent — the TaskFileStateMiddleware
+          // bound here is a structural no-op (see its own header comment) —
+          // but a reducer-backed channel's TS-inferred input type is
+          // required, not optional, regardless of runtime defaulting
+          // (see task-file-state.middleware.ts), so every agent built with
+          // it has to pass something.
+          { messages: [{ role: 'human', content }], taskState: cloneEmptyTaskState() },
           turnObs.attach({
             ...config,
             version: 'v2',

@@ -67,19 +67,18 @@ describe('agents/tools/read-task-notes', () => {
     const agent = createAgent({
       model: new ScriptedChatModel({}),
       tools: [makeReadTaskNotesTool(task.id, store)],
-      middleware: [createTaskFileStateMiddleware()],
+      middleware: [createTaskFileStateMiddleware(task.id)],
       checkpointer,
     });
     const config = { configurable: { thread_id: 'thread-1' } };
-    await agent.updateState(config, {
-      taskState: {
-        goal: 'Ship it',
-        previousTasks: [],
-        notes: [['a note']],
-        outcome: '',
-        handoff: '',
-      },
-    });
+    // taskState's channel only accepts the append-only delta shape now
+    // (ADR-0047) — goal/previousTasks/outcome/handoff are set only by
+    // task-execution.ts's orchestrator, never by a tool, so they can't be
+    // seeded here. That's fine: full-field rendering is already covered by
+    // renderTaskStateToMarkdown's own tests in task-file.test.ts; this test
+    // only needs to prove the wiring (graph state -> tool -> rendered
+    // string), which `notes` is enough to demonstrate.
+    await agent.updateState(config, { taskState: { appendNotes: ['a note'] } });
 
     const result = await agent.invoke(
       { messages: [{ role: 'human', content: 'what have you done' }] },
@@ -88,7 +87,6 @@ describe('agents/tools/read-task-notes', () => {
     const last = result.messages[result.messages.length - 1];
 
     expect(String(last.content)).to.include('My Task');
-    expect(String(last.content)).to.include('Ship it');
     expect(String(last.content)).to.include('a note');
   });
 });
