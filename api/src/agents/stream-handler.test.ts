@@ -144,7 +144,36 @@ describe('agents/stream-handler', () => {
       });
     });
 
-    it('passes non-resource_created events through unchanged (regression guard)', () => {
+    it('persists a wiki_updated event and attaches seq to the emitted event', () => {
+      const { res, events } = fakeRes();
+      const writer = makeLiveSseWriter(res, store, 't1');
+
+      writer({
+        type: 'wiki_updated',
+        pageTitle: 'Router',
+        pageKind: 'created',
+        wikiName: 'self',
+        path: 'entities/router.md',
+      });
+
+      const emitted = events();
+      expect(emitted).to.have.length(1);
+      expect(emitted[0].type).to.equal('wiki_updated');
+      expect(emitted[0].seq).to.be.a('number');
+
+      // The row landed in thread_messages, not just the SSE stream. Uses the
+      // "self" domain deliberately (#363) — no Wiki Domain is special-cased.
+      const persisted = store.getThreadMessages('t1').find((m) => m.kind === 'wiki_update');
+      expect(persisted, 'expected a persisted wiki_update row').to.not.equal(undefined);
+      expect(persisted!.payload).to.deep.equal({
+        pageTitle: 'Router',
+        pageKind: 'created',
+        wikiName: 'self',
+        path: 'entities/router.md',
+      });
+    });
+
+    it('passes a Streamed-Only Event (e.g. wiki_domain_created) through unchanged (regression guard)', () => {
       const { res, events } = fakeRes();
       const writer = makeLiveSseWriter(res, store, 't1');
 
