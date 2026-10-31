@@ -48,15 +48,18 @@ export function mergeTaskState(
   };
 }
 
-// `.default(cloneEmptyTaskState)` — a factory function, not a plain object
-// — so every agent invocation that needs the default gets its OWN fresh
-// object/arrays. A plain-object default would shallow-clone only the top
-// level on each parse, leaving `notes` (and every other array/object
-// field) shared by reference across every invocation that defaults it —
+// `withLangGraph`'s own `default` option is the channel's default-value
+// factory — NOT Zod's `.default(...)` wrapper, which doesn't satisfy
+// `withLangGraph`'s `InteropZodType<TaskState>` schema parameter (a
+// `ZodDefault<ZodObject<...>>` is a different, incompatible wrapper type).
+// `TaskStateSchema` is passed bare. `cloneEmptyTaskState` is a factory
+// function, not a plain object, so every agent invocation that needs the
+// default gets its OWN fresh object/arrays — a plain-object default would
+// be shared by reference across every invocation that defaults it,
 // confirmed the hard way (one agent's write_task_note mutating a different
 // test's/run's "empty" state).
 export const taskFileStateSchema = z.object({
-  taskState: withLangGraph(TaskStateSchema.default(cloneEmptyTaskState), {
+  taskState: withLangGraph(TaskStateSchema, {
     reducer: { schema: TaskStateUpdateSchema, fn: mergeTaskState },
     default: cloneEmptyTaskState,
   }),
