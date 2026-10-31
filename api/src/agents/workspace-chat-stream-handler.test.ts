@@ -583,7 +583,12 @@ describe('agents/workspace-chat-stream-handler — wiki write persistence (#363)
 
   before(() => {
     configManager.set('providers', [
-      { name: TEST_PROVIDER, type: 'ollama', baseUrl: 'http://localhost:11434', defaultModel: 'test-model' },
+      {
+        name: TEST_PROVIDER,
+        type: 'ollama',
+        baseUrl: 'http://localhost:11434',
+        defaultModel: 'test-model',
+      },
     ]);
     configManager.set('defaultProvider', TEST_PROVIDER);
   });

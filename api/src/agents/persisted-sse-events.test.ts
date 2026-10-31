@@ -73,7 +73,9 @@ describe('agents/persisted-sse-events', () => {
     });
 
     it('returns an event that already carries seq unchanged, without inserting a second row', () => {
-      const countBefore = store.getThreadMessages('t1').filter((m) => m.kind === 'wiki_update').length;
+      const wikiUpdateRowCount = () =>
+        store.getThreadMessages('t1').filter((m) => m.kind === 'wiki_update').length;
+      const countBefore = wikiUpdateRowCount();
 
       const event: ChatSSEEvent = {
         type: 'wiki_updated',
@@ -86,8 +88,7 @@ describe('agents/persisted-sse-events', () => {
       const result = persistSseEvent(event, store, 't1');
 
       expect(result).to.deep.equal(event);
-      const countAfter = store.getThreadMessages('t1').filter((m) => m.kind === 'wiki_update').length;
-      expect(countAfter).to.equal(countBefore);
+      expect(wikiUpdateRowCount()).to.equal(countBefore);
     });
   });
 
