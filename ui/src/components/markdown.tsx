@@ -1,5 +1,6 @@
 import type { ComponentChildren } from 'preact';
 import { useSignal } from '@preact/signals';
+import { memo } from 'preact/compat';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -91,6 +92,23 @@ export function MarkdownLink(props: preact.JSX.AnchorHTMLAttributes<HTMLAnchorEl
   );
 }
 
+// ---- react-markdown component overrides (module-level: stable reference
+// across renders, so memo(MarkdownImpl) below actually avoids re-parsing
+// unchanged content instead of seeing a "new" components object every time).
+// Typed structurally off ReactMarkdown's own prop type (rather than a named
+// import) so `node` and the rest of each entry's param shape always match
+// whatever this react-markdown version actually expects. ----
+
+type MarkdownReactMarkdownComponents = NonNullable<
+  Parameters<typeof ReactMarkdown>[0]
+>['components'];
+
+const markdownComponents: MarkdownReactMarkdownComponents = {
+  pre: ({ node: _node, ...props }) => <CodeBlock {...props} />,
+  img: (props) => <MarkdownImg {...(props as Record<string, unknown>)} />,
+  a: ({ node: _node, ...props }) => <MarkdownLink {...props} />,
+};
+
 // ---- public ----
 
 export interface MarkdownProps {
@@ -98,20 +116,24 @@ export interface MarkdownProps {
   className?: string;
 }
 
-export function Markdown({ children, className }: MarkdownProps) {
+function MarkdownImpl({ children, className }: MarkdownProps) {
   return (
     <div className={cn('prose prose-sm dark:prose-invert max-w-none', className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
-        components={{
-          pre: ({ node: _node, ...props }) => <CodeBlock {...props} />,
-          img: (props) => <MarkdownImg {...(props as Record<string, unknown>)} />,
-          a: ({ node: _node, ...props }) => <MarkdownLink {...props} />,
-        }}
+        components={markdownComponents}
       >
         {children}
       </ReactMarkdown>
     </div>
   );
 }
+
+// Long threads re-render their message list often (streaming, HITL, new
+// turns) even after the composer-isolation fix above — without this, every
+// one of those re-renders would re-run the full react-markdown + remark-gfm
+// + rehype-highlight pipeline for every assistant message in the thread,
+// even ones whose content hasn't changed. children/className are both
+// primitives, so preact/compat's default shallow comparison is sufficient.
+export const Markdown = memo(MarkdownImpl);
