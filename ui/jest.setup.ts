@@ -39,6 +39,13 @@ if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {};
 }
 
+// jsdom doesn't implement scrollTo either — chat-message-scroll-wrapper.tsx
+// calls it directly on the scroll container (its mount-scroll and
+// forceScrollTrigger effects) to follow new messages.
+if (!Element.prototype.scrollTo) {
+  Element.prototype.scrollTo = () => {};
+}
+
 if (typeof globalThis.ResizeObserver === 'undefined') {
   globalThis.ResizeObserver = class ResizeObserver {
     observe() {}

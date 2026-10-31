@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'preact/hooks';
-import { useSignal } from '@preact/signals';
+import { useSignal, type Signal } from '@preact/signals';
 import { Check, Hash, RotateCcw } from 'lucide-preact';
 import type { RefObject } from 'preact';
 import { ChatInput, type StagedAttachment } from '@/components/chat-input';
@@ -20,13 +20,75 @@ import {
   activeWikiModel,
   setWikiModel,
 } from '@/pages/wiki/use-wiki-ingestion';
-import { providers, favoriteModels, fetchProviders } from '@/hooks/use-providers';
+import {
+  providers,
+  favoriteModels,
+  fetchProviders,
+  type FavoriteModel,
+  type ProviderInfo,
+} from '@/hooks/use-providers';
 import { OrientationBadge } from './orientation-badge';
 import { NewDomainModal } from './new-domain-form';
 import { UploadWikiDialog } from './upload-wiki-form';
 
 interface Props {
   chatInputRef?: RefObject<HTMLTextAreaElement>;
+}
+
+// Its own subcomponent so a keystroke here (which only flips `inputValue`)
+// re-renders just the composer, not the whole chat's message list — see
+// ui/src/pages/workspaces/files-tab.tsx's `TabButton` for the same
+// isolation pattern applied to a different signal.
+function ChatComposer({
+  inputValue,
+  stagedAttachments,
+  onSend,
+  onStop,
+  isGenerating,
+  disabled,
+  providers,
+  favoriteModels,
+  activeProvider,
+  activeModel,
+  onModelSelect,
+  threadId,
+}: {
+  inputValue: Signal<string>;
+  stagedAttachments: Signal<StagedAttachment[]>;
+  onSend: () => void;
+  onStop: () => void;
+  isGenerating: boolean;
+  disabled: boolean;
+  providers: ProviderInfo[];
+  favoriteModels: FavoriteModel[];
+  activeProvider?: string;
+  activeModel?: string;
+  onModelSelect: (provider: string, model: string) => void;
+  threadId: string;
+}) {
+  return (
+    <ChatInput
+      value={inputValue.value}
+      onValueChange={(v) => {
+        inputValue.value = v;
+      }}
+      placeholder="Add to the wiki..."
+      onSend={onSend}
+      onStop={onStop}
+      isGenerating={isGenerating}
+      disabled={disabled}
+      providers={providers}
+      favoriteModels={favoriteModels}
+      activeProvider={activeProvider}
+      activeModel={activeModel}
+      onModelSelect={onModelSelect}
+      threadId={threadId}
+      attachments={stagedAttachments.value}
+      onAttachmentsChange={(next) => {
+        stagedAttachments.value = next;
+      }}
+    />
+  );
 }
 
 export function IngestionChat({ chatInputRef }: Props) {
@@ -146,12 +208,9 @@ export function IngestionChat({ chatInputRef }: Props) {
 
       {/* Input */}
       <div ref={wrapperRef} class="shrink-0 border-t border-border p-3">
-        <ChatInput
-          value={inputValue.value}
-          onValueChange={(v) => {
-            inputValue.value = v;
-          }}
-          placeholder="Add to the wiki..."
+        <ChatComposer
+          inputValue={inputValue}
+          stagedAttachments={stagedAttachments}
           onSend={handleSend}
           onStop={stopWikiGeneration}
           isGenerating={wikiIsStreaming.value}
@@ -162,10 +221,6 @@ export function IngestionChat({ chatInputRef }: Props) {
           activeModel={resolvedModel}
           onModelSelect={setWikiModel}
           threadId={wikiThreadId.value}
-          attachments={stagedAttachments.value}
-          onAttachmentsChange={(next) => {
-            stagedAttachments.value = next;
-          }}
         />
       </div>
     </div>

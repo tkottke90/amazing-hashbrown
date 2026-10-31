@@ -1,8 +1,20 @@
 import { fireEvent, render, screen } from '@testing-library/preact';
 
+// Overrides the global `react-markdown` -> test/__mocks__/react-markdown.tsx
+// moduleNameMapper entry for this file only, with a jest.fn() so the
+// memoization tests below can assert on call counts. A file-scoped
+// jest.mock() call always wins over moduleNameMapper, and doesn't affect the
+// CodeBlock/MarkdownLink tests below since those never render through
+// <ReactMarkdown>.
+const mockReactMarkdown = jest.fn(({ children }: { children: string }) => <div>{children}</div>);
+jest.mock('react-markdown', () => ({
+  __esModule: true,
+  default: (props: { children: string }) => mockReactMarkdown(props),
+}));
+
 // Imported via relative path (not the `@/components/markdown` alias) to bypass the
 // global jest moduleNameMapper stub and exercise the real component.
-import { CodeBlock, MarkdownLink } from '../src/components/markdown';
+import { CodeBlock, Markdown, MarkdownLink } from '../src/components/markdown';
 import { codeBlockWrap } from '@/hooks/use-chat-display-settings';
 
 describe('MarkdownLink', () => {
@@ -92,5 +104,35 @@ describe('CodeBlock', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Copy code' }));
     await Promise.resolve();
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(INDENTED);
+  });
+});
+
+describe('Markdown (memoized)', () => {
+  beforeEach(() => {
+    mockReactMarkdown.mockClear();
+  });
+
+  it('skips re-rendering the underlying markdown pipeline when props are unchanged [unit]', () => {
+    const { rerender } = render(<Markdown>{'hello **world**'}</Markdown>);
+    expect(mockReactMarkdown).toHaveBeenCalledTimes(1);
+
+    rerender(<Markdown>{'hello **world**'}</Markdown>);
+    expect(mockReactMarkdown).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-renders when children changes [unit]', () => {
+    const { rerender } = render(<Markdown>{'a'}</Markdown>);
+    expect(mockReactMarkdown).toHaveBeenCalledTimes(1);
+
+    rerender(<Markdown>{'b'}</Markdown>);
+    expect(mockReactMarkdown).toHaveBeenCalledTimes(2);
+  });
+
+  it('re-renders when className changes but children stays the same [unit]', () => {
+    const { rerender } = render(<Markdown className="x">{'a'}</Markdown>);
+    expect(mockReactMarkdown).toHaveBeenCalledTimes(1);
+
+    rerender(<Markdown className="y">{'a'}</Markdown>);
+    expect(mockReactMarkdown).toHaveBeenCalledTimes(2);
   });
 });
