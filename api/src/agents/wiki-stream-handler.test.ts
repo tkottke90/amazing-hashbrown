@@ -572,8 +572,10 @@ describe('agents/wiki-stream-handler — wiki write persistence (#363)', () => {
     const persisted = getThreadStore()
       .getThreadMessages(threadId)
       .find((m) => m.kind === 'wiki_update');
-    expect(persisted, 'expected the deferred wiki_updated event to be drained and persisted').to.not
-      .equal(undefined);
+    expect(
+      persisted,
+      'expected the deferred wiki_updated event to be drained and persisted',
+    ).to.not.equal(undefined);
     expect(persisted!.payload).to.deep.equal({
       pageTitle: 'Switch',
       pageKind: 'updated',
