@@ -21,6 +21,7 @@ import {
   drainAndRecordWikiUpdates,
   extractPartialAssistantState,
 } from './stream-handler.js';
+import { applyPersistedSseEvents } from './persisted-sse-events.js';
 import { classifyChatError } from './error-classification.js';
 import { buildTaskAgent, type WorkspaceChatContext, type ChatAgent } from './chat-agent.js';
 import type { StagnationLimitError } from './recursion-guard.middleware.js';
@@ -374,9 +375,13 @@ export async function executeTask(
     // inside the closure would return `sink` itself once registered, causing
     // unbounded self-recursion on every event.
     const previousWriter = getActiveSseWriter(threadId);
-    const sink: SseWriter = (event) => {
-      previousWriter?.(event);
-    };
+    const sink: SseWriter = applyPersistedSseEvents(
+      (event) => {
+        previousWriter?.(event);
+      },
+      threadStore,
+      threadId,
+    );
     setActiveSseWriter(threadId, sink);
 
     let finalOutcome: 'done' | 'failed' | 'waiting_on_user' | 'cancelled' | 'blocked' = 'failed';
