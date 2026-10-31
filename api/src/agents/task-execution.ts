@@ -32,6 +32,7 @@ import {
   writeTaskFile,
   listWorkspaceTaskFiles,
   formatTaskFileTimestamp,
+  cloneEmptyTaskState,
   type TaskState,
 } from '../services/task-file.js';
 import { generateTaskGoal, generateHandoffNotes } from './task-file-generators.js';
@@ -583,12 +584,16 @@ export async function executeTask(
       // checkpoint, which already has this run's correct taskState from
       // before the pause (every mutation writes through immediately) — no
       // need to re-seed it there. The plain-message branch seeds it
-      // explicitly since that's a fresh top-level invoke() input.
+      // explicitly since that's a fresh top-level invoke() input — a
+      // reducer-backed channel's TS-inferred input type is required, not
+      // optional, regardless of runtime defaulting (see
+      // task-file-state.middleware.ts), so a run with no Task File passes
+      // the bare empty default instead of omitting the key.
       const input = resumeAnswer
         ? new Command({ resume: resumeAnswer })
         : {
             messages: [{ role: 'human', content: kickoff }],
-            ...(taskFileScope ? { taskState: taskFileScope.state } : {}),
+            taskState: taskFileScope ? taskFileScope.state : cloneEmptyTaskState(),
           };
 
       // Local consts — msgId/turnSentAt/agent/config are outer `let`s just

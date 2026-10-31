@@ -48,32 +48,46 @@ export function mergeTaskState(
   };
 }
 
-// `withLangGraph`'s own `default` option is the channel's default-value
-// factory — NOT Zod's `.default(...)` wrapper, which doesn't satisfy
-// `withLangGraph`'s `InteropZodType<TaskState>` schema parameter (a
-// `ZodDefault<ZodObject<...>>` is a different, incompatible wrapper type).
-// `TaskStateSchema` is passed bare. `cloneEmptyTaskState` is a factory
-// function, not a plain object, so every agent invocation that needs the
-// default gets its OWN fresh object/arrays — a plain-object default would
-// be shared by reference across every invocation that defaults it,
-// confirmed the hard way (one agent's write_task_note mutating a different
-// test's/run's "empty" state).
+// `TaskStateSchema.default(...)` (not the bare schema) is what
+// `ReducedValue`/`BinaryOperatorAggregate` actually introspect at runtime to
+// find this channel's default value — `withLangGraph`'s own `default`
+// option is only consulted by a different call path (building channels
+// directly from a StateGraph's schemaMetaRegistry), not by the one
+// `createAgent`/`createMiddleware` use, so passing it alone (as originally
+// written here) silently produced a channel with no default at all. But
+// `withLangGraph`'s TS overload (`TSchema extends InteropZodType<TValue>`)
+// rejects a `ZodDefault`-wrapped schema outright — confirmed against the
+// real zod@4 + @langchain/langgraph@1.4.21 source, this is a real gap in
+// that overload's types, not a semantic incompatibility (`ReducedValue`'s
+// own doc comment explicitly says it supports `.default()`-wrapped value
+// schemas). The cast below keeps the real `.default(...)`-wrapped runtime
+// object (so the default and the reducer both work) while telling the type
+// checker it's the bare schema, which is the only way to satisfy both.
 //
-// The trailing `.optional()` is what keeps `taskState` omittable from every
-// other agent's/call site's `invoke()`/`stream()` input (buildChatAgent,
-// buildWorkspaceChatAgent, and most of task-execution.ts's own calls never
-// pass it) — a reducer-backed field's TS-inferred input type is driven by
-// its reducer/update schema, not by whether a runtime `default` is
-// configured, so without this every such call site would be forced to pass
-// `taskState` explicitly. The runtime value is never actually undefined by
-// the time anything reads it (the channel's own `default` factory always
-// supplies one first) — `| undefined` here only appeases the type checker,
-// handled with `?? cloneEmptyTaskState()` wherever this field is read.
+// One consequence: because `ReducedZodChannel`'s own input-type inference
+// is driven entirely by this value schema's type — not by `reducer.schema`
+// — and the cast erases the `.default()`-flavored "optional input" marker,
+// `taskState` reads as *required* in every `invoke()`/`stream()` call
+// across every agent that binds this middleware, not just buildTaskAgent's.
+// `stream-handler.ts`, `workspace-chat-stream-handler.ts`, and
+// `task-execution.ts`'s own non-Task-File calls all pass
+// `cloneEmptyTaskState()` explicitly for exactly this reason — the runtime
+// default this field actually gets is identical either way, this only
+// satisfies the type checker.
+//
+// `cloneEmptyTaskState` (passed to both `.default()` and `withLangGraph`'s
+// own `default` option, for the two different consumers described above)
+// is a factory function, not a plain object, so every agent invocation
+// that needs the default gets its OWN fresh object/arrays — a plain-object
+// default would be shared by reference across every invocation that
+// defaults it, confirmed the hard way (one agent's write_task_note
+// mutating a different test's/run's "empty" state).
+const taskStateValueSchema = TaskStateSchema.default(cloneEmptyTaskState);
 export const taskFileStateSchema = z.object({
-  taskState: withLangGraph(TaskStateSchema, {
+  taskState: withLangGraph(taskStateValueSchema as unknown as typeof TaskStateSchema, {
     reducer: { schema: TaskStateUpdateSchema, fn: mergeTaskState },
     default: cloneEmptyTaskState,
-  }).optional(),
+  }),
 });
 
 // Also owns Task File persistence (ADR-0047) — write_task_note/update_plan
@@ -111,22 +125,18 @@ export function createTaskFileStateMiddleware(
   // actually differs from it.
   let lastPersisted: TaskState | undefined;
 
-  async function persistIfDirty(state: { taskState?: TaskState }) {
+  async function persistIfDirty(state: { taskState: TaskState }) {
     if (!taskFile || !taskId) return;
-    // The channel's own `default` factory always supplies a value before
-    // anything reads it — `?? cloneEmptyTaskState()` here only satisfies
-    // the type checker (see taskFileStateSchema's `.optional()` comment).
-    const taskState = state.taskState ?? cloneEmptyTaskState();
     if (lastPersisted === undefined) {
-      lastPersisted = taskState;
+      lastPersisted = state.taskState;
       return;
     }
-    if (taskState === lastPersisted) return;
+    if (state.taskState === lastPersisted) return;
     const s = store ?? getWorkspaceStore();
     const title = s.getTask(taskId)?.title ?? taskId;
     try {
-      await persist(taskFile.filePath, taskState, { taskId, title });
-      lastPersisted = taskState;
+      await persist(taskFile.filePath, state.taskState, { taskId, title });
+      lastPersisted = state.taskState;
     } catch (err) {
       // I/O failure must never fail the run — the agent's note is still
       // reflected in graph state even if the on-disk mirror lags.
