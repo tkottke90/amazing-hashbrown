@@ -1,7 +1,7 @@
 import { tool, type ToolRuntime } from '@langchain/core/tools';
 import { z } from 'zod';
 import { getWorkspaceStore, type WorkspaceStore } from '../../services/workspace-store.js';
-import { renderTaskStateToMarkdown } from '../../services/task-file.js';
+import { cloneEmptyTaskState, renderTaskStateToMarkdown } from '../../services/task-file.js';
 import { taskFileStateSchema } from '../task-file-state.middleware.js';
 
 const ReadTaskNotesSchema = z.object({});
@@ -22,7 +22,11 @@ export function makeReadTaskNotesTool(taskId: string, store?: WorkspaceStore) {
       const s = store ?? getWorkspaceStore();
       const task = s.getTask(taskId);
       const title = task?.title ?? taskId;
-      return renderTaskStateToMarkdown(runtime.state.taskState, { taskId, title });
+      // The channel's own default factory always supplies a value before
+      // this tool ever runs — `?? cloneEmptyTaskState()` only satisfies the
+      // type checker (see taskFileStateSchema's `.optional()` comment).
+      const taskState = runtime.state.taskState ?? cloneEmptyTaskState();
+      return renderTaskStateToMarkdown(taskState, { taskId, title });
     },
     {
       name: 'read_task_notes',

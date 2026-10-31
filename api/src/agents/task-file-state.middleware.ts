@@ -58,11 +58,22 @@ export function mergeTaskState(
 // be shared by reference across every invocation that defaults it,
 // confirmed the hard way (one agent's write_task_note mutating a different
 // test's/run's "empty" state).
+//
+// The trailing `.optional()` is what keeps `taskState` omittable from every
+// other agent's/call site's `invoke()`/`stream()` input (buildChatAgent,
+// buildWorkspaceChatAgent, and most of task-execution.ts's own calls never
+// pass it) — a reducer-backed field's TS-inferred input type is driven by
+// its reducer/update schema, not by whether a runtime `default` is
+// configured, so without this every such call site would be forced to pass
+// `taskState` explicitly. The runtime value is never actually undefined by
+// the time anything reads it (the channel's own `default` factory always
+// supplies one first) — `| undefined` here only appeases the type checker,
+// handled with `?? cloneEmptyTaskState()` wherever this field is read.
 export const taskFileStateSchema = z.object({
   taskState: withLangGraph(TaskStateSchema, {
     reducer: { schema: TaskStateUpdateSchema, fn: mergeTaskState },
     default: cloneEmptyTaskState,
-  }),
+  }).optional(),
 });
 
 // Also owns Task File persistence (ADR-0047) — write_task_note/update_plan
@@ -100,18 +111,22 @@ export function createTaskFileStateMiddleware(
   // actually differs from it.
   let lastPersisted: TaskState | undefined;
 
-  async function persistIfDirty(state: { taskState: TaskState }) {
+  async function persistIfDirty(state: { taskState?: TaskState }) {
     if (!taskFile || !taskId) return;
+    // The channel's own `default` factory always supplies a value before
+    // anything reads it — `?? cloneEmptyTaskState()` here only satisfies
+    // the type checker (see taskFileStateSchema's `.optional()` comment).
+    const taskState = state.taskState ?? cloneEmptyTaskState();
     if (lastPersisted === undefined) {
-      lastPersisted = state.taskState;
+      lastPersisted = taskState;
       return;
     }
-    if (state.taskState === lastPersisted) return;
+    if (taskState === lastPersisted) return;
     const s = store ?? getWorkspaceStore();
     const title = s.getTask(taskId)?.title ?? taskId;
     try {
-      await persist(taskFile.filePath, state.taskState, { taskId, title });
-      lastPersisted = state.taskState;
+      await persist(taskFile.filePath, taskState, { taskId, title });
+      lastPersisted = taskState;
     } catch (err) {
       // I/O failure must never fail the run — the agent's note is still
       // reflected in graph state even if the on-disk mirror lags.
