@@ -304,6 +304,54 @@ describe('agents/tools/create-tasks', () => {
       expect(cronRegistry.resyncAllCalls).to.equal(1);
     });
 
+    it("includes a Lapsed Fire warning on the created task's entry when today's schedule has one", async () => {
+      const NOW = new Date('2026-09-26T12:00:00.000Z'); // noon UTC — 09:00 already passed
+      const cronRegistry = fakeCronRegistry();
+      const result = await makeCreateTasksTool(
+        undefined,
+        undefined,
+        cronRegistry,
+        undefined,
+        NOW,
+      ).invoke(
+        {
+          tasks: [
+            {
+              title: 'morning briefing',
+              trigger: { type: 'cron_repeat', expression: '0 9 * * *', timezone: 'UTC' },
+            },
+          ],
+        },
+        invokeConfig(workspaceId),
+      );
+      const parsed = JSON.parse(String(result)) as { created: { warning?: string }[] };
+      expect(parsed.created[0]!.warning).to.match(/09:00/);
+    });
+
+    it('omits the warning key when there is nothing to warn about', async () => {
+      const NOW = new Date('2026-09-26T12:00:00.000Z'); // noon UTC — 18:00 is still ahead
+      const cronRegistry = fakeCronRegistry();
+      const result = await makeCreateTasksTool(
+        undefined,
+        undefined,
+        cronRegistry,
+        undefined,
+        NOW,
+      ).invoke(
+        {
+          tasks: [
+            {
+              title: 'evening briefing',
+              trigger: { type: 'cron_repeat', expression: '0 18 * * *', timezone: 'UTC' },
+            },
+          ],
+        },
+        invokeConfig(workspaceId),
+      );
+      const parsed = JSON.parse(String(result)) as { created: Record<string, unknown>[] };
+      expect('warning' in parsed.created[0]!).to.equal(false);
+    });
+
     it('sends a cron_once task onto its schedule with a future fireAt', async () => {
       const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();
       const result = await makeCreateTasksTool(undefined, undefined, fakeCronRegistry()).invoke(

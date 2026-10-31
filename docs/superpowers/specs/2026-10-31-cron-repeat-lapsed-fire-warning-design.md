@@ -68,7 +68,9 @@ Walks backward from `now`, collecting matches until one falls at or before local
 
 A small co-located helper turns the `Date[]` into the capped, enumerated text (D6), e.g.:
 
-> "Heads up: today's 06:00 and 11:00 runs already passed and won't fire. The schedule will run normally starting with its next fire time."
+> "Heads up: today's 06:00, 11:00 and 14:00 runs already passed and won't fire. The schedule will run normally starting with its next fire time."
+
+(Walking the algorithm against this doc's own earlier example — created at 14:10 against `0 6,11,14 * * *` — 14:00 is itself 10 minutes in the past by then, exactly as lapsed as the other two; the warning names all three, not just the first two.)
 
 Reused verbatim by all three surfaces below — nobody re-derives the wording.
 

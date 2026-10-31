@@ -127,6 +127,59 @@ describe('services/cron-config', () => {
         enabledAt: LATER.toISOString(),
       });
     });
+
+    it('attaches a warning when creating a schedule whose today has a Lapsed Fire [unit]', () => {
+      // NOW is noon UTC — 09:00 today has already passed.
+      const result = resolveCronConfig(
+        'cron_repeat',
+        null,
+        { expression: '0 9 * * *', timezone: 'UTC' },
+        NOW,
+      );
+      expect(result.ok && result.warning).to.equal(
+        "Heads up: today's 09:00 run already passed and won't fire. The schedule will run " +
+          'normally starting with its next fire time.',
+      );
+    });
+
+    it('omits the warning when creating a schedule with no Lapsed Fires today [unit]', () => {
+      // 18:00 today is still ahead of NOW (noon UTC) — nothing has lapsed.
+      const result = resolveCronConfig(
+        'cron_repeat',
+        null,
+        { expression: '0 18 * * *', timezone: 'UTC' },
+        NOW,
+      );
+      expect(result.ok && 'warning' in result).to.equal(false);
+    });
+
+    it('attaches a warning when re-enabling a paused schedule with a Lapsed Fire in its new day [unit]', () => {
+      const current = repeatConfig({
+        expression: '0 9 * * *',
+        enabled: false,
+        consecutiveFailures: 3,
+        pausedReason: 'consecutive_failures',
+      });
+      // LATER is noon UTC on its own day — 09:00 that day has already passed.
+      const result = resolveCronConfig(
+        'cron_repeat',
+        current,
+        { expression: '0 9 * * *', timezone: 'UTC', enabled: true },
+        LATER,
+      );
+      expect(result.ok && result.warning).to.match(/09:00/);
+    });
+
+    it("omits the warning on an in-place edit that doesn't re-enable the schedule, even with a would-be-lapsed expression [unit]", () => {
+      const current = repeatConfig(); // already enabled
+      const result = resolveCronConfig(
+        'cron_repeat',
+        current,
+        { expression: '0 9 * * *', timezone: 'UTC' }, // 09:00 LATER has already passed
+        LATER,
+      );
+      expect(result.ok && 'warning' in result).to.equal(false);
+    });
   });
 
   describe('timezone default (a caller with nothing to prefill from, e.g. the chat tool)', () => {
@@ -192,6 +245,24 @@ describe('services/cron-config', () => {
       expect((unchanged as { config: CronOnceConfig }).config.lastFiredAt).to.equal(
         current.lastFiredAt,
       );
+    });
+
+    it('never carries a warning field — Lapsed Fires are a cron_repeat-only concept [unit]', () => {
+      const rejected = resolveCronConfig(
+        'cron_once',
+        null,
+        { fireAt: '2026-09-26T11:59:00.000Z', timezone: 'UTC' },
+        NOW,
+      );
+      expect('warning' in rejected).to.equal(false);
+
+      const accepted = resolveCronConfig(
+        'cron_once',
+        null,
+        { fireAt: LATER.toISOString(), timezone: 'UTC' },
+        NOW,
+      );
+      expect('warning' in accepted).to.equal(false);
     });
   });
 

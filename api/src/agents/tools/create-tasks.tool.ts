@@ -121,6 +121,7 @@ export function makeCreateTasksTool(
   trackerRegistry?: TrackerRegistry,
   cronRegistry?: CronRegistry,
   callingTaskId?: string,
+  now: Date = new Date(),
 ) {
   return tool(
     async (
@@ -177,7 +178,7 @@ export function makeCreateTasksTool(
       // whole batch before anything is inserted, same as the title check
       // above. A task with no `trigger` resolves to null here and keeps
       // today's plain 'chat' trigger type.
-      const resolvedTriggers: (CronConfig | null)[] = [];
+      const resolvedTriggers: ({ config: CronConfig; warning?: string } | null)[] = [];
       for (let i = 0; i < tasks.length; i++) {
         const trigger = tasks[i]!.trigger;
         if (!trigger) {
@@ -185,11 +186,11 @@ export function makeCreateTasksTool(
           continue;
         }
         const { type, ...fields } = trigger;
-        const resolved = resolveCronConfig(type, null, fields, new Date());
+        const resolved = resolveCronConfig(type, null, fields, now);
         if (!resolved.ok) {
           return `Task ${i + 1}: ${resolved.error}. No tasks were created.`;
         }
-        resolvedTriggers.push(resolved.config);
+        resolvedTriggers.push({ config: resolved.config, warning: resolved.warning });
       }
 
       if (!s.getWorkspace(workspaceId)) {
@@ -221,7 +222,7 @@ export function makeCreateTasksTool(
         assignedTo: 'agent',
         origin: 'user',
         triggerType: t.trigger?.type ?? 'chat',
-        triggerConfig: resolvedTriggers[i] ?? undefined,
+        triggerConfig: resolvedTriggers[i]?.config ?? undefined,
         trackerType: trackerType ?? null,
         trackerId: trackerId ?? null,
         cohortOf: asCohort ? callingTaskId : undefined,
@@ -240,24 +241,24 @@ export function makeCreateTasksTool(
       }
 
       getTaskScheduler().wake();
-      if (resolvedTriggers.some((config) => config !== null)) {
+      if (resolvedTriggers.some((r) => r !== null)) {
         (cronRegistry ?? getCronRegistry()).resyncAll();
       }
 
-      const now = new Date();
       return JSON.stringify({
         created: created.map((t, i) => {
-          const config = resolvedTriggers[i];
+          const resolvedTrigger = resolvedTriggers[i];
           const triggerType = tasks[i]!.trigger?.type;
-          if (!config || !triggerType) return { id: t.id, title: t.title };
+          if (!resolvedTrigger || !triggerType) return { id: t.id, title: t.title };
           const { description, nextFireTimes } = describeSchedule(
-            cronTiming(triggerType, config),
+            cronTiming(triggerType, resolvedTrigger.config),
             now,
           );
           return {
             id: t.id,
             title: t.title,
             schedule: { description, nextFireAt: nextFireTimes[0]?.toISOString() ?? null },
+            ...(resolvedTrigger.warning ? { warning: resolvedTrigger.warning } : {}),
           };
         }),
         ...(trackerType ? { tracker: { type: trackerType, id: trackerId } } : {}),
