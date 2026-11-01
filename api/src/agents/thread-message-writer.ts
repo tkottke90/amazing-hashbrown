@@ -400,7 +400,7 @@ export function recordSubAgentMarker(
     taskId: string;
     role: string;
     phase: 'dispatch' | 'completion';
-    outcome?: 'done' | 'failed' | 'cancelled';
+    outcome?: 'done' | 'failed' | 'cancelled' | 'handed_off';
     remainingCount?: number;
   },
 ): number | null {

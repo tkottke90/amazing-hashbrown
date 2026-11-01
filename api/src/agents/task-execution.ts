@@ -396,12 +396,7 @@ export async function executeTask(
     setActiveSseWriter(threadId, sink);
 
     let finalOutcome:
-      | 'done'
-      | 'failed'
-      | 'waiting_on_user'
-      | 'cancelled'
-      | 'blocked'
-      | 'handed_off' = 'failed';
+      'done' | 'failed' | 'waiting_on_user' | 'cancelled' | 'blocked' | 'handed_off' = 'failed';
     // Hoisted above the try block (rather than declared inside it) so the
     // catch block below can still reach them to clean up a mid-stream failure
     // — mirroring failAssistant's role in the interactive chat/workspace-chat
