@@ -1220,8 +1220,17 @@ describe('agents/task-execution', () => {
         '(issue #364) [orchestration]',
       async () => {
         const entry = makeGlobalEntry();
+        // Long enough that flushDelta's SAFE_MARGIN (it withholds a short
+        // tail in case it's a split <think> tag boundary — see
+        // stream-handler.ts) still flushes a real, identifiable prefix into
+        // parse.content before the thrown error wraps it as a
+        // PipeEventsError. The trailing few characters are never flushed on
+        // this path (drainBuffer only runs on a clean return, not a throw),
+        // so this asserts on a prefix, not full-string equality.
+        const partialText =
+          'Looked promising but I ran out of ideas before finishing the migration.';
         const agent = fakeThrowingAgent(
-          [{ event: 'on_chat_model_stream', data: { chunk: { content: 'partial' } } }],
+          [{ event: 'on_chat_model_stream', data: { chunk: { content: partialText } } }],
           Object.assign(new Error('Recursion limit reached'), { name: 'GraphRecursionError' }),
         );
 
@@ -1230,7 +1239,11 @@ describe('agents/task-execution', () => {
         // traceError itself stays the fixed diagnostic string regardless of
         // this fix — see "records running out of steps on its trace" in the
         // "usage metrics and trace" describe block, which already covers it.
-        expect(store.getQueueEntry(entry.id)!.summary).to.equal('partial');
+        const summary = store.getQueueEntry(entry.id)!.summary;
+        expect(summary, 'expected the real partial text, not the canned fallback').to.not.equal(
+          'Ran out of steps before completing this task.',
+        );
+        expect(summary).to.include('Looked promising but I ran out of ideas');
       },
     );
 
