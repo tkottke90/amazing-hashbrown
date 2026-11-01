@@ -110,6 +110,27 @@ detect-dry-run)
   fi
   ;;
 
+verify-tag-version)
+  # docker-build-release bakes APP_VERSION from package.json, not from the
+  # pushed tag — the two only agree because bump-version bumps package.json
+  # and tags the same commit in one step. A tag pushed any other way (a
+  # manual `git tag`, or a commit where package.json wasn't bumped first)
+  # would silently build an image whose APP_VERSION disagrees with its own
+  # tag. Catch that before building rather than after.
+  tag="${1:?usage: verify-tag-version <tag>}"
+  if is_dry_run_tag "$tag"; then
+    echo "SKIP: $tag is a dry-run tag — package.json is never bumped for these"
+  else
+    pkg_version=$(node -p "require('./package.json').version")
+    expected_tag="v${pkg_version}"
+    if [ "$tag" != "$expected_tag" ]; then
+      echo "FAIL: tag $tag does not match package.json version $pkg_version (expected tag $expected_tag)" >&2
+      exit 1
+    fi
+    echo "OK: tag $tag matches package.json version $pkg_version"
+  fi
+  ;;
+
 docker-build-release)
   # npm run build:app reads COMMIT_SHA/APP_VERSION straight from the current
   # git HEAD and package.json, so this must run after bump-version has
@@ -193,7 +214,7 @@ publish)
   ;;
 
 *)
-  echo "usage: release.sh <preflight|pkg-info|build-guard|bump-version|detect-dry-run|docker-build-release|docker-tag-version|docker-save|changelog-range|release-upload-asset|registry-publish|publish> [args...]" >&2
+  echo "usage: release.sh <preflight|pkg-info|build-guard|bump-version|detect-dry-run|verify-tag-version|docker-build-release|docker-tag-version|docker-save|changelog-range|release-upload-asset|registry-publish|publish> [args...]" >&2
   exit 1
   ;;
 
