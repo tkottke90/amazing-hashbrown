@@ -95,6 +95,12 @@ export interface RunKickoffInput {
   // to the kickoff message at all.
   siblingContext?: SiblingProgressContext | null;
   timeZone?: string;
+  // The previous run's Handoff Notes (TaskState.handoff), if this task has a
+  // Task File and that field is non-empty. Independent of previousRuns: a
+  // Task File write can outlive a task_queue row that previousRunsOf()
+  // filters out (non-FINISHED_RUN status, or threadId === null) — see
+  // docs/superpowers/specs/2026-11-01-handoff-notes-kickoff-continuity-design.md.
+  handoffNotes?: string;
 }
 
 // Previous run + this many older ones — enough to spot a pattern, small
@@ -179,6 +185,20 @@ export function buildRunKickoff(input: RunKickoffInput): string {
         'Earlier runs: ' + shown.map((r) => `#${r.runNumber} ${r.id} (${r.status})`).join(', '),
       );
     }
+  }
+
+  // Gated solely on handoffNotes, not nested inside `if (previous)` above —
+  // a Task File write can outlive the task_queue row previousRunsOf()
+  // derives `previous` from (see RunKickoffInput's handoffNotes doc comment).
+  if (input.handoffNotes) {
+    lines.push(
+      '',
+      'Handoff notes from the previous run — treat this as something you need to act on ' +
+        'or verify, not just background:',
+      `"${input.handoffNotes}"`,
+      "If that doesn't tell you everything you need, call read_task_notes() for the full " +
+        'Task File — goal, notes, and outcome across every run.',
+    );
   }
 
   if (input.siblingContext) {

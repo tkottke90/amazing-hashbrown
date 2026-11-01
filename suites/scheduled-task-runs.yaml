@@ -5,10 +5,13 @@ suite:
     Every task run now starts in a fresh thread with a clean plan, so the
     only continuity between runs of the same task is the kickoff message: the
     previous run's one-line summary plus the exact read_task_run call that
-    opens its full transcript. Verifies the agent uses that call when the
-    summary alone can't answer what the task needs, and does not waste a
-    turn re-reading history the summary already covers. See
-    docs/superpowers/specs/2026-09-26-cron-task-triggers-design.md §3.
+    opens its full transcript, and — per issue #368 — that same run's
+    Handoff Notes, inlined with a read_task_notes escalation call. Verifies
+    the agent uses read_task_run/read_task_notes when the summary/handoff
+    text alone can't answer what the task needs, and does not waste a turn
+    re-reading history that text already covers. See
+    docs/superpowers/specs/2026-09-26-cron-task-triggers-design.md §3 and
+    docs/superpowers/specs/2026-11-01-handoff-notes-kickoff-continuity-design.md.
   passingThreshold: 1.0
   simulatedTask:
     title: Weekly dependency audit
@@ -165,3 +168,67 @@ scenarios:
       - path: runId
         match: equals
         value: 9b3e5d71-2a4c-4f86-b0d2-5c8e1f7a6b43
+
+  # str-006 / str-007 (issue #368) reuse str-002's sufficient previous-run
+  # summary so the read_task_run signal stays settled ('!read_task_run' for
+  # both) and only the new Handoff Notes signal varies between the two.
+  - id: str-006-acts-on-self-sufficient-handoff
+    name: Agent acts directly on a self-sufficient Handoff Note without re-reading the Task File
+    purpose: >
+      Issue #368 — a Task's Handoff Notes are generated at the end of every
+      run but were never surfaced to the next one, so a real fix a prior run
+      found and wrote down was silently never applied. Now that the note is
+      inlined in the kickoff, when it already gives a concrete, actionable
+      fact the agent should act on it directly rather than spending a turn
+      on read_task_notes just because the kickoff mentions it's available —
+      the same "don't re-read when you already have enough" principle
+      str-002 already verifies for the previous-run summary.
+    type: tool-sequence
+    turns:
+      - user: |
+          Begin work on this task now: Weekly dependency audit.
+          This is run #3 (started manually).
+
+          Previous run — #2, 2026-09-19 09:00 UTC, done:
+          "Audit complete: 0 advisories of any severity; nothing was open."
+          Decide this now, before doing anything else: does that summary already give you a concrete fact you can act on directly — "0 advisories, nothing open" means there's nothing to compare against — or does it leave out specifics you'd need, like a count with no names or "see the transcript for details"? If it already answers what you need, get on with the work; don't open the transcript just to double-check something it already told you. If it doesn't, call read_task_run({"runId":"6f0c2a1e-4b7d-4c1a-9a55-2f1b8e7d3c90"}) now, instead of guessing at what it left out.
+
+          Earlier runs: #1 1d9e8b7a-0c3f-4e21-8b6a-7a5c4d3e2f10 (done)
+
+          Handoff notes from the previous run — treat this as something you need to act on or verify, not just background:
+          "The comparator's off-by-one bug is still unfixed — subtract 1 from the index in src/audit.js's severity comparison before comparing counts."
+          If that doesn't tell you everything you need, call read_task_notes() for the full Task File — goal, notes, and outcome across every run.
+      - tool: shell_exec
+        args: { command: 'cat src/audit.js' }
+        result:
+          {
+            exitCode: 0,
+            stdout: 'function compareSeverity(a, b) { return a.index - b.index; }',
+            stderr: '',
+          }
+    tool: '!read_task_notes'
+
+  - id: str-007-escalates-on-vague-handoff
+    name: Agent reads the full Task File when the Handoff Note alone doesn't say enough
+    purpose: >
+      Held-out counterpart to str-006. The Handoff Note names a real,
+      unresolved problem but deliberately withholds the detail needed to
+      act on it ("see this run's notes"), so the agent must call
+      read_task_notes for the full Task File rather than guess at what the
+      fix was — the same escalation str-001 already verifies for a vague
+      previous-run summary.
+    type: tool-call
+    input: |
+      Begin work on this task now: Weekly dependency audit.
+      This is run #3 (started manually).
+
+      Previous run — #2, 2026-09-19 09:00 UTC, done:
+      "Audit complete: 0 advisories of any severity; nothing was open."
+      Decide this now, before doing anything else: does that summary already give you a concrete fact you can act on directly — "0 advisories, nothing open" means there's nothing to compare against — or does it leave out specifics you'd need, like a count with no names or "see the transcript for details"? If it already answers what you need, get on with the work; don't open the transcript just to double-check something it already told you. If it doesn't, call read_task_run({"runId":"6f0c2a1e-4b7d-4c1a-9a55-2f1b8e7d3c90"}) now, instead of guessing at what it left out.
+
+      Earlier runs: #1 1d9e8b7a-0c3f-4e21-8b6a-7a5c4d3e2f10 (done)
+
+      Handoff notes from the previous run — treat this as something you need to act on or verify, not just background:
+      "Found a real bug in the comparator during the last run that still needs fixing — see this run's notes for exactly what and where."
+      If that doesn't tell you everything you need, call read_task_notes() for the full Task File — goal, notes, and outcome across every run.
+    tool: read_task_notes
