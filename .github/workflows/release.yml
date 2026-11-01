@@ -22,6 +22,9 @@ jobs:
         id: detect
         run: bin/release.sh detect-dry-run "${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
 
+      - name: Verify tag matches package.json version
+        run: bin/release.sh verify-tag-version "${{ github.ref_name }}"
+
       - name: Setup npmrc
         run: |
           touch ~/.npmrc
