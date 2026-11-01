@@ -44,7 +44,15 @@ function fixture(overrides: Partial<WorkspaceRetrospectiveData> = {}): Workspace
     chat: chatFixture(),
     tasks: [],
     anomalies: [],
-    summary: { taskCount: 0, runCount: 0, failureCount: 0, wikiWriteCount: 1, anomalyCount: 0 },
+    handoffs: [],
+    summary: {
+      taskCount: 0,
+      runCount: 0,
+      failureCount: 0,
+      wikiWriteCount: 1,
+      anomalyCount: 0,
+      handoffCount: 0,
+    },
     narrative: null,
     ...overrides,
   };
@@ -121,5 +129,34 @@ describe('render/renderWorkspaceRetrospectiveHtml', () => {
     const html = await renderWorkspaceRetrospectiveHtml(fixture({ chat: null, tasks: [] }));
     expect(html).to.include('This workspace has no chat thread.');
     expect(html).to.include('No tasks were created in this workspace.');
+  });
+
+  it('renders a Handoffs section only when there are handoffs, separate from Anomalies (issue #364)', async () => {
+    const withoutHandoffs = await renderWorkspaceRetrospectiveHtml(fixture());
+    expect(withoutHandoffs).to.not.include('<h2>Handoffs</h2>');
+
+    const withHandoffs = await renderWorkspaceRetrospectiveHtml(
+      fixture({
+        handoffs: [
+          {
+            taskId: 'task-1',
+            taskTitle: 'Migrate config',
+            count: 2,
+            lastSummary: 'Stopped at the user’s request.',
+          },
+        ],
+        summary: {
+          taskCount: 1,
+          runCount: 2,
+          failureCount: 0,
+          wikiWriteCount: 1,
+          anomalyCount: 0,
+          handoffCount: 2,
+        },
+      }),
+    );
+    expect(withHandoffs).to.include('<h2>Handoffs</h2>');
+    expect(withHandoffs).to.include('Migrate config');
+    expect(withHandoffs).to.include('Stopped at the user’s request.');
   });
 });

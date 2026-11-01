@@ -65,6 +65,7 @@ import {
   type TurnObservability,
 } from './turn-observability.js';
 import type { CompleteTaskCall } from './tools/complete-task.tool.js';
+import type { HandOffTaskCall } from './tools/hand-off-task.tool.js';
 import { endThreadTurn, runOnceThreadFree } from './pending-thread-turns.js';
 import { broadcast } from '../services/broadcast.js';
 
@@ -346,7 +347,7 @@ export async function executeTask(
   const markerThreads = mirrorThreadId ? [threadId, mirrorThreadId] : [threadId];
   const recordMarker = (
     phase: 'start' | 'end',
-    outcome?: 'done' | 'failed' | 'waiting_on_user' | 'cancelled' | 'blocked',
+    outcome?: 'done' | 'failed' | 'waiting_on_user' | 'cancelled' | 'blocked' | 'handed_off',
     summary?: string | null,
   ): void => {
     for (const target of markerThreads) {
@@ -394,7 +395,13 @@ export async function executeTask(
     );
     setActiveSseWriter(threadId, sink);
 
-    let finalOutcome: 'done' | 'failed' | 'waiting_on_user' | 'cancelled' | 'blocked' = 'failed';
+    let finalOutcome:
+      | 'done'
+      | 'failed'
+      | 'waiting_on_user'
+      | 'cancelled'
+      | 'blocked'
+      | 'handed_off' = 'failed';
     // Hoisted above the try block (rather than declared inside it) so the
     // catch block below can still reach them to clean up a mid-stream failure
     // — mirroring failAssistant's role in the interactive chat/workspace-chat
@@ -445,6 +452,9 @@ export async function executeTask(
       // the callback, so a bare variable would narrow to `null` at the check
       // below. Last accepted call wins.
       const completeTaskBox: { current: CompleteTaskCall | null } = { current: null };
+      // Same boxed-value pattern as completeTaskBox, for an accepted
+      // hand_off_task call — see hand-off-task.tool.ts.
+      const handOffBox: { current: HandOffTaskCall | null } = { current: null };
 
       // A task normally runs on the default provider, resolved to a
       // concrete model up front so the agent that runs, the trace, and the
@@ -556,6 +566,9 @@ export async function executeTask(
         onTaskComplete: (call: CompleteTaskCall) => {
           completeTaskBox.current = call;
         },
+        onHandOff: (call: HandOffTaskCall) => {
+          handOffBox.current = call;
+        },
       };
       // buildSubAgentAgent's result isn't typed as ChatAgent (it carries a
       // structurally different, shorter middleware tuple — see its own
@@ -578,7 +591,11 @@ export async function executeTask(
               model,
               workspaceScope ? { workspaceContext: workspaceScope.workspaceContext } : undefined,
               taskCompleteHook,
-              { runId: entry.id, hasPreviousRun: previousRuns.length > 0 },
+              {
+                runId: entry.id,
+                hasPreviousRun: previousRuns.length > 0,
+                hadHitlInterrupt: entry.pauseReason === 'chat',
+              },
               taskFileScope ? { filePath: taskFileScope.filePath } : undefined,
             );
       agent = built.agent;
@@ -756,6 +773,37 @@ export async function executeTask(
             model,
           );
         }
+      } else if (handOffBox.current) {
+        // The agent called hand_off_task — ended cooperatively after an
+        // ask_user interrupt and the user asking it to stop, with its own
+        // summary. Distinct from the stall branch below, and from
+        // completeTaskBox's 'done'/'failed': see ADR-0054.
+        finalOutcome = 'handed_off';
+        store.setQueueEntrySummary(entry.id, handOffBox.current.summary);
+        store.completeQueueEntry(entry.id, 'handed_off');
+        if (workspaceScope) {
+          await recordTaskProgress({
+            task,
+            workspace: workspaceScope.workspace,
+            outcome: 'handed_off',
+            summary: handOffBox.current.summary,
+            startSha,
+          });
+        }
+        if (task.origin === 'agent') {
+          await deliverSubAgentCompletion(task, 'handed_off', handOffBox.current.summary);
+        }
+        if (taskFileScope) {
+          await finishFile(
+            task,
+            { agent, config },
+            taskFileScope.filePath,
+            taskFileScope.state,
+            handOffBox.current.summary,
+            provider,
+            model,
+          );
+        }
       } else if (interrupted) {
         // Unreachable for origin='agent' rows in practice — a sub-agent's
         // tool list never includes ask_user (see buildSubAgentAgent), so it
@@ -777,8 +825,13 @@ export async function executeTask(
         // finalizeTurn. This is exactly the bug #87 exists to fix: never leave
         // the task stuck in 'running'.
         finalOutcome = 'failed';
-        const stoppedSummary =
-          'Stopped without completing the task (ran out of steps or produced no final action).';
+        // Preserve whatever the agent's own last message actually said
+        // rather than always discarding it for the canned explanation —
+        // falls back to the canned message only when there's nothing
+        // usable (see docs/superpowers/specs/2026-11-01-handed-off-run-outcome-design.md §3.2).
+        const stoppedSummary = content.trim()
+          ? content.trim()
+          : 'Stopped without completing the task (ran out of steps or produced no final action).';
         store.setQueueEntrySummary(entry.id, stoppedSummary);
         store.completeQueueEntry(entry.id, 'failed');
         if (workspaceScope) {
@@ -1015,14 +1068,23 @@ export async function executeTask(
         traceError = outOfSteps
           ? 'Ran out of steps before completing this task.'
           : classified.message;
-        const failureSummary = outOfSteps ? traceError : `Run failed: ${classified.message}`;
+        // Preserve whatever partial text the agent actually produced before
+        // running out of steps, rather than always discarding it for the
+        // canned explanation — same rule as the graceful stall branch above
+        // (see docs/superpowers/specs/2026-11-01-handed-off-run-outcome-design.md §3.2).
+        // traceError itself stays the fixed diagnostic string; only the
+        // user-facing Run summary and chat-row text change.
+        const partialContent = partialState?.content.trim();
+        const failureSummary = outOfSteps
+          ? partialContent || traceError
+          : `Run failed: ${classified.message}`;
         if (partialState && turnSentAt !== undefined) {
           if (outOfSteps) {
             finalizeAssistant(
               threadStore,
               threadId,
               partialState.segmentId,
-              'Ran out of steps before completing this task.',
+              partialContent || 'Ran out of steps before completing this task.',
               '',
               turnSentAt,
               null,

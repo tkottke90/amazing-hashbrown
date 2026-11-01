@@ -97,7 +97,15 @@ function fixtureData(
         lastSummary: 'Hit a tool error twice in a row',
       },
     ],
-    summary: { taskCount: 1, runCount: 0, failureCount: 0, wikiWriteCount: 0, anomalyCount: 1 },
+    handoffs: [],
+    summary: {
+      taskCount: 1,
+      runCount: 0,
+      failureCount: 0,
+      wikiWriteCount: 0,
+      anomalyCount: 1,
+      handoffCount: 0,
+    },
     narrative: null,
     ...overrides,
   };
@@ -164,5 +172,27 @@ describe('agents/workspace-retrospective-narrative', () => {
     const model = new RecordingChatModel('   \n  ');
     const result = await generateRetrospectiveNarrative({ data: fixtureData(), model });
     expect(result).to.equal(null);
+  });
+
+  it(`includes handoffs in the prompt, labeled as not failures (issue #364) ${TestTypes.UNIT}`, async () => {
+    const model = new RecordingChatModel('narrative');
+    await generateRetrospectiveNarrative({
+      data: fixtureData({
+        handoffs: [
+          {
+            taskId: 'task-2',
+            taskTitle: 'Migrate config',
+            count: 1,
+            lastSummary: 'Stopped at the user’s request.',
+          },
+        ],
+      }),
+      model,
+    });
+
+    const prompt = String(model.lastMessages[0]?.content ?? '');
+    expect(prompt).to.include('Migrate config');
+    expect(prompt).to.include('Stopped at the user’s request.');
+    expect(prompt).to.include('not failures');
   });
 });

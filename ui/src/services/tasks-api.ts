@@ -24,14 +24,19 @@ export interface PlanStep {
 // Server-computed state of a cron task's schedule (see the API's
 // describeTaskSchedule): the UI never parses cron expressions itself.
 export type ScheduleInactiveReason =
-  'disabled' | 'failures' | 'completed' | 'exhausted' | 'expired' | 'fired';
+  | 'disabled'
+  | 'failures'
+  | 'completed'
+  | 'exhausted'
+  | 'expired'
+  | 'fired';
 
 export interface TaskSchedule {
   nextFireAt: string | null;
   iterationCount: number;
   active: boolean;
   inactiveReason: ScheduleInactiveReason | null;
-  lastRunOutcome: 'done' | 'failed' | 'cancelled' | null;
+  lastRunOutcome: 'done' | 'failed' | 'cancelled' | 'handed_off' | null;
 }
 
 // trigger_config for the cron trigger types, as stored. The fields after
@@ -65,7 +70,8 @@ export interface CronPreview {
 }
 
 export type CronPreviewRequest =
-  { expression: string; timezone: string } | { fireAt: string; timezone: string };
+  | { expression: string; timezone: string }
+  | { fireAt: string; timezone: string };
 
 // The Kanban board projection the API computes for every task — the server
 // owns which lane a task is in and where it may be dropped (see the API's
@@ -168,7 +174,7 @@ export interface TaskDependency {
 export interface TaskQueueEntry {
   id: string;
   taskId: string;
-  status: 'pending' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled';
+  status: 'pending' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled' | 'handed_off';
   position: number;
   enqueuedAt: string;
   startedAt: string | null;

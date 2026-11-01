@@ -59,6 +59,7 @@ import { getToolSettingsStore } from '../services/tool-settings-store.js';
 import { makeCreateWorkspaceTool } from './tools/create-workspace.tool.js';
 import { makeCreateProjectTool } from './tools/create-project.tool.js';
 import { makeCompleteTaskTool, type CompleteTaskCall } from './tools/complete-task.tool.js';
+import { makeHandOffTaskTool, type HandOffTaskCall } from './tools/hand-off-task.tool.js';
 import { makeReadTaskRunTool } from './tools/read-task-run.tool.js';
 import { makeUpdatePlanTool, type UpdatePlanTaskFile } from './tools/update-plan.tool.js';
 import { makeDisableRecurrenceTool } from './tools/disable-recurrence.tool.js';
@@ -799,6 +800,10 @@ export interface TaskAgentHooks {
   // source of truth for "this run completed". Callers that don't track
   // completion (sub-agent-notification.ts) simply omit it.
   onTaskComplete?: (call: CompleteTaskCall) => void;
+  // Fired by hand_off_task only for an accepted call (see
+  // hand-off-task.tool.ts's nudge-once rule) — task-execution.ts's single
+  // source of truth for "this run handed off".
+  onHandOff?: (call: HandOffTaskCall) => void;
 }
 
 // The queue entry (run) this agent is being built for. read_task_run is
@@ -808,6 +813,10 @@ export interface TaskAgentHooks {
 export interface TaskRunBinding {
   runId: string;
   hasPreviousRun: boolean;
+  // entry.pauseReason === 'chat' — whether an ask_user interrupt has
+  // already occurred earlier in this run, read once at build time since a
+  // HITL resume rebuilds the agent (see hand-off-task.tool.ts).
+  hadHitlInterrupt: boolean;
 }
 
 export async function buildTaskAgent(
@@ -851,6 +860,10 @@ export async function buildTaskAgent(
         // same run count toward complete_task's unchecked-steps nudge.
         getPlan: () => getWorkspaceStore().getTask(task.id)?.plan ?? null,
         onAccepted: hooks?.onTaskComplete,
+      }),
+      makeHandOffTaskTool(task.id, {
+        hadHitlInterrupt: run?.hadHitlInterrupt,
+        onAccepted: hooks?.onHandOff,
       }),
       makeUpdatePlanTool(task.id, undefined, taskFile),
       ...(run?.hasPreviousRun ? [makeReadTaskRunTool(task.id, run.runId)] : []),

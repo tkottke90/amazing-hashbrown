@@ -130,13 +130,13 @@ function statusAfterTriggerSave(
   return task.status === 'scheduled' ? 'pending' : null;
 }
 
-export type RunOutcome = 'done' | 'failed' | 'cancelled';
+export type RunOutcome = 'done' | 'failed' | 'cancelled' | 'handed_off';
 
 export type TaskResponse = Task & {
   schedule?: TaskSchedule & { lastRunOutcome: RunOutcome | null };
 };
 
-const RUN_OUTCOMES: ReadonlySet<string> = new Set(['done', 'failed', 'cancelled']);
+const RUN_OUTCOMES: ReadonlySet<string> = new Set(['done', 'failed', 'cancelled', 'handed_off']);
 
 // A task as the API returns it: cron tasks carry a computed `schedule`
 // (next fire time, run count, and why it's inactive, if it is) so the UI

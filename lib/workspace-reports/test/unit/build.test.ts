@@ -15,6 +15,7 @@ import type {
   TaskLike,
   TaskRunLike,
   FailedRunStreakLike,
+  HandedOffRunSummaryLike,
   TaskProgressEntryLike,
   WorkspaceStoreLike,
 } from '../../src/types.js';
@@ -65,6 +66,7 @@ interface FakeWorkspaceStoreFixtures {
   tasks?: TaskLike[];
   runsByTask?: Record<string, TaskRunLike[]>;
   failedStreaks?: Map<string, FailedRunStreakLike>;
+  handoffCounts?: Map<string, HandedOffRunSummaryLike>;
   progressEntries?: TaskProgressEntryLike[];
 }
 
@@ -74,6 +76,7 @@ function fakeWorkspaceStore(fixtures: FakeWorkspaceStoreFixtures): WorkspaceStor
     listTasks: () => fixtures.tasks ?? [],
     listTaskRuns: (taskId: string) => fixtures.runsByTask?.[taskId] ?? [],
     failedRunStreaks: () => fixtures.failedStreaks ?? new Map(),
+    handedOffRunCounts: () => fixtures.handoffCounts ?? new Map(),
     listTaskProgressEntriesForWorkspace: () => fixtures.progressEntries ?? [],
   };
 }
@@ -143,7 +146,9 @@ describe('build/buildWorkspaceRetrospective', () => {
       failureCount: 0,
       wikiWriteCount: 0,
       anomalyCount: 0,
+      handoffCount: 0,
     });
+    expect(result?.handoffs).to.deep.equal([]);
   });
 
   it(`flags a wiki_update whose wikiName does not match the workspace wikiId ${TestTypes.UNIT}`, () => {
@@ -266,6 +271,41 @@ describe('build/buildWorkspaceRetrospective', () => {
       attempts: 2,
       lastSummary: 'Hit tool error twice in a row',
     });
+  });
+
+  it(`surfaces a task's handed_off runs as its own handoffs signal, not an anomaly (issue #364) ${TestTypes.UNIT}`, () => {
+    const workspace = makeWorkspace({ threadId: null });
+    const task = makeTask({ id: 'task-1', title: 'Migrate config' });
+
+    const result = buildWorkspaceRetrospective('ws-1', {
+      workspaceStore: fakeWorkspaceStore({
+        workspace,
+        tasks: [task],
+        runsByTask: { 'task-1': [] },
+        handoffCounts: new Map([
+          ['task-1', { count: 2, lastSummary: 'Stopped at the user’s request.' }],
+        ]),
+      }),
+      threadStore: { getThread: () => null },
+      observabilityStore,
+    });
+
+    expect(
+      result?.anomalies,
+      'a handoff is not a failure and must not be flagged as one',
+    ).to.have.length(0);
+    expect(result?.handoffs).to.deep.equal([
+      {
+        taskId: 'task-1',
+        taskTitle: 'Migrate config',
+        count: 2,
+        lastSummary: 'Stopped at the user’s request.',
+      },
+    ]);
+    expect(result?.summary.handoffCount).to.equal(2);
+    expect(result?.summary.failureCount, 'a handoff must not inflate the failure count').to.equal(
+      0,
+    );
   });
 
   it(`attaches only a task's own progress entries, and aggregates wiki-write/failure totals across chat and runs ${TestTypes.UNIT}`, () => {

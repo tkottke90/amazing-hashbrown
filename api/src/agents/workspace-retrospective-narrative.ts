@@ -14,7 +14,10 @@ const PROMPT_PREFIX =
   'You are reviewing what happened in an autonomous coding workspace: its chat, the tasks it ' +
   'ran, and anomalies a deterministic pass already flagged (repeated task failures, a wiki ' +
   "write that landed outside the workspace's own wiki, a run that hit the recursion/stagnation " +
-  'check-in). Using only the evidence below, write two short sections in markdown: ' +
+  'check-in). The evidence also lists handoffs separately from the anomalies — a handoff is a ' +
+  'run that ended cooperatively because the user asked it to stop mid-conversation, with real ' +
+  'progress recorded; it is not a failure and should not be treated as one in either section. ' +
+  'Using only the evidence below, write two short sections in markdown: ' +
   '"## Likely causes" (why each anomaly probably happened, in plain terms) and ' +
   '"## Opportunities to improve" (concrete, specific suggestions for the task plan, the system ' +
   'prompt, or the recursion/retry settings — not generic advice). Be direct and specific; if ' +
@@ -74,6 +77,14 @@ function buildEvidenceSummary(data: WorkspaceRetrospectiveData): string {
   lines.push(`Anomalies flagged (${data.anomalies.length}):`);
   for (const anomaly of data.anomalies) {
     lines.push(`- ${summarizeAnomaly(anomaly)}`);
+  }
+
+  lines.push(`Handoffs (${data.handoffs.length}, not failures):`);
+  for (const handoff of data.handoffs) {
+    lines.push(
+      `- task "${handoff.taskTitle}" handed off ${handoff.count} time(s)` +
+        `${handoff.lastSummary ? ` — last summary: "${handoff.lastSummary}"` : ''}`,
+    );
   }
 
   const joined = lines.join('\n');

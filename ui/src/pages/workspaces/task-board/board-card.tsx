@@ -50,6 +50,7 @@ const LAST_RUN_BADGE: Record<NonNullable<TaskSchedule['lastRunOutcome']>, string
   done: 'bg-green-600/10 text-green-700 dark:text-green-400',
   failed: 'bg-destructive/10 text-destructive',
   cancelled: 'bg-muted text-muted-foreground',
+  handed_off: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
 };
 
 // A cron task's card line: when it runs next, whether it repeats, and how its

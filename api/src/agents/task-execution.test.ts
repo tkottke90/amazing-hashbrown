@@ -24,8 +24,14 @@ import { getTaskAbort, setAbortIntent, type AbortIntent } from './active-task-ab
 import { drainPendingTurns } from './pending-thread-turns.js';
 import { executeTask, finishTaskFile, type QueueEntryWithTask } from './task-execution.js';
 import { loadTaskState, listWorkspaceTaskFiles, EMPTY_TASK_STATE } from '../services/task-file.js';
-import type { buildTaskAgent, buildSubAgentAgent, TaskAgentHooks } from './chat-agent.js';
+import type {
+  buildTaskAgent,
+  buildSubAgentAgent,
+  TaskAgentHooks,
+  TaskRunBinding,
+} from './chat-agent.js';
 import { makeCompleteTaskTool } from './tools/complete-task.tool.js';
+import { makeHandOffTaskTool } from './tools/hand-off-task.tool.js';
 import { registerBroadcastClient, unregisterBroadcastClient } from '../services/broadcast.js';
 import type { AppBroadcastEvent } from '@tkottke90/llm-common-types/chat';
 
@@ -273,10 +279,18 @@ function fakeBuildTaskAgent(agent: any): typeof buildTaskAgent {
     _model?: string,
     _workspaceScope?: unknown,
     hooks?: TaskAgentHooks,
+    run?: TaskRunBinding,
   ) => {
     const completeTask = makeCompleteTaskTool(task.id, {
       getPlan: () => getWorkspaceStore().getTask(task.id)?.plan ?? null,
       onAccepted: hooks?.onTaskComplete,
+    });
+    // Same real-tool wiring as complete_task above — hand_off_task's own
+    // nudge-once rule (issue #364) is exercised for real rather than
+    // re-implemented in this fake.
+    const handOffTask = makeHandOffTaskTool(task.id, {
+      hadHitlInterrupt: run?.hadHitlInterrupt,
+      onAccepted: hooks?.onHandOff,
     });
     return {
       agent: {
@@ -288,6 +302,9 @@ function fakeBuildTaskAgent(agent: any): typeof buildTaskAgent {
             for await (const e of inner) {
               if (e.event === 'on_tool_start' && e.name === 'complete_task') {
                 await completeTask.invoke(e.data.input);
+              }
+              if (e.event === 'on_tool_start' && e.name === 'hand_off_task') {
+                await handOffTask.invoke(e.data.input);
               }
               yield e;
             }
@@ -345,6 +362,16 @@ const COMPLETE_TASK_DONE_EVENTS: RawEvent[] = [
     data: { input: { outcome: 'done', summary: 'Wrote the page.' } },
   },
   { event: 'on_tool_end', name: 'complete_task', run_id: 'ct-1', data: { output: 'ok' } },
+];
+
+const HAND_OFF_TASK_EVENTS: RawEvent[] = [
+  {
+    event: 'on_tool_start',
+    name: 'hand_off_task',
+    run_id: 'ho-1',
+    data: { input: { summary: 'Stopped at the user’s request before finishing.' } },
+  },
+  { event: 'on_tool_end', name: 'hand_off_task', run_id: 'ho-1', data: { output: 'ok' } },
 ];
 
 const COMPLETE_TASK_FAILED_EVENTS: RawEvent[] = [
@@ -1123,15 +1150,34 @@ describe('agents/task-execution', () => {
       expect(store.getQueueEntry(entry.id)!.summary).to.equal('Wrote the page.');
     });
 
-    it('writes a system summary for a run that stopped without complete_task [orchestration]', async () => {
+    it('falls back to a canned summary for a stall with no usable text (issue #364) [orchestration]', async () => {
       const entry = makeGlobalEntry();
       await executeTask(entry, {
-        buildTaskAgent: fakeBuildTaskAgent(
-          fakeAgent([{ event: 'on_chat_model_stream', data: { chunk: { content: 'hmm' } } }]),
-        ),
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent([])),
       });
       expect(store.getQueueEntry(entry.id)!.summary).to.match(/^Stopped without completing/);
     });
+
+    it(
+      'preserves the agent’s own last message as the summary for a stall, instead of the canned ' +
+        'fallback (issue #364) [orchestration]',
+      async () => {
+        const entry = makeGlobalEntry();
+        await executeTask(entry, {
+          buildTaskAgent: fakeBuildTaskAgent(
+            fakeAgent([
+              {
+                event: 'on_chat_model_stream',
+                data: { chunk: { content: 'Looked promising but I ran out of ideas here.' } },
+              },
+            ]),
+          ),
+        });
+        expect(store.getQueueEntry(entry.id)!.summary).to.equal(
+          'Looked promising but I ran out of ideas here.',
+        );
+      },
+    );
 
     it('writes a classified failure summary when the stream throws [orchestration]', async () => {
       const entry = makeGlobalEntry();
@@ -1150,6 +1196,81 @@ describe('agents/task-execution', () => {
         );
       expect((end!.payload as Record<string, unknown>).summary).to.equal(queueSummary);
     });
+
+    it(
+      'falls back to the canned summary when GraphRecursionError leaves no partial text ' +
+        '(issue #364) [orchestration]',
+      async () => {
+        const entry = makeGlobalEntry();
+        const agent = fakeThrowingAgent(
+          [],
+          Object.assign(new Error('Recursion limit reached'), { name: 'GraphRecursionError' }),
+        );
+
+        await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+        expect(store.getQueueEntry(entry.id)!.summary).to.equal(
+          'Ran out of steps before completing this task.',
+        );
+      },
+    );
+
+    it(
+      'preserves partial text as the summary when GraphRecursionError fires mid-stream ' +
+        '(issue #364) [orchestration]',
+      async () => {
+        const entry = makeGlobalEntry();
+        const agent = fakeThrowingAgent(
+          [{ event: 'on_chat_model_stream', data: { chunk: { content: 'partial' } } }],
+          Object.assign(new Error('Recursion limit reached'), { name: 'GraphRecursionError' }),
+        );
+
+        await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+        // traceError itself stays the fixed diagnostic string regardless of
+        // this fix — see "records running out of steps on its trace" in the
+        // "usage metrics and trace" describe block, which already covers it.
+        expect(store.getQueueEntry(entry.id)!.summary).to.equal('partial');
+      },
+    );
+
+    it(
+      'settles a run to handed_off (not failed) when hand_off_task is accepted after a HITL ' +
+        'interrupt (issue #364) [orchestration]',
+      async () => {
+        const entry = makeGlobalEntry();
+        // First run: an ask_user-shaped interrupt parks the queue row with
+        // pauseReason 'chat' — the signal hand_off_task's nudge-once rule
+        // reads (see hand-off-task.tool.ts).
+        await executeTask(entry, {
+          buildTaskAgent: fakeBuildTaskAgent(
+            fakeAgent([], { kind: 'free_text', question: 'Which region should I use?' }),
+          ),
+        });
+        expect(store.getTask(entry.task.id)!.status).to.equal('waiting_on_user');
+
+        // Resume: mirrors answerTaskPrompt's own patch (tasks.handlers.ts) —
+        // dequeueNext() treats a task still sitting at 'waiting_on_user' as
+        // occupying its scope, so it must move off that status before the
+        // queue row can be picked back up.
+        store.patchTask(entry.task.id, { status: 'ready', assignedTo: 'agent' });
+        // The user answers by asking the run to stop, and the agent calls
+        // hand_off_task instead of complete_task or trailing off.
+        store.resumePausedEntry(entry.id);
+        const resumed = store.dequeueNext()! as QueueEntryWithTask;
+        await executeTask(resumed, {
+          buildTaskAgent: fakeBuildTaskAgent(fakeAgent(HAND_OFF_TASK_EVENTS)),
+        });
+
+        expect(store.getQueueEntry(entry.id)!.status).to.equal('handed_off');
+        expect(store.getQueueEntry(entry.id)!.summary).to.equal(
+          'Stopped at the user’s request before finishing.',
+        );
+        expect(store.getTask(entry.task.id)!.status, 'settles to blocked, not handed_off').to.equal(
+          'blocked',
+        );
+      },
+    );
 
     it('unchecks every plan step for a new run but keeps the steps and the goal [orchestration]', async () => {
       const task = store.createTask({
@@ -1214,7 +1335,11 @@ describe('agents/task-execution', () => {
       expect(content).to.include('This is run #2 (started manually).');
       expect(content).to.include('"Wrote the page."');
       expect(content).to.include(`read_task_run({"runId":"${first.id}"})`);
-      expect(binding).to.deep.equal({ runId: second.id, hasPreviousRun: true });
+      expect(binding).to.deep.equal({
+        runId: second.id,
+        hasPreviousRun: true,
+        hadHitlInterrupt: false,
+      });
     });
 
     it('does not bind read_task_run on a first run, which has nothing to read [orchestration]', async () => {
@@ -1228,7 +1353,11 @@ describe('agents/task-execution', () => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
         }) as any,
       });
-      expect(binding).to.deep.equal({ runId: entry.id, hasPreviousRun: false });
+      expect(binding).to.deep.equal({
+        runId: entry.id,
+        hasPreviousRun: false,
+        hadHitlInterrupt: false,
+      });
     });
   });
 
@@ -1994,9 +2123,7 @@ describe('agents/task-execution', () => {
     it('records a failed progress entry when the agent stops without calling complete_task', async () => {
       const { entry } = makeTrackedWorkspaceEntry({ trackerId: 'issue-302' });
       await executeTask(entry, {
-        buildTaskAgent: fakeBuildTaskAgent(
-          fakeAgent([{ event: 'on_chat_model_stream', data: { chunk: { content: 'hmm' } } }]),
-        ),
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent([])),
       });
 
       const entries = store.listTaskProgressEntries('github', 'issue-302');
@@ -2237,9 +2364,7 @@ describe('agents/task-execution', () => {
       });
       // stopped without completing
       await executeTask(makeFileEligibleEntry({ title: 'B' }), {
-        buildTaskAgent: fakeBuildTaskAgent(
-          fakeAgent([{ event: 'on_chat_model_stream', data: { chunk: { content: 'hmm' } } }]),
-        ),
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent([])),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         finishTaskFile: finishTaskFileSpy as any,
       });

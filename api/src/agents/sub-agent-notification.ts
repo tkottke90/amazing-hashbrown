@@ -7,7 +7,7 @@ import { resolveThreadAgent } from './resolve-thread-agent.js';
 import { enqueuePendingTurn } from './pending-thread-turns.js';
 import { recordSubAgentMarker } from './thread-message-writer.js';
 
-export type SubAgentOutcome = 'done' | 'failed' | 'cancelled';
+export type SubAgentOutcome = 'done' | 'failed' | 'cancelled' | 'handed_off';
 
 function buildNotificationMessage(
   task: Task,
@@ -16,7 +16,9 @@ function buildNotificationMessage(
   remainingCount: number,
 ): string {
   const lines = [
-    `Sub-agent [${task.role ?? 'unknown'}] ${outcome === 'done' ? 'completed' : outcome} — goal: "${task.title}".`,
+    `Sub-agent [${task.role ?? 'unknown'}] ${
+      outcome === 'done' ? 'completed' : outcome === 'handed_off' ? 'handed off' : outcome
+    } — goal: "${task.title}".`,
   ];
   lines.push(summary ? `Summary: ${summary}` : 'No summary was provided.');
   lines.push(
