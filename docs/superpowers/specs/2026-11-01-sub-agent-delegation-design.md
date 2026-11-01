@@ -14,9 +14,8 @@ parent thread (a `sub_agent_marker` message, written by `recordSubAgentMarker` i
 [`thread-message-writer.ts`](../../../api/src/agents/thread-message-writer.ts)), but the UI
 has no rendering for it at all, so that reporting is currently invisible to the user. Track B
 closes that gap. Both tracks are designed together here because they're the same underlying
-move — normalizing how Sub-Agent Dispatch behaves and is surfaced — but they ship and are
-tracked independently: Track A against issue #267, Track B against a new issue filed once
-this spec is committed.
+move — normalizing how Sub-Agent Dispatch behaves and is surfaced — and both are tracked
+under issue #267, with each track's acceptance criteria kept distinct within it.
 
 Domain vocabulary used throughout (**Sub-Agent Task**, **Dispatch**, **Run**) is defined in
 `GLOSSARY.md` § Sub-Agent Dispatch and § Task Runs, not restated here. The board/hand-off
@@ -147,4 +146,3 @@ concern — this is deterministic UI/plumbing, not LLM-facing behavior.
   thread) into a Dispatch's `goal`, so "planning" can be reconsidered as a delegation case.
 - Revisit whether the heuristic needs an explicit "don't also keep investigating inline after
   dispatching" instruction, if that pattern is observed in practice once this ships.
-- File a new GitHub issue for Track B once this spec is committed, cross-referenced with #267.
