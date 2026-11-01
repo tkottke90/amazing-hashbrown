@@ -646,6 +646,7 @@ export async function executeTask(
         triggerSource: entry.triggerSource,
         scheduledFor: entry.scheduledFor,
         previousRuns,
+        handoffNotes: taskFileScope?.state.handoff || undefined,
       });
       // A resumed run's Command({ resume }) continues the exact interrupted
       // checkpoint, which already has this run's correct taskState from

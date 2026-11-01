@@ -282,6 +282,70 @@ describe('agents/task-context', () => {
       );
     });
 
+    describe('handoffNotes (issue #368)', () => {
+      it("inlines the previous run's Handoff Notes with a read_task_notes nudge [unit]", () => {
+        const text = buildRunKickoff({
+          title: 'Audit',
+          resume: false,
+          runNumber: 2,
+          triggerSource: 'manual',
+          previousRuns: [run(1)],
+          handoffNotes: 'The off-by-one in the comparator still needs fixing.',
+        });
+        expect(text).to.include(
+          [
+            'Handoff notes from the previous run — treat this as something you need to act on ' +
+              'or verify, not just background:',
+            '"The off-by-one in the comparator still needs fixing."',
+            "If that doesn't tell you everything you need, call read_task_notes() for the full " +
+              'Task File — goal, notes, and outcome across every run.',
+          ].join('\n'),
+        );
+      });
+
+      it('omits the block entirely when there are no Handoff Notes [unit]', () => {
+        const text = buildRunKickoff({
+          title: 'Audit',
+          resume: false,
+          runNumber: 2,
+          triggerSource: 'manual',
+          previousRuns: [run(1)],
+          handoffNotes: '',
+        });
+        expect(text).to.not.include('Handoff notes');
+        expect(text).to.not.include('read_task_notes');
+      });
+
+      // A Task File write can outlive the task_queue row previousRunsOf()
+      // derives `previous` from — see RunKickoffInput's handoffNotes doc.
+      it('shows Handoff Notes even when previousRuns is empty [unit]', () => {
+        const text = buildRunKickoff({
+          title: 'Audit',
+          resume: false,
+          runNumber: 1,
+          triggerSource: 'manual',
+          previousRuns: [],
+          handoffNotes: 'Still need to verify the fix landed.',
+        });
+        expect(text).to.include('Handoff notes from the previous run');
+        expect(text).to.include('"Still need to verify the fix landed."');
+      });
+
+      // The thread already holds this run so far — same rationale as the
+      // existing resume test above, for the new handoffNotes field.
+      it('never shows Handoff Notes on the resume path (regression) [unit]', () => {
+        const text = buildRunKickoff({
+          title: 'Audit',
+          resume: true,
+          runNumber: 3,
+          triggerSource: 'manual',
+          previousRuns: [run(2)],
+          handoffNotes: 'Should never appear here.',
+        });
+        expect(text).to.equal('Resume this task — continue from where you left off: Audit.');
+      });
+    });
+
     describe('siblingContext (shared progress record, issue #302)', () => {
       const trackerEntry = (overrides: Partial<TaskProgressEntry> = {}): TaskProgressEntry => ({
         id: 1,
@@ -567,6 +631,51 @@ describe('agents/task-context', () => {
             },
           ],
         }),
+      );
+    });
+
+    // str-006 / str-007 (issue #368) reuse str-002's sufficient previous-run
+    // summary so only the new Handoff Notes signal varies between them.
+    const kickoffWithHandoffNotes = (handoffNotes: string) =>
+      buildRunKickoff({
+        title: 'Weekly dependency audit',
+        resume: false,
+        runNumber: 3,
+        triggerSource: 'manual',
+        previousRuns: [
+          {
+            id: '6f0c2a1e-4b7d-4c1a-9a55-2f1b8e7d3c90',
+            runNumber: 2,
+            status: 'done',
+            startedAt: '2026-09-19T09:00:00.000Z',
+            summary: 'Audit complete: 0 advisories of any severity; nothing was open.',
+          },
+          {
+            id: '1d9e8b7a-0c3f-4e21-8b6a-7a5c4d3e2f10',
+            runNumber: 1,
+            status: 'done',
+            startedAt: '2026-09-12T09:00:00.000Z',
+            summary: 'Audit complete.',
+          },
+        ],
+        handoffNotes,
+      });
+
+    it('str-006 sends exactly the kickoff a self-sufficient handoff note produces [unit]', () => {
+      expect(inputOf('str-006-acts-on-self-sufficient-handoff')).to.equal(
+        kickoffWithHandoffNotes(
+          "The comparator's off-by-one bug is still unfixed — subtract 1 from the index in " +
+            "src/audit.js's severity comparison before comparing counts.",
+        ),
+      );
+    });
+
+    it('str-007 sends exactly the kickoff a vague handoff note produces [unit]', () => {
+      expect(inputOf('str-007-escalates-on-vague-handoff')).to.equal(
+        kickoffWithHandoffNotes(
+          'Found a real bug in the comparator during the last run that still needs fixing — ' +
+            "see this run's notes for exactly what and where.",
+        ),
       );
     });
   });
