@@ -312,6 +312,16 @@ _Avoid_: Result, summary (too generic — collides with a Run's own summary)
 A Task File's note to whichever Run comes next, written fresh at the end of each Run specifically to carry forward what that next Run should know or follow up on. Distinct from Task Outcome, which looks back at what happened; Handoff Notes looks forward at what to do about it.
 _Avoid_: Next steps, follow-up notes
 
+# Task Runs
+
+One execution attempt of a Task, and the distinct outcomes that execution can end in.
+
+## Language
+
+**Run**:
+One execution of a Task from dequeue to a terminal or paused stopping point, persisted as one `task_queue` row (`TaskQueueEntry`). A Task accumulates one Run per attempt; a Run's own `status` records exactly how that attempt ended, independent of the Task's own `status`.
+_Avoid_: Execution, attempt, task execution
+
 # MCP Tooling
 
 How this app discovers and names tools exposed by a configured MCP server, so one server's tool can never collide with another's and the model always sees a single, unambiguous name.

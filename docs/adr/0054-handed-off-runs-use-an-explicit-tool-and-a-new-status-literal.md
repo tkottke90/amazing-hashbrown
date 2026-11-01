@@ -1,0 +1,7 @@
+# Handed-off runs get an explicit tool and a new status literal, not inferred detection or a side field
+
+Issue #364: a Run that cooperatively stops mid-HITL at the user's request, leaving a real summary, was indistinguishable from a genuine stall or crash — both landed as `task_queue.status: 'failed'`, skewing retrospective failure counts and letting the harness overwrite the agent's actual summary with a canned "ran out of steps" message.
+
+We considered inferring this case after the fact (e.g. "this Task was paused for HITL earlier, and the final message reads like a summary") instead of giving the agent an explicit tool to call. Rejected: inference from free text is the same kind of heuristic that produces misclassified Runs today, and this is LLM-facing behavior either way — it needs an eval scenario under this repo's EDD rules regardless of which path is chosen, so inference buys no implementation shortcut, only a less reliable signal.
+
+Decided: add exactly one new outcome value to the existing `task_queue.status` (and `RunOutcome`) union — not a separate side field/flag alongside `status: 'failed'` — produced only when the agent explicitly calls a new tool (a sibling to `complete_task`, surfaced only after a HITL interrupt has occurred earlier in that Run's task history). This new status is treated as finished and transcript-readable alongside `done`/`failed`/`cancelled`, and is excluded from `failedRunStreaks()`'s failure count while remaining its own visible signal in retrospectives, rather than disappearing from them.
