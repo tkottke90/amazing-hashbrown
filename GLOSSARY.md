@@ -312,6 +312,24 @@ _Avoid_: Result, summary (too generic — collides with a Run's own summary)
 A Task File's note to whichever Run comes next, written fresh at the end of each Run specifically to carry forward what that next Run should know or follow up on. Distinct from Task Outcome, which looks back at what happened; Handoff Notes looks forward at what to do about it.
 _Avoid_: Next steps, follow-up notes
 
+# Task Runs
+
+One execution attempt of a Task, and the distinct outcomes that execution can end in.
+
+## Language
+
+**Run**:
+One execution of a Task from dequeue to a terminal or paused stopping point, persisted as one `task_queue` row (`TaskQueueEntry`). A Task accumulates one Run per attempt; a Run's own `status` records exactly how that attempt ended, independent of the Task's own `status`.
+_Avoid_: Execution, attempt, task execution
+
+**Handed-Off Run**:
+A Run that ends via the `hand_off_task` tool: the agent cooperatively stops after an `ask_user` HITL interrupt has already occurred earlier in that same Run, leaving its own produced summary, rather than reaching `done` or trailing into a Stalled Run. Persisted as `task_queue.status: 'handed_off'`; the owning Task settles to `blocked`, not `failed` (see ADR-0054). Counts as finished for `read_task_run`, and is excluded from a Task's failed-run streak while still surfacing as its own distinct retrospective signal.
+_Avoid_: Stopped run, HITL stop, abandoned run
+
+**Stalled Run**:
+A Run that ends with neither `complete_task`, `hand_off_task`, nor an `ask_user` interrupt — the agent simply stopped producing further action. Persisted as `task_queue.status: 'failed'`, the same as a genuinely broken/crashed Run; the only distinguishing record is whatever plain text the agent's last message actually contained, preserved as the Run's summary instead of being discarded (see ADR-0054).
+_Avoid_: Stall, timeout, dead run
+
 # MCP Tooling
 
 How this app discovers and names tools exposed by a configured MCP server, so one server's tool can never collide with another's and the model always sees a single, unambiguous name.

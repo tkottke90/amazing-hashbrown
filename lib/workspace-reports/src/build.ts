@@ -4,6 +4,7 @@ import type {
   WorkspaceRetrospectiveData,
   WorkspaceReportStores,
   Anomaly,
+  HandoffSummary,
   TaskRetrospective,
   TaskRunRetrospective,
   TaskProgressEntryLike,
@@ -93,6 +94,8 @@ export function buildWorkspaceRetrospective(
 
   const tasksRaw = stores.workspaceStore.listTasks({ workspaceId });
   const failedStreaks = stores.workspaceStore.failedRunStreaks(tasksRaw.map((t) => t.id));
+  const handoffCounts = stores.workspaceStore.handedOffRunCounts(tasksRaw.map((t) => t.id));
+  const handoffs: HandoffSummary[] = [];
   const progressEntries = stores.workspaceStore.listTaskProgressEntriesForWorkspace(workspaceId);
   const progressByTask = new Map<string, TaskProgressEntryLike[]>();
   for (const entry of progressEntries) {
@@ -131,6 +134,16 @@ export function buildWorkspaceRetrospective(
       });
     }
 
+    const handoff = handoffCounts.get(task.id);
+    if (handoff) {
+      handoffs.push({
+        taskId: task.id,
+        taskTitle: task.title,
+        count: handoff.count,
+        lastSummary: handoff.lastSummary,
+      });
+    }
+
     return {
       taskId: task.id,
       title: task.title,
@@ -156,6 +169,8 @@ export function buildWorkspaceRetrospective(
     }
   }
 
+  const handoffCount = handoffs.reduce((n, h) => n + h.count, 0);
+
   return {
     workspaceId,
     generatedAt: new Date().toISOString(),
@@ -163,12 +178,14 @@ export function buildWorkspaceRetrospective(
     chat,
     tasks,
     anomalies,
+    handoffs,
     summary: {
       taskCount: tasks.length,
       runCount,
       failureCount,
       wikiWriteCount,
       anomalyCount: anomalies.length,
+      handoffCount,
     },
     narrative: null,
   };

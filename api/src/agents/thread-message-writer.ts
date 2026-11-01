@@ -366,7 +366,7 @@ export function recordTaskRunMarker(
   taskId: string,
   taskTitle: string,
   phase: 'start' | 'end',
-  outcome?: 'done' | 'failed' | 'waiting_on_user' | 'cancelled' | 'blocked',
+  outcome?: 'done' | 'failed' | 'waiting_on_user' | 'cancelled' | 'blocked' | 'handed_off',
   run?: TaskRunMarkerRun,
   summary?: string | null,
 ): number | null {
@@ -400,7 +400,7 @@ export function recordSubAgentMarker(
     taskId: string;
     role: string;
     phase: 'dispatch' | 'completion';
-    outcome?: 'done' | 'failed' | 'cancelled';
+    outcome?: 'done' | 'failed' | 'cancelled' | 'handed_off';
     remainingCount?: number;
   },
 ): number | null {

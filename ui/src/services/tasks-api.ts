@@ -31,7 +31,7 @@ export interface TaskSchedule {
   iterationCount: number;
   active: boolean;
   inactiveReason: ScheduleInactiveReason | null;
-  lastRunOutcome: 'done' | 'failed' | 'cancelled' | null;
+  lastRunOutcome: 'done' | 'failed' | 'cancelled' | 'handed_off' | null;
 }
 
 // trigger_config for the cron trigger types, as stored. The fields after
@@ -168,7 +168,7 @@ export interface TaskDependency {
 export interface TaskQueueEntry {
   id: string;
   taskId: string;
-  status: 'pending' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled';
+  status: 'pending' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled' | 'handed_off';
   position: number;
   enqueuedAt: string;
   startedAt: string | null;

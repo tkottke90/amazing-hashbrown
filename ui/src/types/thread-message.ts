@@ -145,7 +145,7 @@ export type ThreadMessage =
       taskId: string;
       taskTitle: string;
       phase: 'start' | 'end';
-      outcome?: 'done' | 'failed' | 'waiting_on_user' | 'cancelled' | 'blocked';
+      outcome?: 'done' | 'failed' | 'waiting_on_user' | 'cancelled' | 'blocked' | 'handed_off';
       // Which run this marker brackets — absent on markers written before
       // each run got its own thread.
       runThreadId?: string;

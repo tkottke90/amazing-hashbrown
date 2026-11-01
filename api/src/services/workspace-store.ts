@@ -264,7 +264,7 @@ export interface TaskProgressEntry {
   commitShas: string[];
   filesChanged: string[];
   planSnapshot: PlanStep[] | null;
-  outcome: 'done' | 'failed';
+  outcome: 'done' | 'failed' | 'handed_off';
   summary: string;
   completedAt: string;
 }
@@ -275,6 +275,14 @@ export type NewTaskProgressEntryInput = Omit<TaskProgressEntry, 'id'>;
 // A task's trailing run of failed runs — see failedRunStreaks().
 export interface FailedRunStreak {
   attempts: number;
+  lastSummary: string | null;
+}
+
+// A task's total count of Handed-Off Runs — see handedOffRunCounts(). Not a
+// streak like FailedRunStreak: a handoff isn't a failure, so there's no
+// "trailing run" boundary to compute, just a plain count.
+export interface HandedOffRunSummary {
+  count: number;
   lastSummary: string | null;
 }
 
@@ -328,7 +336,7 @@ export type TriggerSource = 'manual' | 'webhook' | 'schedule' | 'catch_up' | 'ch
 export interface TaskQueueEntry {
   id: string;
   taskId: string;
-  status: 'pending' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled';
+  status: 'pending' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled' | 'handed_off';
   position: number;
   enqueuedAt: string;
   startedAt: string | null;
@@ -462,7 +470,7 @@ interface RawTaskProgressRow {
   commit_shas: string;
   files_changed: string;
   plan_snapshot: string | null;
-  outcome: 'done' | 'failed';
+  outcome: 'done' | 'failed' | 'handed_off';
   summary: string;
   completed_at: string;
 }
@@ -470,7 +478,7 @@ interface RawTaskProgressRow {
 interface RawQueueRow {
   id: string;
   task_id: string;
-  status: 'pending' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled';
+  status: 'pending' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled' | 'handed_off';
   position: number;
   enqueued_at: string;
   started_at: string | null;
@@ -2161,7 +2169,7 @@ export class WorkspaceStore extends BaseStore {
            SELECT task_id, status, summary,
                   ROW_NUMBER() OVER (PARTITION BY task_id ORDER BY enqueued_at DESC, rowid DESC) AS rn
            FROM task_queue
-           WHERE task_id IN (${placeholders}) AND status IN ('done', 'failed', 'cancelled')
+           WHERE task_id IN (${placeholders}) AND status IN ('done', 'failed', 'cancelled', 'handed_off')
          ),
          first_non_failed AS (
            SELECT task_id, MIN(rn) AS rn FROM ranked WHERE status != 'failed' GROUP BY task_id
@@ -2177,6 +2185,35 @@ export class WorkspaceStore extends BaseStore {
       .all(...taskIds) as { task_id: string; attempts: number; last_summary: string | null }[];
     for (const row of rows) {
       result.set(row.task_id, { attempts: row.attempts, lastSummary: row.last_summary });
+    }
+    return result;
+  }
+
+  // For each task, how many of its runs ended as a Handed-Off Run, plus the
+  // newest one's summary. Unlike failedRunStreaks(), this is a plain count —
+  // a Handed-Off Run isn't a failure, so there's no streak boundary to stop
+  // at. Tasks with no Handed-Off Runs are absent from the map. See
+  // docs/superpowers/specs/2026-11-01-handed-off-run-outcome-design.md §3.3.
+  handedOffRunCounts(taskIds: string[]): Map<string, HandedOffRunSummary> {
+    const result = new Map<string, HandedOffRunSummary>();
+    if (taskIds.length === 0) return result;
+    const placeholders = taskIds.map(() => '?').join(', ');
+    const rows = this.db
+      .prepare(
+        `WITH ranked AS (
+           SELECT task_id, summary,
+                  ROW_NUMBER() OVER (PARTITION BY task_id ORDER BY enqueued_at DESC, rowid DESC) AS rn
+           FROM task_queue
+           WHERE task_id IN (${placeholders}) AND status = 'handed_off'
+         )
+         SELECT task_id, COUNT(*) AS count,
+                MAX(CASE WHEN rn = 1 THEN summary END) AS last_summary
+         FROM ranked
+         GROUP BY task_id`,
+      )
+      .all(...taskIds) as { task_id: string; count: number; last_summary: string | null }[];
+    for (const row of rows) {
+      result.set(row.task_id, { count: row.count, lastSummary: row.last_summary });
     }
     return result;
   }
@@ -2408,7 +2445,7 @@ export class WorkspaceStore extends BaseStore {
     return { ...mapQueueEntry({ ...row, status: 'running', started_at: now }), task };
   }
 
-  completeQueueEntry(id: string, outcome: 'done' | 'failed' | 'cancelled'): void {
+  completeQueueEntry(id: string, outcome: 'done' | 'failed' | 'cancelled' | 'handed_off'): void {
     const now = new Date().toISOString();
     this.db
       .prepare(`UPDATE task_queue SET status = ?, finished_at = ? WHERE id = ?`)
@@ -2471,11 +2508,23 @@ export class WorkspaceStore extends BaseStore {
   private settleTaskAfterRun(
     taskId: string,
     source: TriggerSource,
-    outcome: 'done' | 'failed' | 'cancelled',
+    outcome: 'done' | 'failed' | 'cancelled' | 'handed_off',
     now: string,
   ): void {
     const task = this.getTask(taskId);
     if (!task) return;
+
+    // A Handed-Off Run never reaches a real terminal outcome — the Task
+    // settles to 'blocked' (same as awaiting_children below), not the
+    // outcome's own name, and skips the cohort/cron branches entirely (no
+    // dependents are released, same as any other 'blocked' task). See
+    // ADR-0054 and docs/superpowers/specs/2026-11-01-handed-off-run-outcome-design.md §3.3.
+    if (outcome === 'handed_off') {
+      this.db
+        .prepare(`UPDATE tasks SET status = 'blocked', updated_at = ? WHERE id = ?`)
+        .run(now, taskId);
+      return;
+    }
 
     const openCohort = this.getOpenCohort(taskId);
     if (openCohort) {

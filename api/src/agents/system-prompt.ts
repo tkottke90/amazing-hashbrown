@@ -1334,6 +1334,21 @@ ask whether to proceed, in your reply or via ask_user; run the check or apply th
 what happened. Reserve confirmation for choices the user hasn't already made: which of several valid
 options to take, or an action that's hard to undo that they didn't explicitly request.`;
 
+// hand_off_task is only ever available alongside ask_user (it's bound into
+// every automated task run, same as ask_user and complete_task), so the
+// three-way contrast below is always meaningful wherever this section shows
+// up. See docs/superpowers/specs/2026-11-01-handed-off-run-outcome-design.md §3.
+const HAND_OFF_TASK_SECTION = `If you called ask_user and the user's answer was to stop, abandon this
+approach, or step away for now — rather than an answer that lets you continue — call hand_off_task
+with a summary of what was accomplished and where things stand, instead of simply ending your turn
+with no further tool call. hand_off_task is only for that cooperative-stop case.
+
+Don't confuse it with complete_task or ask_user. If the task's own outcome has actually been met, or
+you genuinely cannot proceed further for reasons unrelated to the user's answer, call complete_task
+instead. If the user's answer raises something new you need to ask about, call ask_user again rather
+than handing off. And if the user's answer is itself an instruction to continue, or to do something
+else instead, that's the decision already made — act on it, don't hand off.`;
+
 // Motivated by suites/wiki-navigation.yaml's wnav-005/wnav-007/wnav-008: on
 // cold-start turns (no wiki tool calls yet in the conversation), the model
 // treats itself as having ordinary background knowledge of "the user" and
@@ -1996,6 +2011,11 @@ const HARNESS_SECTIONS: HarnessSection[] = [
     requiresAnyOf: ['spawn_sub_agent'],
   },
   { tag: 'ask_user_routing', content: ASK_USER_SECTION, requiresAnyOf: ['ask_user'] },
+  {
+    tag: 'hand_off_task_routing',
+    content: HAND_OFF_TASK_SECTION,
+    requiresAnyOf: ['hand_off_task'],
+  },
   // future: uncertainty, formatting, ...
 ];
 

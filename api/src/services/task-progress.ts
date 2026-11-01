@@ -20,7 +20,7 @@ import {
 export interface RecordTaskProgressParams {
   task: Task;
   workspace: Workspace;
-  outcome: 'done' | 'failed';
+  outcome: 'done' | 'failed' | 'handed_off';
   summary: string;
   // HEAD at this run's start, captured by task-execution.ts before the
   // model runs — null for an unborn-HEAD repo (no commits yet).

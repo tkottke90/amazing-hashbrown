@@ -10,6 +10,7 @@ export const FINISHED_RUN_STATUSES: ReadonlySet<TaskRun['status']> = new Set([
   'done',
   'failed',
   'cancelled',
+  'handed_off',
 ]);
 
 // Shared by read-task-run.tool.ts (a task reading its own history) and

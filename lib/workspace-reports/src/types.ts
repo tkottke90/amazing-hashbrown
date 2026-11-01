@@ -50,9 +50,17 @@ export interface FailedRunStreakLike {
   lastSummary: string | null;
 }
 
+// A task's total count of Handed-Off Runs — not a streak, just a plain
+// count (a Handed-Off Run isn't a failure, so there's no boundary to stop
+// at). See api's own HandedOffRunSummary.
+export interface HandedOffRunSummaryLike {
+  count: number;
+  lastSummary: string | null;
+}
+
 export interface TaskProgressEntryLike {
   taskId: string;
-  outcome: 'done' | 'failed';
+  outcome: 'done' | 'failed' | 'handed_off';
   summary: string;
   filesChanged: string[];
   commitShas: string[];
@@ -64,6 +72,7 @@ export interface WorkspaceStoreLike {
   listTasks(filters: { workspaceId: string }): TaskLike[];
   listTaskRuns(taskId: string): TaskRunLike[];
   failedRunStreaks(taskIds: string[]): Map<string, FailedRunStreakLike>;
+  handedOffRunCounts(taskIds: string[]): Map<string, HandedOffRunSummaryLike>;
   listTaskProgressEntriesForWorkspace(workspaceId: string): TaskProgressEntryLike[];
 }
 
@@ -123,12 +132,24 @@ export type Anomaly =
       at: string;
     };
 
+// A task with at least one Handed-Off Run, for the retrospective's own
+// "Handoffs" signal. Deliberately NOT a 4th Anomaly variant — a handoff is
+// a cooperative, user-requested stop with real progress, not a problem to
+// flag alongside wiki mismatches and recursion escalations.
+export interface HandoffSummary {
+  taskId: string;
+  taskTitle: string;
+  count: number;
+  lastSummary: string | null;
+}
+
 export interface WorkspaceRetrospectiveSummary {
   taskCount: number;
   runCount: number;
   failureCount: number;
   wikiWriteCount: number;
   anomalyCount: number;
+  handoffCount: number;
 }
 
 export interface WorkspaceRetrospectiveData {
@@ -138,6 +159,7 @@ export interface WorkspaceRetrospectiveData {
   chat: ThreadReportData | null;
   tasks: TaskRetrospective[];
   anomalies: Anomaly[];
+  handoffs: HandoffSummary[];
   summary: WorkspaceRetrospectiveSummary;
   // Prose written by a one-shot LLM call over this same evidence — built and
   // injected by the api-side caller (this package has no model/provider

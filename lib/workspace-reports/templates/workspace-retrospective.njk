@@ -43,6 +43,10 @@
     <div class="label">Anomalies flagged</div>
     <div class="value" style="{{ 'color:var(--warn)' if summary.anomalyCount > 0 }}">{{ summary.anomalyCount }}</div>
   </div>
+  <div class="meta-card">
+    <div class="label">Handoffs</div>
+    <div class="value">{{ summary.handoffCount }}</div>
+  </div>
 </div>
 
 {% if narrative %}
@@ -75,6 +79,18 @@
     <p style="color:var(--text-muted)">No anomalies flagged.</p>
   {% endfor %}
 </div>
+
+{% if handoffs | length > 0 %}
+  <h2>Handoffs</h2>
+  <div class="anomaly-list">
+    {% for h in handoffs %}
+      <div class="anomaly-row">
+        <span class="anomaly-kind">Handed off</span>
+        <span>Task <strong>{{ h.taskTitle }}</strong> ended cooperatively mid-conversation {{ h.count }} time{{ 's' if h.count != 1 }}, at the user's request{% if h.lastSummary %} &mdash; "{{ h.lastSummary }}"{% endif %}</span>
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}
 
 <h2>Chat</h2>
 {% if chat %}

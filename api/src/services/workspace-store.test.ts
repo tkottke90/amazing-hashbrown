@@ -2171,6 +2171,52 @@ describe('services/workspace-store', () => {
       expect(store.failedRunStreaks([task.id]).has(task.id)).to.equal(false);
     });
 
+    it('failedRunStreaks treats a handed_off run as ending the streak without counting it (issue #364) [unit]', () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      const firstFailure = store.enqueueTask(task.id);
+      store.completeQueueEntry(firstFailure.id, 'failed');
+      const secondFailure = store.enqueueTask(task.id);
+      store.completeQueueEntry(secondFailure.id, 'failed');
+      const handedOff = store.enqueueTask(task.id);
+      store.completeQueueEntry(handedOff.id, 'handed_off');
+
+      expect(store.failedRunStreaks([task.id]).has(task.id)).to.equal(false);
+    });
+
+    it('handedOffRunCounts counts handed_off runs per task and reports the newest summary (issue #364) [unit]', () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      const settle = (summary: string) => {
+        const entry = store.enqueueTask(task.id);
+        store.setQueueEntrySummary(entry.id, summary);
+        store.completeQueueEntry(entry.id, 'handed_off');
+      };
+      settle('first handoff');
+      settle('second handoff');
+
+      const summary = store.handedOffRunCounts([task.id]).get(task.id);
+
+      expect(summary).to.deep.equal({ count: 2, lastSummary: 'second handoff' });
+    });
+
+    it('handedOffRunCounts omits a task with no handed_off runs (issue #364) [unit]', () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      const entry = store.enqueueTask(task.id);
+      store.completeQueueEntry(entry.id, 'done');
+
+      expect(store.handedOffRunCounts([task.id]).has(task.id)).to.equal(false);
+    });
+
+    it('completeQueueEntry(id, "handed_off") settles the task to blocked, not the run outcome itself (issue #364) [unit]', () => {
+      const task = store.createTask({ title: 't', assignedTo: 'agent' });
+      store.patchTask(task.id, { status: 'ready' });
+      const entry = store.enqueueTask(task.id);
+
+      store.completeQueueEntry(entry.id, 'handed_off');
+
+      expect(store.getTask(task.id)!.status).to.equal('blocked');
+      expect(store.getTaskRun(entry.id)!.status).to.equal('handed_off');
+    });
+
     it('listDependencyEdgesForTasks returns each edge with its target and satisfaction [unit]', () => {
       const target = store.createTask({ title: 'Deploy', trackerId: 'INF-12' });
       const waiting = store.createTask({ title: 'Route' });

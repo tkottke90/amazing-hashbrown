@@ -1,0 +1,76 @@
+suite:
+  id: task-hand-off
+  name: Task Hand-Off
+  purpose: >
+    Verifies an automated task run picks hand_off_task — not complete_task,
+    not a bare ask_user retry, and not silently trailing off — when the user
+    answers a mid-run ask_user question by telling the run to stop. Issue
+    #364 traced a real run that hit a genuine blocker, correctly asked the
+    user, was told to stop, produced a clean summary, and was still recorded
+    as an undifferentiated 'failed' stall because nothing distinguished a
+    cooperative stop from a crash. See
+    docs/superpowers/specs/2026-11-01-handed-off-run-outcome-design.md.
+  passingThreshold: 1.0
+  # Rendered through the real buildTaskContextBlock() — the prompt snapshot a
+  # task run sees at start. The blocker that triggers ask_user is conveyed by
+  # the seeded tool turns below, not by the plan itself.
+  simulatedTask:
+    title: Migrate config.json to the new schema
+    description: >
+      Update config/app-config.json to match the new schema in
+      docs/schema/app-config.v2.json, preserving existing values.
+    outcome: config/app-config.json matches the v2 schema with no data loss.
+    plan:
+      - step: Diff the current config against the v2 schema
+        done: false
+      - step: Migrate each field to its new location or type
+        done: false
+      - step: Validate the migrated file against the v2 schema
+        done: false
+
+scenarios:
+  - id: bug-364-hands-off-after-user-stop
+    name: Agent calls hand_off_task after being told to stop mid-HITL
+    purpose: >
+      The core of issue #364 — a run that asks the user a real question via
+      ask_user and is told to stop should end via hand_off_task with its own
+      summary, not trail off into an undifferentiated 'failed' stall that
+      discards what the run actually accomplished.
+    type: tool-sequence
+    turns:
+      - user: 'Begin work on this task now: Migrate config.json to the new schema.'
+      - tool: ask_user
+        args:
+          {
+            question: 'The v2 schema requires a "region" field with no default and no equivalent in the old config. What value should I use?',
+            kind: 'free_text',
+          }
+        result:
+          {
+            text: 'User answered: Please stop working on this for now, I need to check with the team first.',
+          }
+      - user: 'Please stop working on this for now, I need to check with the team first.'
+    tool: hand_off_task
+    argChecks:
+      - path: summary
+        match: exists
+
+  - id: bug-364-continues-when-told-to-proceed
+    name: Agent does not hand off when the user's answer says to continue
+    purpose: >
+      hand_off_task is only for a cooperative stop — an answer that resolves
+      the question and tells the run to keep going is the decision already
+      made, not a handoff. Confirms the agent doesn't over-use hand_off_task
+      for every post-ask_user turn regardless of what the user actually said.
+    type: tool-sequence
+    turns:
+      - user: 'Begin work on this task now: Migrate config.json to the new schema.'
+      - tool: ask_user
+        args:
+          {
+            question: 'The v2 schema requires a "region" field with no default and no equivalent in the old config. What value should I use?',
+            kind: 'free_text',
+          }
+        result: { text: 'User answered: Use "us-east-1" as the default region and continue.' }
+      - user: 'Use "us-east-1" as the default region and continue.'
+    tool: '!hand_off_task'
