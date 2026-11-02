@@ -42,6 +42,12 @@ const suite: TestSuite = {
       expectedOutcome: 'The run that asked the question opens in the read-only run view',
       test: () => {},
     },
+    {
+      tags: ['@user-workflow'],
+      action: 'Click "Open run" on a completed sub-agent dispatch\'s marker in the parent thread',
+      expectedOutcome: "The dispatched sub-agent's own run opens in the read-only run view",
+      test: () => {},
+    },
   ],
 };
 
@@ -290,6 +296,59 @@ test.describe(
       } finally {
         await request.delete(`/api/v1/workspaces/${wsId}`);
       }
+    });
+
+    test("opens a completed sub-agent's run from its completion marker in the parent thread", async ({
+      page,
+    }, testInfo) => {
+      const PARENT_THREAD = 'e2e-parent-thread-1';
+
+      // The parent thread's hydrate(): a spawn_sub_agent dispatch that has
+      // already completed, reported back as a sub_agent_marker — see api's
+      // thread-message-writer.ts (recordSubAgentMarker).
+      await page.route(`**/api/v1/threads/${PARENT_THREAD}`, async (route: Route) => {
+        if (route.request().method() !== 'GET') {
+          await route.fallback();
+          return;
+        }
+        await route.fulfill({
+          json: {
+            id: PARENT_THREAD,
+            title: 'Parent thread',
+            createdAt: '2026-09-26T00:00:00.000Z',
+            updatedAt: '2026-09-26T00:05:00.000Z',
+            forkedFromThreadId: null,
+            forkedFromSeq: null,
+            type: 'chat',
+            provider: null,
+            model: null,
+            messages: [
+              {
+                id: 'sam-1',
+                kind: 'sub_agent_marker',
+                seq: 1,
+                taskId: 'e2e-sub-agent-task',
+                role: 'researcher',
+                phase: 'completion',
+                outcome: 'done',
+                remainingCount: 0,
+                runThreadId: RUN_THREAD,
+              },
+            ],
+          },
+        });
+      });
+      await mockRunThread(page);
+
+      await pauseBeforeAction(page, testInfo);
+      await page.goto(`/chat/${PARENT_THREAD}`);
+      await expect(page.getByTestId('sub-agent-marker')).toContainText('researcher');
+
+      await pauseBeforeAction(page, testInfo);
+      await page.getByTestId('sub-agent-marker-open').click();
+
+      await expect(page).toHaveURL(new RegExp(`/chat/${RUN_THREAD}$`));
+      await expect(page.getByTestId('task-run-view')).toBeVisible();
     });
   },
 );

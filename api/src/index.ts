@@ -113,11 +113,12 @@ app.logger.info('Cron registry started');
 // constructor — that runs synchronously during bootWorkspaceStore(), before
 // getWorkspaceStore()'s own singleton is assigned and before initChatAgent()
 // has set up the checkpointer a completion notification's agent build needs.
-for (const task of getWorkspaceStore().drainPendingSubAgentCrashNotifications()) {
+for (const { task, runThreadId } of getWorkspaceStore().drainPendingSubAgentCrashNotifications()) {
   deliverSubAgentCompletion(
     task,
     'failed',
     'Recovered after crash — exceeded retry attempts.',
+    runThreadId ?? undefined,
   ).catch((err: unknown) => {
     app.logger.error('sub-agent crash-recovery notification failed', { taskId: task.id, err });
   });

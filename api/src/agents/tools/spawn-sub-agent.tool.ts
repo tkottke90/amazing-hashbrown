@@ -157,13 +157,16 @@ export const spawnSubAgentTool = tool(
   {
     name: 'spawn_sub_agent',
     description:
-      'Delegate a subtask to a fresh, isolated sub-agent run on a fixed provider/model resolved ' +
-      'from the given role (never one you choose yourself). Dispatch is fire-and-forget: this ' +
-      "returns immediately with the sub-agent's task id, and its result arrives later as a new " +
-      'message in this thread — do not wait for it. Call this more than once in the same turn to ' +
-      'spawn several sibling sub-agents at once; they are grouped together and each completion ' +
-      'reports how many siblings are still running. The sub-agent has read-only tools only and ' +
-      'cannot spawn further sub-agents itself.',
+      'The default choice for an open-ended task with a clear goal but no obvious single next ' +
+      'step — e.g. an investigation with an unclear number of steps, or anything the user frames ' +
+      'as background work. Delegates it to a fresh, isolated sub-agent run on a fixed ' +
+      'provider/model resolved from the given role (never one you choose yourself). Dispatch is ' +
+      "fire-and-forget: this returns immediately with the sub-agent's task id, and its result " +
+      'arrives later as a new message in this thread — do not wait for it, and say so in your ' +
+      'reply for this turn. Call this more than once in the same turn to spawn several sibling ' +
+      'sub-agents at once; they are grouped together and each completion reports how many ' +
+      'siblings are still running. The sub-agent has read-only tools only and cannot spawn ' +
+      'further sub-agents itself.',
     schema: SpawnSubAgentSchema,
   },
 );

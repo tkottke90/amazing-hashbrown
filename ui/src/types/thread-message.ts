@@ -154,6 +154,25 @@ export type ThreadMessage =
       seq?: number;
     }
   | {
+      // A spawn_sub_agent dispatch/completion marker in the PARENT thread —
+      // unlike task_run_marker above, which brackets a run inside its own
+      // thread. runThreadId is only ever present on a completion-phase
+      // marker: the Run's own thread doesn't exist yet at dispatch time, so
+      // a dispatch-phase marker stays text-only by design. See api's
+      // thread-message-writer.ts (recordSubAgentMarker) and
+      // sub-agent-notification.ts, and
+      // docs/superpowers/specs/2026-11-01-sub-agent-delegation-design.md.
+      kind: 'sub_agent_marker';
+      id: string;
+      taskId: string;
+      role: string;
+      phase: 'dispatch' | 'completion';
+      outcome?: 'done' | 'failed' | 'cancelled' | 'handed_off';
+      remainingCount?: number;
+      runThreadId?: string;
+      seq?: number;
+    }
+  | {
       // A timed wake-up the agent scheduled (schedule_wakeup) — shown where it
       // was scheduled and updated in place as it fires or is cancelled. See
       // api's wakeup-store.ts and
@@ -195,5 +214,6 @@ export type AudioThreadMessage = Extract<ThreadMessage, { kind: 'audio' }>;
 export type WikiUpdateThreadMessage = Extract<ThreadMessage, { kind: 'wiki_update' }>;
 export type ResourceCardThreadMessage = Extract<ThreadMessage, { kind: 'resource_card' }>;
 export type TaskRunMarkerThreadMessage = Extract<ThreadMessage, { kind: 'task_run_marker' }>;
+export type SubAgentMarkerThreadMessage = Extract<ThreadMessage, { kind: 'sub_agent_marker' }>;
 export type WakeupThreadMessage = Extract<ThreadMessage, { kind: 'wakeup' }>;
 export type WakeupFiredThreadMessage = Extract<ThreadMessage, { kind: 'wakeup_fired' }>;

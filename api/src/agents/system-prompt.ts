@@ -1280,22 +1280,46 @@ that produces the same unmet promise.`;
 // response already lists the real configured options, so the paragraph
 // points at that mechanism instead of inventing a role name that might not
 // exist in a given deployment.
-const SPAWN_SUB_AGENT_SECTION = `When the user hands you a large, open-ended task and signals it should run in the background
-rather than block the conversation — "go ahead and have someone else work on it," "run that in
-the background," "you don't need to wait for this" — call spawn_sub_agent directly. Don't call
-ask_user or shell_exec first to gather context you think the sub-agent will need: it starts with
-no context beyond the goal text you give it and has no way to ask you or the user anything once
-it's running, so any open question or scope decision belongs inside goal itself, not resolved
-beforehand.
+//
+// Broadened for issue #267: the trigger was previously gated on the user
+// explicitly framing a task as background work, so an open-ended
+// investigative prompt with no such framing (#267's own example, "find out
+// why this task failed") never reached spawn_sub_agent and ran entirely
+// inline instead — exactly the noise this tool exists to avoid. Reframed
+// around task *shape* (clear destination, unclear path/step count) instead,
+// with explicit background framing kept as one case that still obviously
+// qualifies. Also added the "say so in your reply" instruction: nothing else
+// tells the user a dispatch happened until its completion notification
+// arrives later, so a silent turn after dispatching reads as the question
+// being ignored. See suites/sub-agent-delegation.yaml's subd-003/subd-004.
+const SPAWN_SUB_AGENT_SECTION = `Call spawn_sub_agent when a task has a clear destination but an unclear path to it — you
+don't yet know how many steps it'll take or which tools will get there. This covers more than
+tasks the user explicitly frames as background work ("go ahead and have someone else work on
+it," "run that in the background," "you don't need to wait for this") — those still obviously
+qualify, but so does an open-ended investigative ask with no such framing, like "find out why
+this task failed" or "dig through the wiki and figure out what's actually correct here." Don't
+call ask_user or shell_exec first to gather context you think the sub-agent will need: it starts
+with no context beyond the goal text you give it and has no way to ask you or the user anything
+once it's running, so any open question or scope decision belongs inside goal itself, not
+resolved beforehand.
 
-For example, asked to "dig through the entire git history of this repo and summarize every
+When you call spawn_sub_agent, say so in your reply for that turn — e.g. "I've dispatched a
+sub-agent to look into that; I'll report back" — rather than ending the turn silently. Dispatch
+is fire-and-forget: nothing else will tell the user something is happening until the completion
+notification arrives later as its own message.
+
+For example, asked to "find out why this task failed," there's no single obvious next tool
+call — it could be a log, a config change, a dependency, or something else entirely — so the
+right move is to call spawn_sub_agent with a self-contained goal ("Investigate why the task
+failed and report the root cause."), not start pulling logs or asking which one to check first.
+Likewise, asked to "dig through the entire git history of this repo and summarize every
 breaking change to the public API over the last two years... that's a big job, go ahead and have
 someone else work on it in the background," the right move is to call spawn_sub_agent right away
 with a self-contained goal ("Scan this repository's git history over the last two years and
 summarize every breaking change to its public API."). Calling shell_exec to inspect the repo
-first, or ask_user to clarify what counts as "the public API," both delay the one thing the user
-actually asked for — someone else working on it while you keep talking — and neither is
-necessary: a reasonable scope decision stated inside goal is better than stalling on it.
+first, or ask_user to clarify what counts as "the public API," both delay the one thing actually
+being asked for and neither is necessary: a reasonable scope decision stated inside goal is
+better than stalling on it.
 
 If you're unsure which role fits, pick the closest match and call spawn_sub_agent anyway — an
 unrecognized role returns the actual configured list in its result, which is a faster way to find

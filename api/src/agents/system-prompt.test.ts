@@ -197,12 +197,32 @@ describe('agents/system-prompt', () => {
       );
     });
 
-    it('tells the agent to delegate directly with spawn_sub_agent instead of gathering context first', () => {
+    it('tells the agent to delegate for a task with a clear destination but an unclear path, not just explicit background framing', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        'rather than block the conversation — "go ahead and have someone else work on it," "run that in\n' +
-          'the background," "you don\'t need to wait for this" — call spawn_sub_agent directly. Don\'t call\n' +
-          'ask_user or shell_exec first to gather context you think the sub-agent will need:',
+        'tasks the user explicitly frames as background work ("go ahead and have someone else work on\n' +
+          'it," "run that in the background," "you don\'t need to wait for this") — those still obviously\n' +
+          'qualify, but so does an open-ended investigative ask with no such framing, like "find out why\n' +
+          'this task failed" or "dig through the wiki and figure out what\'s actually correct here." Don\'t\n' +
+          'call ask_user or shell_exec first to gather context you think the sub-agent will need:',
+      );
+    });
+
+    it('tells the agent to acknowledge a dispatch in its reply for that turn instead of ending it silently', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'When you call spawn_sub_agent, say so in your reply for that turn — e.g. "I\'ve dispatched a\n' +
+          'sub-agent to look into that; I\'ll report back" — rather than ending the turn silently.',
+      );
+    });
+
+    it('anchors spawn_sub_agent to a worked example with no explicit background framing, naming the wrong moves outright', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'For example, asked to "find out why this task failed," there\'s no single obvious next tool\n' +
+          'call — it could be a log, a config change, a dependency, or something else entirely — so the\n' +
+          'right move is to call spawn_sub_agent with a self-contained goal ("Investigate why the task\n' +
+          'failed and report the root cause."), not start pulling logs or asking which one to check first.',
       );
     });
 
@@ -212,8 +232,8 @@ describe('agents/system-prompt', () => {
         'the right move is to call spawn_sub_agent right away\n' +
           'with a self-contained goal ("Scan this repository\'s git history over the last two years and\n' +
           'summarize every breaking change to its public API."). Calling shell_exec to inspect the repo\n' +
-          'first, or ask_user to clarify what counts as "the public API," both delay the one thing the user\n' +
-          'actually asked for',
+          'first, or ask_user to clarify what counts as "the public API," both delay the one thing actually\n' +
+          'being asked for',
       );
     });
 

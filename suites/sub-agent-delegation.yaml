@@ -9,6 +9,12 @@ suite:
     available in STATIC_CHAT_TOOLS (chat-agent.ts) but had no eval coverage
     at all before issue #276.
 
+    Extended for issue #267: subd-003/subd-004 cover the broadened heuristic
+    (delegating an open-ended investigation with no explicit "background"
+    framing, not just subd-001's hand-off-framed case), and subd-005 guards
+    against that broadening over-triggering on a single-step lookup. See
+    docs/superpowers/specs/2026-11-01-sub-agent-delegation-design.md.
+
     Deliberately does NOT cover spawn_sub_agent's nesting restriction (a
     sub-agent run cannot itself call spawn_sub_agent or ask_user). That
     restriction is a hard, unconditional exclusion in getSubAgentToolIds()
@@ -50,5 +56,57 @@ scenarios:
     type: tool-call
     input: >
       What's 15% of 240?
+    tool: '!spawn_sub_agent'
+    argChecks: []
+
+  - id: subd-003-investigative-task-delegated-without-background-framing
+    name: Agent delegates an open-ended investigative task with no explicit background framing
+    purpose: >
+      Issue #267's own motivating example: an open-ended, multi-step
+      investigation with a clear destination but no obvious single next
+      tool call, and no "run this in the background" phrasing from the
+      user. Written to fail against the old explicit-framing-only heuristic
+      and pass once the shape-based rewrite ships, per this repo's EDD
+      rules.
+    type: tool-call
+    input: >
+      One of our scheduled tasks failed overnight and I don't know why —
+      can you find out what went wrong?
+    tool: spawn_sub_agent
+    argChecks:
+      - path: role
+        match: exists
+      - path: goal
+        match: exists
+
+  - id: subd-004-wiki-investigation-delegated-without-background-framing
+    name: Agent delegates an open-ended wiki investigation with no explicit background framing
+    purpose: >
+      Covers the wiki-search/web-search investigative shape named in issue
+      #267's own motivating request: an open-ended "figure out what's going
+      on" prompt with an unclear number of steps, phrased as a direct
+      question rather than an explicit hand-off.
+    type: tool-call
+    input: >
+      Something's inconsistent across the wiki pages about our deployment
+      process — can you dig through them and figure out what's actually
+      correct?
+    tool: spawn_sub_agent
+    argChecks:
+      - path: role
+        match: exists
+      - path: goal
+        match: exists
+
+  - id: subd-005-single-step-lookup-not-delegated
+    name: Agent answers a single-step wiki lookup directly instead of delegating
+    purpose: >
+      Guards against over-triggering once the heuristic no longer requires
+      explicit background framing: a one-step lookup has an obvious single
+      next tool call, so it must not be treated as "clear destination,
+      unclear path."
+    type: tool-call
+    input: >
+      What's the name of our production database host, per the wiki?
     tool: '!spawn_sub_agent'
     argChecks: []

@@ -1006,9 +1006,46 @@ describe('services/workspace-store', () => {
       expect(recovered.assignedTo).to.equal('agent'); // unlike origin='user', never escalated to 'user'
 
       const pending = afterSecondCrash.drainPendingSubAgentCrashNotifications();
-      expect(pending.map((t) => t.id)).to.deep.equal([task.id]);
+      expect(pending.map((p) => p.task.id)).to.deep.equal([task.id]);
+      // No run thread was ever minted (executeTask() never ran in this
+      // test — only dequeueNext()), so there's genuinely nothing to link.
+      expect(pending[0]!.runThreadId).to.equal(null);
       // Draining is destructive — a second call returns nothing left.
       expect(afterSecondCrash.drainPendingSubAgentCrashNotifications()).to.deep.equal([]);
+    });
+
+    it("recoverRunningQueueEntries() carries the crashed run's own thread id when one was already minted", () => {
+      const task = store.createSubAgentTask({
+        role: 'researcher',
+        goal: 'sub-agent goal',
+        parentThreadId: 'parent-thread-1',
+        dispatchGroupId: 'group-1',
+      });
+      const entry = store.dequeueNext()!; // -> 'running'
+      // As task-execution.ts would on the run's first start.
+      store.setQueueEntryThread(entry.id, 'run-thread-1');
+
+      const afterFirstCrash = new WorkspaceStore(db); // 1st restart: retried
+      afterFirstCrash.dequeueNext(); // 2nd run -> 'running' again
+      const afterSecondCrash = new WorkspaceStore(db); // 2nd restart: give up
+
+      const pending = afterSecondCrash.drainPendingSubAgentCrashNotifications();
+      expect(pending).to.deep.equal([
+        { task: afterSecondCrash.getTask(task.id)!, runThreadId: 'run-thread-1' },
+      ]);
+    });
+
+    it("listTasks() excludes origin='agent' rows even when they'd otherwise match every filter", () => {
+      const subAgentTask = store.createSubAgentTask({
+        role: 'researcher',
+        goal: 'sub-agent goal',
+        parentThreadId: 'parent-thread-1',
+        dispatchGroupId: 'group-1',
+      });
+
+      expect(store.listTasks({})).to.deep.equal([]);
+      expect(store.listTasks({ status: subAgentTask.status })).to.deep.equal([]);
+      expect(store.listTasks({ workspaceId: subAgentTask.workspaceId })).to.deep.equal([]);
     });
   });
 

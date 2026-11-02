@@ -392,6 +392,11 @@ export function recordTaskRunMarker(
 // docs/superpowers/specs/2026-09-09-sub-agent-tooling-design.md §6. A
 // distinct message kind (not task_run_marker) because the payload shape
 // genuinely differs: role/remainingCount here vs taskTitle/outcome there.
+//
+// runThreadId is only ever present on a completion-phase marker — the Run's
+// own thread doesn't exist yet at dispatch time (minted on first start, by
+// task-execution.ts), so a dispatch-phase marker stays text-only by design.
+// See docs/superpowers/specs/2026-11-01-sub-agent-delegation-design.md.
 export function recordSubAgentMarker(
   store: ThreadStore,
   parentThreadId: string,
@@ -402,6 +407,7 @@ export function recordSubAgentMarker(
     phase: 'dispatch' | 'completion';
     outcome?: 'done' | 'failed' | 'cancelled' | 'handed_off';
     remainingCount?: number;
+    runThreadId?: string;
   },
 ): number | null {
   return safe(parentThreadId, 'recordSubAgentMarker', () => {
