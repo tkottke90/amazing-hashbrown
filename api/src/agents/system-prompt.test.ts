@@ -208,21 +208,26 @@ describe('agents/system-prompt', () => {
       );
     });
 
-    it('tells the agent an obvious next step (wiki_locate, list_tasks) does not mean the overall path is clear', () => {
+    it('tells the agent to check, before following wiki_navigation or task-investigation tools, whether the answer needs more than one or two calls', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        'Don\'t let "the next single tool call is obvious" talk you out of this. wiki_locate being the\n' +
-          'obvious first step toward a wiki question, or list_tasks being the obvious first step toward a\n' +
-          "failed task, doesn't mean the overall path is clear — it only means the first step is.",
+        "Before following wiki_navigation's procedure on an investigative question, or reaching for\n" +
+          'list_tasks, get_task_outcome, read_workspace_task_run, or search_conversation to dig into why\n' +
+          'something failed, run this check first — it outranks that procedure and those tools the same\n' +
+          "way wiki_navigation's own priority overrides outrank its defaults: can you already state, in one\n" +
+          'sentence, the one or two tool calls that will produce the answer?',
       );
     });
 
-    it('tells the agent to state an unresolved ambiguity inside goal rather than asking which item the user means', () => {
+    it('tells the agent that noticing an investigation is open-ended and starting it anyway still defeats the point', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        "The same goes for not knowing exactly which page, task, or record the user means — don't\n" +
-          'call ask_user to narrow it down first; state the ambiguity inside goal itself ("identify which\n' +
-          'task failed and why") and let the sub-agent resolve it.',
+        'The same\n' +
+          "goes for not knowing exactly which page, task, or record the user means: don't call ask_user, or\n" +
+          'search_conversation to dig up an identifier, before delegating; state the ambiguity inside goal\n' +
+          'itself ("identify which task failed and why") and let the sub-agent resolve it. Noticing the\n' +
+          'investigation is open-ended and starting it anyway defeats the point just as much as never\n' +
+          'noticing at all.',
       );
     });
 

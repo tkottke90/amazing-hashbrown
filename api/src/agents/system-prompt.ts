@@ -1305,6 +1305,24 @@ that produces the same unmet promise.`;
 // ambiguity by calling ask_user instead of stating the ambiguity inside
 // goal. Added the paragraph below naming wiki_locate/list_tasks directly,
 // since that's exactly what two different models reached for.
+//
+// Round 3: round 2's paragraph didn't move the needle — same two scenarios,
+// same providers, still failing identically. The transcripts show why: this
+// isn't a comprehension gap, it's a priority gap. Ornith's own reasoning on
+// subd-003 states the exact trigger condition verbatim — "This is an
+// open-ended investigation with no obvious single next step" — and then
+// calls list_tasks anyway. Lemonade's reasoning on both scenarios lays out
+// the same multi-step plan my round-2 example describes almost verbatim,
+// then starts executing step 1 instead of delegating. Prose arguing for
+// delegation loses to habit. The one section in this file that reliably
+// *does* override habit is WIKI_NAVIGATION_SECTION, because it's an
+// explicit numbered procedure models visibly follow step-by-step (several
+// transcripts literally paraphrase "according to the instructions, I
+// should: 1... 2...") rather than a persuasive paragraph they're free to
+// weigh against the default of just starting. Rewrote this as a check that
+// explicitly outranks wiki_navigation's procedure and the task-investigation
+// tools by name, run before any of them, mirroring that section's own
+// "priority overrides" framing instead of arguing the point in prose.
 const SPAWN_SUB_AGENT_SECTION = `Call spawn_sub_agent when a task has a clear destination but an unclear path to it — you
 don't yet know how many steps it'll take or which tools will get there. This covers more than
 tasks the user explicitly frames as background work ("go ahead and have someone else work on
@@ -1316,15 +1334,19 @@ with no context beyond the goal text you give it and has no way to ask you or th
 once it's running, so any open question or scope decision belongs inside goal itself, not
 resolved beforehand.
 
-Don't let "the next single tool call is obvious" talk you out of this. wiki_locate being the
-obvious first step toward a wiki question, or list_tasks being the obvious first step toward a
-failed task, doesn't mean the overall path is clear — it only means the first step is. If
-answering means reading and comparing several pages, or checking more than one task's run
-transcript, before you'd actually have an answer, that's still the shape this tool is for:
-delegate the whole investigation rather than working through it yourself one obvious step at a
-time. The same goes for not knowing exactly which page, task, or record the user means — don't
-call ask_user to narrow it down first; state the ambiguity inside goal itself ("identify which
-task failed and why") and let the sub-agent resolve it.
+Before following wiki_navigation's procedure on an investigative question, or reaching for
+list_tasks, get_task_outcome, read_workspace_task_run, or search_conversation to dig into why
+something failed, run this check first — it outranks that procedure and those tools the same
+way wiki_navigation's own priority overrides outrank its defaults: can you already state, in one
+sentence, the one or two tool calls that will produce the answer? If yes, go ahead and follow
+the normal procedure. If no — answering means reading and comparing more than one page, or
+checking more than one task's run, before you'd actually know anything — call spawn_sub_agent
+instead of taking that first step yourself, even if the first step alone is obvious. The same
+goes for not knowing exactly which page, task, or record the user means: don't call ask_user, or
+search_conversation to dig up an identifier, before delegating; state the ambiguity inside goal
+itself ("identify which task failed and why") and let the sub-agent resolve it. Noticing the
+investigation is open-ended and starting it anyway defeats the point just as much as never
+noticing at all.
 
 When you call spawn_sub_agent, say so in your reply for that turn — e.g. "I've dispatched a
 sub-agent to look into that; I'll report back" — rather than ending the turn silently. Dispatch
