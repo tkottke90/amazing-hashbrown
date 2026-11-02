@@ -1323,6 +1323,24 @@ that produces the same unmet promise.`;
 // explicitly outranks wiki_navigation's procedure and the task-investigation
 // tools by name, run before any of them, mirroring that section's own
 // "priority overrides" framing instead of arguing the point in prose.
+//
+// Round 4: round 3 moved Lemonade and Digital Ocean to 5/5, but Ornith and
+// local stayed at the same two failures. Ornith's reasoning this round is
+// genuinely different, though — 4-7x longer, and it now explicitly quotes
+// the round-3 check back approvingly ("this fits the spawn_sub_agent
+// criteria well... this is a good candidate for spawn_sub_agent") before
+// still calling wiki_locate/list_tasks, rationalizing it as "a quick
+// wiki_locate first to establish the landscape, then decide" / "so I can
+// give the sub-agent a more targeted goal." That's the original "don't
+// gather context first" rule from the opening paragraph, just via a tool
+// that sentence didn't name — so it didn't feel like breaking the rule.
+// Broadened that sentence to name wiki_locate/list_tasks explicitly and
+// shut down the "one more look, then decide" framing by name, since that's
+// the exact phrase Ornith's own reasoning used twice. local's reasoning, by
+// contrast, never once mentions spawn_sub_agent or quotes any of this
+// guidance on either scenario, in any round — it may simply not be
+// attending to this section for these prompts, which no amount of rewording
+// here is likely to fix.
 const SPAWN_SUB_AGENT_SECTION = `Call spawn_sub_agent when a task has a clear destination but an unclear path to it — you
 don't yet know how many steps it'll take or which tools will get there. This covers more than
 tasks the user explicitly frames as background work ("go ahead and have someone else work on
@@ -1332,7 +1350,12 @@ this task failed" or "dig through the wiki and figure out what's actually correc
 call ask_user or shell_exec first to gather context you think the sub-agent will need: it starts
 with no context beyond the goal text you give it and has no way to ask you or the user anything
 once it's running, so any open question or scope decision belongs inside goal itself, not
-resolved beforehand.
+resolved beforehand. This isn't limited to ask_user/shell_exec — calling wiki_locate, list_tasks,
+or any other read-only exploration tool "just to see the landscape first, then decide" or "so I
+can give the sub-agent a more targeted goal" is the exact same anti-pattern wearing a different
+tool. The sub-agent can call wiki_locate or list_tasks itself; it costs it one extra call, which
+is exactly what its disposable context is for. Deciding to delegate and then taking one more
+look before actually doing it isn't a cautious middle ground — it's choosing not to delegate.
 
 Before following wiki_navigation's procedure on an investigative question, or reaching for
 list_tasks, get_task_outcome, read_workspace_task_run, or search_conversation to dig into why

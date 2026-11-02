@@ -208,6 +208,18 @@ describe('agents/system-prompt', () => {
       );
     });
 
+    it('tells the agent that peeking with wiki_locate/list_tasks first "to decide" is the same anti-pattern as ask_user/shell_exec, not an exception to it', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        "resolved beforehand. This isn't limited to ask_user/shell_exec — calling wiki_locate, list_tasks,\n" +
+          'or any other read-only exploration tool "just to see the landscape first, then decide" or "so I\n' +
+          'can give the sub-agent a more targeted goal" is the exact same anti-pattern wearing a different\n' +
+          'tool. The sub-agent can call wiki_locate or list_tasks itself; it costs it one extra call, which\n' +
+          'is exactly what its disposable context is for. Deciding to delegate and then taking one more\n' +
+          "look before actually doing it isn't a cautious middle ground — it's choosing not to delegate.",
+      );
+    });
+
     it('tells the agent to check, before following wiki_navigation or task-investigation tools, whether the answer needs more than one or two calls', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
