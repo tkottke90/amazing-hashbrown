@@ -15,6 +15,13 @@ suite:
     against that broadening over-triggering on a single-step lookup. See
     docs/superpowers/specs/2026-11-01-sub-agent-delegation-design.md.
 
+    Dropped the `role` argCheck from every positive scenario: role is
+    documented as optional on spawn_sub_agent (an omitted or unrecognized
+    role falls back to the configured Default Role), so asserting its
+    presence penalized a model for correctly using that fallback — confirmed
+    against a real run where a provider delegated with a well-scoped goal
+    every time and was marked failed purely for leaving role out.
+
     Deliberately does NOT cover spawn_sub_agent's nesting restriction (a
     sub-agent run cannot itself call spawn_sub_agent or ask_user). That
     restriction is a hard, unconditional exclusion in getSubAgentToolIds()
@@ -42,8 +49,6 @@ scenarios:
       background while I keep talking to you about other things.
     tool: spawn_sub_agent
     argChecks:
-      - path: role
-        match: exists
       - path: goal
         match: exists
 
@@ -74,8 +79,6 @@ scenarios:
       can you find out what went wrong?
     tool: spawn_sub_agent
     argChecks:
-      - path: role
-        match: exists
       - path: goal
         match: exists
 
@@ -93,8 +96,6 @@ scenarios:
       correct?
     tool: spawn_sub_agent
     argChecks:
-      - path: role
-        match: exists
       - path: goal
         match: exists
 

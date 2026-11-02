@@ -1292,6 +1292,19 @@ that produces the same unmet promise.`;
 // tells the user a dispatch happened until its completion notification
 // arrives later, so a silent turn after dispatching reads as the question
 // being ignored. See suites/sub-agent-delegation.yaml's subd-003/subd-004.
+//
+// Round 2, from real eval transcripts across four providers (local/gpt-oss,
+// Lemonade/GLM, Ornith, Digital Ocean) on subd-003/subd-004: the "unclear
+// path" framing alone wasn't enough. Every provider failed subd-004
+// (a wiki investigation) the same way — reasoning straight into wiki_locate
+// ("According to the wiki_navigation guidance, I should start by locating
+// the relevant domain") without ever weighing spawn_sub_agent, because the
+// *next* step was obvious even though the investigation as a whole wasn't.
+// Ornith failed subd-003 the same way with list_tasks as the obvious first
+// step. Separately, one provider (local) resolved subd-003's "which task"
+// ambiguity by calling ask_user instead of stating the ambiguity inside
+// goal. Added the paragraph below naming wiki_locate/list_tasks directly,
+// since that's exactly what two different models reached for.
 const SPAWN_SUB_AGENT_SECTION = `Call spawn_sub_agent when a task has a clear destination but an unclear path to it — you
 don't yet know how many steps it'll take or which tools will get there. This covers more than
 tasks the user explicitly frames as background work ("go ahead and have someone else work on
@@ -1302,6 +1315,16 @@ call ask_user or shell_exec first to gather context you think the sub-agent will
 with no context beyond the goal text you give it and has no way to ask you or the user anything
 once it's running, so any open question or scope decision belongs inside goal itself, not
 resolved beforehand.
+
+Don't let "the next single tool call is obvious" talk you out of this. wiki_locate being the
+obvious first step toward a wiki question, or list_tasks being the obvious first step toward a
+failed task, doesn't mean the overall path is clear — it only means the first step is. If
+answering means reading and comparing several pages, or checking more than one task's run
+transcript, before you'd actually have an answer, that's still the shape this tool is for:
+delegate the whole investigation rather than working through it yourself one obvious step at a
+time. The same goes for not knowing exactly which page, task, or record the user means — don't
+call ask_user to narrow it down first; state the ambiguity inside goal itself ("identify which
+task failed and why") and let the sub-agent resolve it.
 
 When you call spawn_sub_agent, say so in your reply for that turn — e.g. "I've dispatched a
 sub-agent to look into that; I'll report back" — rather than ending the turn silently. Dispatch
