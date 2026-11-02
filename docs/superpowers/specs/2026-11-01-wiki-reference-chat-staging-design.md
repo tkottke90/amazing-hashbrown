@@ -23,7 +23,7 @@ Wired into the three chat surfaces that already accept `attachmentIds` and regis
 
 Both wiki-reference error paths reuse the existing `'error'` toast styling — no new toast variant, no new shadcn component (an earlier assumption that one would be needed doesn't hold: `showToast`/`ToastContainer` already cover this app-wide).
 
-The owning page passes `stagedWikiReferenceKeys` down as `new Set(wikiReferences.map(r => \`${r.wikiId}:${r.path}\`))` so every `WikiUpdateMessage` card in the thread can independently compute its own `isStaged`.
+The owning page passes `stagedWikiReferenceKeys` down as `` new Set(wikiReferences.map(r => `${r.wikiId}:${r.path}`)) `` so every `WikiUpdateMessage` card in the thread can independently compute its own `isStaged`.
 
 ## Client: sending and display
 

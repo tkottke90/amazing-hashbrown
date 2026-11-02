@@ -56,7 +56,7 @@ describe('ThreadMessageItem — wiki_update prop threading', () => {
     expect(screen.getByText('Added')).toBeInTheDocument();
   });
 
-  it('is not staged when the key set does not contain this card\'s own key', () => {
+  it("is not staged when the key set does not contain this card's own key", () => {
     render(
       <ThreadMessageItem
         message={wikiUpdateMessage()}

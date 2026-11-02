@@ -65,13 +65,18 @@ export function WikiUpdateMessage({
                 type="button"
                 data-testid="wiki-update-add-to-message"
                 disabled={isStaged}
-                onClick={() =>
+                onClick={() => {
+                  // Guarded explicitly rather than relying only on the
+                  // native `disabled` attribute to suppress the click —
+                  // a programmatically dispatched click (as in tests)
+                  // still reaches this handler even on a disabled button.
+                  if (isStaged) return;
                   onStageWikiReference({
                     wikiId: message.wikiName,
                     path: message.path!,
                     title: message.pageTitle,
-                  })
-                }
+                  });
+                }}
                 className="flex w-fit items-center gap-1 text-sm text-primary hover:underline disabled:cursor-default disabled:text-muted-foreground disabled:no-underline"
               >
                 {isStaged ? (

@@ -3,7 +3,10 @@ import type { ThreadStore } from '../services/thread-store.js';
 import type { TriggerSource } from '../services/workspace-store.js';
 import { logger, serializeError } from '../config/logger.js';
 import type { ChatErrorCategory } from '@tkottke90/llm-common-types/chat';
-import type { UserMessageAttachment, UserMessageWikiReference } from '@tkottke90/llm-common-types/chat';
+import type {
+  UserMessageAttachment,
+  UserMessageWikiReference,
+} from '@tkottke90/llm-common-types/chat';
 
 export type { UserMessageAttachment, UserMessageWikiReference };
 

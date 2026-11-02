@@ -142,7 +142,7 @@ describe('WorkspaceChatTab', () => {
     expect(sendButton).not.toBeDisabled();
 
     fireEvent.click(sendButton);
-    expect(thread.sendMessage).toHaveBeenCalledWith('hello workspace', []);
+    expect(thread.sendMessage).toHaveBeenCalledWith('hello workspace', [], []);
     expect(textarea.value).toBe('');
   });
 });
