@@ -51,7 +51,7 @@ export function createWikiReferenceExpansionMiddleware(
       let combinedText = existingText;
 
       for (const ref of references) {
-        const citation = `---\nWiki Reference — Wiki Domain "${ref.wikiId}", path "${ref.path}":`;
+        const citation = `---\nWiki Reference — Wiki Domain "${ref.wikiId}", path "${ref.path}" (current content, already up to date — use it directly, no need to re-read the page):`;
         const body = await resolveOneReference(ref, threadId, getRegistry);
         combinedText = `${combinedText}\n\n${citation}\n${body}`;
       }

@@ -108,7 +108,9 @@ describe('agents/wiki-reference-expansion.middleware [unit]', () => {
     expect(result!.messages[0]!.id).to.equal('msg-1');
     const content = result!.messages[0]!.content as string;
     expect(content).to.include('edit that page');
-    expect(content).to.include(`Wiki Reference — Wiki Domain "test-wiki", path "${path}":`);
+    expect(content).to.include(
+      `Wiki Reference — Wiki Domain "test-wiki", path "${path}" (current content, already up to date — use it directly, no need to re-read the page):`,
+    );
     expect(content).to.include('# Router');
     expect(content).to.include('Type: entity');
     expect(content).to.include('Tags: networking');
