@@ -397,8 +397,8 @@ How `spawn_sub_agent` creates and reports on delegated work, and why a Sub-Agent
 ## Language
 
 **Sub-Agent Task**:
-A Task created by `spawn_sub_agent` (`origin: 'agent'`), executed through the same Task Run machinery as any other Task but structurally unable to reach a human — `ask_user`, `hand_off_task`, and `complete_task` are absent from its Run's tool list by default, same as `spawn_sub_agent` itself — so it is always dispatched and reported on strictly agent-to-agent, like an assignment to an intern who reports back to the agent that sent it, never to the user directly. Never appears on the Task board/drawer and never gets a Task File.
-_Avoid_: Sub-agent thread, delegated task, background task
+A Task created by `spawn_sub_agent` — identified not by `origin: 'agent'` alone (another mechanism, the after-agent pipeline's Placement Review Task, also sets that for provenance/tracking and is meant to surface to a human like any other Task) but by `origin: 'agent'` together with a non-null `parentThreadId`/`dispatchGroupId`/`role`, which only a real dispatch ever sets. Executed through the same Task Run machinery as any other Task but structurally unable to reach a human — `ask_user`, `hand_off_task`, and `complete_task` are absent from its Run's tool list by default, same as `spawn_sub_agent` itself — so it is always dispatched and reported on strictly agent-to-agent, like an assignment to an intern who reports back to the agent that sent it, never to the user directly. Never appears on the Task board/drawer and never gets a Task File.
+_Avoid_: Sub-agent thread, delegated task, background task, any origin: 'agent' Task (too broad — see above)
 
 **Dispatch**:
 One call to `spawn_sub_agent` — creates one or more Sub-Agent Tasks (several when the calling model's single turn issues several parallel calls, correlated by a shared `dispatchGroupId`) and returns immediately, without awaiting any of their Runs.

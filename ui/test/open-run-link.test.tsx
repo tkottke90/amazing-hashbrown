@@ -18,7 +18,7 @@ describe('OpenRunLink', () => {
     expect(screen.queryByTestId('open-run-open')).not.toBeInTheDocument();
   });
 
-  it('renders nothing when already on the linked run\'s own page', () => {
+  it("renders nothing when already on the linked run's own page", () => {
     mockPath = '/chat/run-1';
     render(<OpenRunLink runThreadId="run-1" testId="open-run-open" />);
     expect(screen.queryByTestId('open-run-open')).not.toBeInTheDocument();

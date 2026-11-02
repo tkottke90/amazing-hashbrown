@@ -1446,13 +1446,21 @@ export class WorkspaceStore extends BaseStore {
   // Tasks
   // -------------------------------------------------------------------------
 
-  // A Sub-Agent Task (origin: 'agent') is a parent agent's own delegate, not
-  // a unit of work a user manages directly — it's excluded unconditionally,
-  // not as an opt-in filter, so every caller (the Task board/drawer, the
-  // list_tasks tool) gets this for free. See ADR-0055 and GLOSSARY.md §
-  // Sub-Agent Dispatch.
+  // A Sub-Agent Task (dispatched by spawn_sub_agent) is a parent agent's own
+  // delegate, not a unit of work a user manages directly — it's excluded
+  // unconditionally, not as an opt-in filter, so every caller (the Task
+  // board/drawer, the list_tasks tool) gets this for free. See ADR-0055 and
+  // GLOSSARY.md § Sub-Agent Dispatch.
+  //
+  // origin='agent' alone is NOT the right discriminator — after-agent.ts's
+  // Placement Review Task also sets origin='agent' (it's agent-*initiated*,
+  // for provenance/tracking), but it's an ordinary task meant to surface to
+  // a human for review, nothing like a Sub-Agent Task. The migration-27
+  // comment above this table's schema is the actual invariant: for a real
+  // spawn_sub_agent dispatch, parent_thread_id/dispatch_group_id/role are
+  // always set together; every other origin='agent' row leaves them null.
   listTasks(filters: TaskListFilters = {}): Task[] {
-    const conditions: string[] = [`origin != 'agent'`];
+    const conditions: string[] = [`NOT (origin = 'agent' AND parent_thread_id IS NOT NULL)`];
     const values: unknown[] = [];
 
     if ('workspaceId' in filters) {
