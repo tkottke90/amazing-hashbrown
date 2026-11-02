@@ -1,8 +1,13 @@
 import { useEffect, useRef } from 'preact/hooks';
-import { useSignal, type Signal } from '@preact/signals';
+import { useSignal, useComputed, type Signal } from '@preact/signals';
 import { Check, Hash, RotateCcw } from 'lucide-preact';
 import type { RefObject } from 'preact';
-import { ChatInput, type StagedAttachment } from '@/components/chat-input';
+import {
+  ChatInput,
+  stageWikiReference,
+  type StagedAttachment,
+  type StagedWikiReference,
+} from '@/components/chat-input';
 import { ChatMessageScrollWrapper } from '@/components/chat-message-scroll-wrapper';
 import { ThreadMessageItem } from '@/components/thread-message';
 import { HitlPromptMessage } from '@/components/hitl-prompt-message';
@@ -42,6 +47,7 @@ interface Props {
 function ChatComposer({
   inputValue,
   stagedAttachments,
+  stagedWikiReferences,
   onSend,
   onStop,
   isGenerating,
@@ -55,6 +61,7 @@ function ChatComposer({
 }: {
   inputValue: Signal<string>;
   stagedAttachments: Signal<StagedAttachment[]>;
+  stagedWikiReferences: Signal<StagedWikiReference[]>;
   onSend: () => void;
   onStop: () => void;
   isGenerating: boolean;
@@ -87,6 +94,10 @@ function ChatComposer({
       onAttachmentsChange={(next) => {
         stagedAttachments.value = next;
       }}
+      wikiReferences={stagedWikiReferences.value}
+      onWikiReferencesChange={(next) => {
+        stagedWikiReferences.value = next;
+      }}
     />
   );
 }
@@ -96,6 +107,10 @@ export function IngestionChat({ chatInputRef }: Props) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const copied = useSignal(false);
   const stagedAttachments = useSignal<StagedAttachment[]>([]);
+  const stagedWikiReferences = useSignal<StagedWikiReference[]>([]);
+  const stagedWikiReferenceKeys = useComputed(
+    () => new Set(stagedWikiReferences.value.map((r) => `${r.wikiId}:${r.path}`)),
+  );
   const forceScrollTrigger = useSignal(0);
 
   function handleCopyThreadId() {
@@ -129,7 +144,18 @@ export function IngestionChat({ chatInputRef }: Props) {
     inputValue.value = '';
     const attachments = stagedAttachments.value;
     stagedAttachments.value = [];
-    void sendWikiMessage(content, attachments);
+    const wikiReferences = stagedWikiReferences.value;
+    stagedWikiReferences.value = [];
+    void sendWikiMessage(content, attachments, wikiReferences);
+  }
+
+  function handleStageWikiReference(ref: StagedWikiReference) {
+    const next = stageWikiReference(
+      stagedWikiReferences.value,
+      stagedAttachments.value.length,
+      ref,
+    );
+    if (next) stagedWikiReferences.value = next;
   }
 
   const resolvedProvider =
@@ -194,6 +220,8 @@ export function IngestionChat({ chatInputRef }: Props) {
               message={msg}
               onHitlAnswer={submitWikiHitlAnswer}
               onRetry={retryWikiTurn}
+              onStageWikiReference={handleStageWikiReference}
+              stagedWikiReferenceKeys={stagedWikiReferenceKeys.value}
             />
           ))}
         </div>
@@ -211,6 +239,7 @@ export function IngestionChat({ chatInputRef }: Props) {
         <ChatComposer
           inputValue={inputValue}
           stagedAttachments={stagedAttachments}
+          stagedWikiReferences={stagedWikiReferences}
           onSend={handleSend}
           onStop={stopWikiGeneration}
           isGenerating={wikiIsStreaming.value}

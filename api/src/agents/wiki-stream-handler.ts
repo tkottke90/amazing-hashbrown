@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Response } from 'express';
 import { Command } from '@langchain/langgraph';
+import type { UserMessageWikiReference } from '@tkottke90/llm-common-types/chat';
 import { getWikiIngestionAgent } from './wiki-ingestion-agent.js';
 import { resolveProviderConfig } from '../services/provider-factory.js';
 import { setActiveSseWriter, type SseWriter } from './active-sse-writer.js';
@@ -49,6 +50,7 @@ export async function streamWikiChatToSse(
   provider?: string,
   model?: string,
   attachmentIds?: string[],
+  wikiReferences?: UserMessageWikiReference[],
   deps: WikiChatStreamDeps = {},
 ): Promise<void> {
   const resolveWikiIngestionAgent = deps.getWikiIngestionAgent ?? getWikiIngestionAgent;
@@ -65,7 +67,7 @@ export async function streamWikiChatToSse(
     await resolveAttachmentsForTurn(attachmentIds ?? [], threadId, provider, model);
   const turnAttachments = attachmentRecords.length ? attachmentRecords : undefined;
   const config = {
-    configurable: { thread_id: threadId, attachmentInjections },
+    configurable: { thread_id: threadId, attachmentInjections, wikiReferences },
   };
 
   const userSeq = recordUserMessage(
@@ -75,6 +77,7 @@ export async function streamWikiChatToSse(
     content,
     turnSentAt,
     turnAttachments,
+    wikiReferences,
   );
   for (const record of attachmentRecords) await markArtifactReferenced(record.id);
 

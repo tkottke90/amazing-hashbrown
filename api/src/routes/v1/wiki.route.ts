@@ -2,6 +2,7 @@ import path from 'node:path';
 import { Router } from 'express';
 import { startSseKeepalive } from './sse-keepalive.js';
 import type { GraphNode, GraphEdge, WikiRegistry } from '@tkottke90/llm-wiki';
+import type { UserMessageWikiReference } from '@tkottke90/llm-common-types/chat';
 import { getWikiRegistry } from '../../services/wiki.js';
 import {
   streamWikiChatToSse,
@@ -255,19 +256,26 @@ wikiRouter.get('/domains/:id/pages/*', async (req, res) => {
 // POST /api/v1/wiki/chat/:threadId
 wikiRouter.post('/chat/:threadId', async (req, res) => {
   const { threadId } = req.params as { threadId: string };
-  const { content, provider, model, attachmentIds } = req.body as {
+  const { content, provider, model, attachmentIds, wikiReferences } = req.body as {
     content?: string;
     provider?: string;
     model?: string;
     attachmentIds?: string[];
+    wikiReferences?: UserMessageWikiReference[];
   };
 
   if (!threadId || !content?.trim()) {
     res.status(400).json({ error: 'threadId and content are required' });
     return;
   }
-  if (attachmentIds && attachmentIds.length > 4) {
-    res.status(400).json({ error: 'A message may carry at most 4 attachments' });
+  if (wikiReferences && wikiReferences.length > 2) {
+    res.status(400).json({ error: 'A message may carry at most 2 wiki references' });
+    return;
+  }
+  if ((attachmentIds?.length ?? 0) + (wikiReferences?.length ?? 0) > 4) {
+    res
+      .status(400)
+      .json({ error: 'A message may carry at most 4 attachments/wiki references combined' });
     return;
   }
 
@@ -285,6 +293,7 @@ wikiRouter.post('/chat/:threadId', async (req, res) => {
       provider,
       model,
       attachmentIds,
+      wikiReferences,
     );
   } catch (err) {
     req.logger.error('Wiki chat stream error', { err: serializeError(err) });

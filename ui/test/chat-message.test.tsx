@@ -230,6 +230,50 @@ describe('ChatMessage', () => {
     });
   });
 
+  describe('wiki reference chips', () => {
+    it('renders nothing extra when no wikiReferences are provided', () => {
+      render(<ChatMessage message="hi" sentAt={new Date()} />);
+      expect(screen.queryByText('Router')).not.toBeInTheDocument();
+    });
+
+    it('renders a chip per staged wiki reference, with its title', () => {
+      render(
+        <ChatMessage
+          message="edit that page"
+          sentAt={new Date()}
+          wikiReferences={[{ wikiId: 'homelab', path: 'entities/router.md', title: 'Router' }]}
+        />,
+      );
+      expect(screen.getByText('Router')).toBeInTheDocument();
+    });
+
+    it('renders one chip per reference, up to the 2-reference cap', () => {
+      render(
+        <ChatMessage
+          message="edit these pages"
+          sentAt={new Date()}
+          wikiReferences={[
+            { wikiId: 'homelab', path: 'entities/router.md', title: 'Router' },
+            { wikiId: 'homelab', path: 'entities/switch.md', title: 'Switch' },
+          ]}
+        />,
+      );
+      expect(screen.getByText('Router')).toBeInTheDocument();
+      expect(screen.getByText('Switch')).toBeInTheDocument();
+    });
+
+    it('renders wiki reference chips as non-removable (no Remove button)', () => {
+      render(
+        <ChatMessage
+          message="edit that page"
+          sentAt={new Date()}
+          wikiReferences={[{ wikiId: 'homelab', path: 'entities/router.md', title: 'Router' }]}
+        />,
+      );
+      expect(screen.queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument();
+    });
+  });
+
   describe('mirrored layout', () => {
     it('sets data-mirrored attribute when mirrored', () => {
       render(<ChatMessage message="hi" sentAt={new Date()} mirrored />);

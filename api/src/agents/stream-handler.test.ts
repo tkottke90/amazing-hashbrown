@@ -1613,6 +1613,7 @@ describe('agents/stream-handler', () => {
             undefined,
             undefined,
             undefined,
+            undefined,
             depsFor(fakeAbortingAgent(threadId)),
           ),
         );
@@ -1648,6 +1649,7 @@ describe('agents/stream-handler', () => {
             undefined,
             undefined,
             undefined,
+            undefined,
             depsFor(fakeThrowingAgent()),
           ),
         );
@@ -1669,6 +1671,7 @@ describe('agents/stream-handler', () => {
             'hello',
             Date.now(),
             NAMED_OPENAI_PROVIDER,
+            undefined,
             undefined,
             undefined,
             undefined,
@@ -1766,6 +1769,7 @@ describe('agents/stream-handler', () => {
             threadId,
             'are you there?',
             Date.now(),
+            undefined,
             undefined,
             undefined,
             undefined,
@@ -1880,11 +1884,43 @@ describe('agents/stream-handler', () => {
             undefined,
             undefined,
             undefined,
+            undefined,
             depsFor(agent),
           ),
         );
 
         expectTraceIdPassed(threadId, captured);
+      });
+
+      it('streamChatToSse forwards wikiReferences to configurable unresolved, and persists it on the user message [orchestration]', async () => {
+        const threadId = randomUUID();
+        const { agent, captured } = fakeCapturingAgent();
+        const wikiReferences = [{ wikiId: 'homelab', path: 'entities/router.md', title: 'Router' }];
+
+        await expectClassifiedTurnError(
+          streamChatToSse(
+            fakeRes().res,
+            threadId,
+            'edit that page',
+            Date.now(),
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            wikiReferences,
+            depsFor(agent),
+          ),
+        );
+
+        // Unresolved: exactly the client-sent tuple, not expanded page
+        // content — resolution happens later, inside
+        // wiki-reference-expansion.middleware.ts's own beforeAgent, not here.
+        expect(captured[0]!.configurable?.wikiReferences).to.deep.equal(wikiReferences);
+
+        const persisted = store.getThreadMessages(threadId).find((m) => m.kind === 'user');
+        expect((persisted!.payload as { wikiReferences?: unknown }).wikiReferences).to.deep.equal(
+          wikiReferences,
+        );
       });
 
       it('resumeChatToSse passes the turn’s trace id to the agent [orchestration]', async () => {
@@ -2029,6 +2065,7 @@ describe('agents/stream-handler', () => {
           undefined,
           undefined,
           [id],
+          undefined,
           depsFor(fakeThrowingAgent()),
         ),
       );
@@ -2071,6 +2108,7 @@ describe('agents/stream-handler', () => {
           undefined,
           undefined,
           [firstId, secondId],
+          undefined,
           depsFor(fakeThrowingAgent()),
         ),
       );
@@ -2103,6 +2141,7 @@ describe('agents/stream-handler', () => {
           undefined,
           undefined,
           [id],
+          undefined,
           depsFor(fakeThrowingAgent()),
         );
         throw new Error('expected streamChatToSse to throw');
@@ -2136,6 +2175,7 @@ describe('agents/stream-handler', () => {
           undefined,
           undefined,
           [id],
+          undefined,
           depsFor(fakeThrowingAgent()),
         ),
       );
@@ -2161,6 +2201,7 @@ describe('agents/stream-handler', () => {
           threadId,
           'hello',
           Date.now(),
+          undefined,
           undefined,
           undefined,
           undefined,

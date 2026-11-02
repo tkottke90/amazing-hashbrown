@@ -3,9 +3,9 @@ import type { ThreadStore } from '../services/thread-store.js';
 import type { TriggerSource } from '../services/workspace-store.js';
 import { logger, serializeError } from '../config/logger.js';
 import type { ChatErrorCategory } from '@tkottke90/llm-common-types/chat';
-import type { UserMessageAttachment } from '@tkottke90/llm-common-types/chat';
+import type { UserMessageAttachment, UserMessageWikiReference } from '@tkottke90/llm-common-types/chat';
 
-export type { UserMessageAttachment };
+export type { UserMessageAttachment, UserMessageWikiReference };
 
 // The actual "what to write" logic behind persisting a live chat turn to
 // thread_messages, extracted from stream-handler.ts so it's testable
@@ -37,12 +37,18 @@ export function recordUserMessage(
   content: string,
   sentAt: string,
   attachments?: UserMessageAttachment[],
+  wikiReferences?: UserMessageWikiReference[],
 ): number | null {
   return safe(threadId, 'recordUserMessage', () => {
     return store.insertMessage(threadId, {
       id,
       kind: 'user',
-      payload: { content, sentAt, ...(attachments?.length ? { attachments } : {}) },
+      payload: {
+        content,
+        sentAt,
+        ...(attachments?.length ? { attachments } : {}),
+        ...(wikiReferences?.length ? { wikiReferences } : {}),
+      },
     }).seq;
   });
 }
