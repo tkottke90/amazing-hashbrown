@@ -1,5 +1,10 @@
 import { AfterAgentIndicator } from '@/components/after-agent-indicator';
-import { ChatInput, type StagedAttachment } from '@/components/chat-input';
+import {
+  ChatInput,
+  stageWikiReference,
+  type StagedAttachment,
+  type StagedWikiReference,
+} from '@/components/chat-input';
 import { ChatMessageScrollWrapper } from '@/components/chat-message-scroll-wrapper';
 import { HitlPromptMessage } from '@/components/hitl-prompt-message';
 import { Layout } from '@/components/layout';
@@ -34,6 +39,7 @@ import { ArchivedThreadView } from './archived-thread-view';
 function ChatComposer({
   inputValue,
   stagedAttachments,
+  stagedWikiReferences,
   onSend,
   onStop,
   isGenerating,
@@ -47,6 +53,7 @@ function ChatComposer({
 }: {
   inputValue: Signal<string>;
   stagedAttachments: Signal<StagedAttachment[]>;
+  stagedWikiReferences: Signal<StagedWikiReference[]>;
   onSend: () => void;
   onStop: () => void;
   isGenerating: boolean;
@@ -78,6 +85,10 @@ function ChatComposer({
       onAttachmentsChange={(next) => {
         stagedAttachments.value = next;
       }}
+      wikiReferences={stagedWikiReferences.value}
+      onWikiReferencesChange={(next) => {
+        stagedWikiReferences.value = next;
+      }}
     />
   );
 }
@@ -87,6 +98,7 @@ export function ThreadView() {
   const { setPageTitle } = useTitle();
   const inputValue = useSignal('');
   const stagedAttachments = useSignal<StagedAttachment[]>([]);
+  const stagedWikiReferences = useSignal<StagedWikiReference[]>([]);
   const forceScrollTrigger = useSignal(0);
   const thread = useThreadInstance(activeThreadId.value);
 
@@ -109,8 +121,23 @@ export function ThreadView() {
     inputValue.value = '';
     const attachments = stagedAttachments.value;
     stagedAttachments.value = [];
-    thread.sendMessage(content, attachments).catch(console.error);
+    const wikiReferences = stagedWikiReferences.value;
+    stagedWikiReferences.value = [];
+    thread.sendMessage(content, attachments, wikiReferences).catch(console.error);
   }
+
+  function handleStageWikiReference(ref: StagedWikiReference) {
+    const next = stageWikiReference(
+      stagedWikiReferences.value,
+      stagedAttachments.value.length,
+      ref,
+    );
+    if (next) stagedWikiReferences.value = next;
+  }
+
+  const stagedWikiReferenceKeys = useComputed(
+    () => new Set(stagedWikiReferences.value.map((r) => `${r.wikiId}:${r.path}`)),
+  );
 
   const allMessages = thread.messages.value;
   const pendingHitlMsg = thread.pendingHitlId.value
@@ -139,6 +166,8 @@ export function ThreadView() {
               onFork={(seq) =>
                 void forkThread(activeThreadId.value, seq).then((id) => route(`/chat/${id}`))
               }
+              onStageWikiReference={handleStageWikiReference}
+              stagedWikiReferenceKeys={stagedWikiReferenceKeys.value}
             />
           ))}
         </div>
@@ -169,6 +198,7 @@ export function ThreadView() {
         <ChatComposer
           inputValue={inputValue}
           stagedAttachments={stagedAttachments}
+          stagedWikiReferences={stagedWikiReferences}
           onSend={handleSend}
           onStop={thread.stopGeneration}
           isGenerating={thread.isStreaming.value || thread.backgroundTurnActive.value}

@@ -49,6 +49,25 @@ export const UserMessageAttachmentSchema = z.object({
 });
 export type UserMessageAttachment = z.infer<typeof UserMessageAttachmentSchema>;
 
+// A Wiki Reference's outcome on a turn — the user-staged `{wikiId, path,
+// title}` tuple, carried on the user message's persisted payload exactly
+// like UserMessageAttachment above. Unlike an attachment, nothing resolves
+// this at send time (see docs/adr/0055-wiki-references-resolve-lazily-like-
+// skills-not-attachments.md): `included`/`exclusionReason` are only ever
+// populated by wiki-reference-expansion.middleware.ts's own beforeAgent
+// run, not by the route handler, so a freshly sent reference always has
+// `included` absent regardless of whether the page actually exists.
+export const UserMessageWikiReferenceSchema = z.object({
+  wikiId: z.string(),
+  path: z.string(),
+  title: z.string(),
+  included: z.boolean().optional(),
+  // 'page_missing': the page existed when staged but was gone by the time
+  // the turn resolved it. Present only when included is false.
+  exclusionReason: z.enum(['page_missing']).optional(),
+});
+export type UserMessageWikiReference = z.infer<typeof UserMessageWikiReferenceSchema>;
+
 // `seq` is the persisted display-order value from `thread_messages.seq` (see
 // docs/Design/2026-07-18-persistent-conversation-memory-design.md). It is
 // optional here because it is only known once the corresponding row has been

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { startSseKeepalive } from './sse-keepalive.js';
 import type { Request, Response } from 'express';
+import type { UserMessageWikiReference } from '@tkottke90/llm-common-types/chat';
 import {
   streamWorkspaceChatToSse,
   resumeWorkspaceChatToSse,
@@ -82,20 +83,27 @@ workspaceChatRouter.get('/:threadId', (req: Request, res: Response) => {
 
 workspaceChatRouter.post('/:threadId', async (req: Request, res: Response) => {
   const { threadId } = req.params as { threadId: string };
-  const { content, provider, model, afterAgent, attachmentIds } = req.body as {
+  const { content, provider, model, afterAgent, attachmentIds, wikiReferences } = req.body as {
     content?: string;
     provider?: string;
     model?: string;
     afterAgent?: boolean;
     attachmentIds?: string[];
+    wikiReferences?: UserMessageWikiReference[];
   };
 
   if (!content?.trim()) {
     res.status(400).json({ error: 'content is required' });
     return;
   }
-  if (attachmentIds && attachmentIds.length > 4) {
-    res.status(400).json({ error: 'A message may carry at most 4 attachments' });
+  if (wikiReferences && wikiReferences.length > 2) {
+    res.status(400).json({ error: 'A message may carry at most 2 wiki references' });
+    return;
+  }
+  if ((attachmentIds?.length ?? 0) + (wikiReferences?.length ?? 0) > 4) {
+    res
+      .status(400)
+      .json({ error: 'A message may carry at most 4 attachments/wiki references combined' });
     return;
   }
 
@@ -116,6 +124,7 @@ workspaceChatRouter.post('/:threadId', async (req: Request, res: Response) => {
       model,
       afterAgent,
       attachmentIds,
+      wikiReferences,
     );
   } catch (err) {
     req.logger.error('Workspace chat stream error', { err: serializeError(err) });

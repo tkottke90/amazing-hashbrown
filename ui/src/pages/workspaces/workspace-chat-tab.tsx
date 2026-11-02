@@ -1,6 +1,11 @@
 import { useEffect } from 'preact/hooks';
-import { useSignal, type Signal } from '@preact/signals';
-import { ChatInput, type StagedAttachment } from '@/components/chat-input';
+import { useSignal, useComputed, type Signal } from '@preact/signals';
+import {
+  ChatInput,
+  stageWikiReference,
+  type StagedAttachment,
+  type StagedWikiReference,
+} from '@/components/chat-input';
 import { ChatMessageScrollWrapper } from '@/components/chat-message-scroll-wrapper';
 import { HitlPromptMessage } from '@/components/hitl-prompt-message';
 import { ThreadMessageItem } from '@/components/thread-message';
@@ -25,6 +30,7 @@ import { randomUUID } from '@/lib/utils';
 function ChatComposer({
   inputValue,
   stagedAttachments,
+  stagedWikiReferences,
   onSend,
   onStop,
   onFocus,
@@ -43,6 +49,7 @@ function ChatComposer({
 }: {
   inputValue: Signal<string>;
   stagedAttachments: Signal<StagedAttachment[]>;
+  stagedWikiReferences: Signal<StagedWikiReference[]>;
   onSend: () => void;
   onStop: () => void;
   onFocus: () => void;
@@ -84,6 +91,10 @@ function ChatComposer({
       onAttachmentsChange={(next) => {
         stagedAttachments.value = next;
       }}
+      wikiReferences={stagedWikiReferences.value}
+      onWikiReferencesChange={(next) => {
+        stagedWikiReferences.value = next;
+      }}
     />
   );
 }
@@ -100,6 +111,12 @@ export function WorkspaceChatTab({
 }) {
   const inputValue = useSignal('');
   const stagedAttachments = useSignal<StagedAttachment[]>([]);
+  const stagedWikiReferences = useSignal<StagedWikiReference[]>([]);
+  // Declared alongside the signals above, ahead of the early `return null`
+  // below, so this hook always runs in the same order every render.
+  const stagedWikiReferenceKeys = useComputed(
+    () => new Set(stagedWikiReferences.value.map((r) => `${r.wikiId}:${r.path}`)),
+  );
   const forceScrollTrigger = useSignal(0);
   // Local, button-driven loading state for the on-demand summarize request —
   // distinct from thread.isSummarizing (SSE-driven, only fires for the
@@ -137,7 +154,18 @@ export function WorkspaceChatTab({
     inputValue.value = '';
     const attachments = stagedAttachments.value;
     stagedAttachments.value = [];
-    thread.sendMessage(content, attachments).catch(console.error);
+    const wikiReferences = stagedWikiReferences.value;
+    stagedWikiReferences.value = [];
+    thread.sendMessage(content, attachments, wikiReferences).catch(console.error);
+  }
+
+  function handleStageWikiReference(ref: StagedWikiReference) {
+    const next = stageWikiReference(
+      stagedWikiReferences.value,
+      stagedAttachments.value.length,
+      ref,
+    );
+    if (next) stagedWikiReferences.value = next;
   }
 
   async function handleSummarizeClick() {
@@ -208,6 +236,8 @@ export function WorkspaceChatTab({
                 threadId={workspace.threadId ?? undefined}
                 onHitlAnswer={thread.submitHitlAnswer}
                 onRetry={thread.retryTurn}
+                onStageWikiReference={handleStageWikiReference}
+                stagedWikiReferenceKeys={stagedWikiReferenceKeys.value}
               />
             ))}
           </div>
@@ -237,6 +267,7 @@ export function WorkspaceChatTab({
           <ChatComposer
             inputValue={inputValue}
             stagedAttachments={stagedAttachments}
+            stagedWikiReferences={stagedWikiReferences}
             onSend={handleSend}
             onStop={thread.stopGeneration}
             onFocus={() => onInputFocusChange?.(true)}

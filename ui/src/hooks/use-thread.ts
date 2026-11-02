@@ -4,10 +4,11 @@ import type {
   AfterAgentState,
   ChatSSEEvent,
   UserMessageAttachment,
+  UserMessageWikiReference,
 } from '@tkottke90/llm-common-types/chat';
 import type { AssistantThreadMessage, ThreadMessage } from '../types/thread-message';
 import type { TriggerSource } from '../services/tasks-api';
-import type { StagedAttachment } from '../components/chat-input';
+import type { StagedAttachment, StagedWikiReference } from '../components/chat-input';
 import { consumeSsePost, SseHttpError } from '../lib/sse';
 import { randomUUID } from '../lib/utils';
 import { useLocation } from 'preact-iso';
@@ -248,7 +249,11 @@ export interface ThreadInstance {
   markBackgroundTurn: (active: boolean) => void;
   setThreadModel: (provider: string, model: string) => void;
   hydrate: () => Promise<void>;
-  sendMessage: (content: string, attachments?: StagedAttachment[]) => Promise<void>;
+  sendMessage: (
+    content: string,
+    attachments?: StagedAttachment[],
+    wikiReferences?: StagedWikiReference[],
+  ) => Promise<void>;
   submitHitlAnswer: (promptId: string, answer: string) => Promise<void>;
   retryTurn: () => Promise<void>;
   stopGeneration: () => void;
@@ -693,7 +698,11 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
     void hydrate();
   }
 
-  async function sendMessage(content: string, attachments?: StagedAttachment[]): Promise<void> {
+  async function sendMessage(
+    content: string,
+    attachments?: StagedAttachment[],
+    wikiReferences?: StagedWikiReference[],
+  ): Promise<void> {
     const userId = randomUUID();
     const assistantId = randomUUID();
     _currentUserId = userId;
@@ -725,6 +734,10 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
                 })),
               }
             : {}),
+          // No previewUrl-equivalent here — a Wiki Reference carries no
+          // binary preview, so the optimistic bubble renders the exact
+          // {wikiId, path, title} tuple the user staged, unchanged.
+          ...(wikiReferences?.length ? { wikiReferences } : {}),
         },
         {
           kind: 'assistant',
@@ -747,6 +760,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
             ? { provider: modelSelection.provider, model: modelSelection.model }
             : {}),
           ...(attachments?.length ? { attachmentIds: attachments.map((a) => a.id) } : {}),
+          ...(wikiReferences?.length ? { wikiReferences } : {}),
         },
         handleEvent,
         _abortController.signal,

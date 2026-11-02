@@ -152,6 +152,16 @@ _Avoid_: Review queue, triage task, staging item
 The `identified` AfterAgent outcome's own record of what actually happened to the knowledge it found: `written` (landed in the Write Band) or `review` (handed to a Placement Review Task). Distinct from the outcome itself — `identified` always means "worth saving," Disposition says where it ended up.
 _Avoid_: Result, status, action
 
+# Wiki References in Chat
+
+How a user explicitly carries an existing wiki page's content into a chat turn, instead of relying on the agent to infer it should search or read the wiki.
+
+## Language
+
+**Wiki Reference**:
+A `{Wiki Domain, path, title}` tuple a user explicitly stages on a chat message, naming an existing wiki page whose content should be read into that turn — distinct from a file attachment, and from the implicit, agent-inferred lookups `wiki_search`/`wiki_read_page` otherwise require. Resolved from the live page only once that turn is actually invoked, the same way a Skill's body is, rather than when it's staged (see ADR-0055); the persisted record never carries more than the tuple itself, never the page's content.
+_Avoid_: Wiki attachment, document reference, wiki citation
+
 # Skill Invocation & Runtime Access
 
 How a running skill learns which skill is currently active, and reaches its own scripts and reference docs at runtime instead of only getting its body text injected once.

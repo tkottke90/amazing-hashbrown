@@ -189,6 +189,7 @@ describe('agents/wiki-stream-handler — abort handling', () => {
         undefined,
         undefined,
         undefined,
+        undefined,
         depsFor(fakeAbortingAgent(threadId)),
       ),
     );
@@ -217,6 +218,7 @@ describe('agents/wiki-stream-handler — abort handling', () => {
         undefined,
         undefined,
         undefined,
+        undefined,
         depsFor(fakeThrowingAgent()),
       ),
     );
@@ -237,6 +239,7 @@ describe('agents/wiki-stream-handler — abort handling', () => {
         'hello',
         Date.now(),
         NAMED_OPENAI_PROVIDER,
+        undefined,
         undefined,
         undefined,
         depsFor(fakeForbiddenAgent()),
@@ -345,6 +348,7 @@ describe('agents/wiki-stream-handler — abort handling', () => {
           threadId,
           'hello',
           Date.now(),
+          undefined,
           undefined,
           undefined,
           undefined,
@@ -505,6 +509,7 @@ describe('agents/wiki-stream-handler — wiki write persistence (#363)', () => {
         undefined,
         undefined,
         undefined,
+        undefined,
         depsFor(fakeAgentEmittingWikiUpdate(threadId)),
       ),
     );
@@ -562,6 +567,7 @@ describe('agents/wiki-stream-handler — wiki write persistence (#363)', () => {
         threadId,
         'hello',
         Date.now(),
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -674,6 +680,7 @@ describe('agents/wiki-stream-handler — attachment observability spans', () => 
         undefined,
         undefined,
         [id],
+        undefined,
         depsFor(fakeThrowingAgent()),
       ),
     );
@@ -701,6 +708,7 @@ describe('agents/wiki-stream-handler — attachment observability spans', () => 
         threadId,
         'hello',
         Date.now(),
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -737,6 +745,7 @@ describe('agents/wiki-stream-handler — attachment observability spans', () => 
         undefined,
         undefined,
         [firstId, secondId],
+        undefined,
         depsFor(fakeThrowingAgent()),
       ),
     );

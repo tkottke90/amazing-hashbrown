@@ -45,6 +45,7 @@ import { contentBlockSanitizerMiddleware } from './content-block-sanitizer.middl
 import { createRecursionGuardMiddleware } from './recursion-guard.middleware.js';
 import { createSkillExpansionMiddleware } from './skill-expansion.middleware.js';
 import { attachmentAwarenessMiddleware } from './attachment-awareness.middleware.js';
+import { wikiReferenceExpansionMiddleware } from './wiki-reference-expansion.middleware.js';
 import { binaryContentFetchMiddleware } from './binary-content-fetch.middleware.js';
 import { createSkillGatedToolsMiddleware } from './skill-gated-tools.middleware.js';
 import { skillScopedToolsMiddleware } from './skill-scoped-tools.middleware.js';
@@ -549,6 +550,7 @@ async function buildChatAgent(provider?: string, model?: string) {
       // ride along in buildTaskAgent despite being a no-op there.
       createTaskFileStateMiddleware(),
       attachmentAwarenessMiddleware,
+      wikiReferenceExpansionMiddleware,
       binaryContentFetchMiddleware,
       toolSyntaxMiddleware,
       skillGatedToolsMiddleware,
@@ -710,6 +712,7 @@ async function buildWorkspaceChatAgent(
       // header comment for why it rides along regardless.
       createTaskFileStateMiddleware(),
       attachmentAwarenessMiddleware,
+      wikiReferenceExpansionMiddleware,
       binaryContentFetchMiddleware,
       toolSyntaxMiddleware,
       skillGatedToolsMiddleware,
@@ -899,6 +902,7 @@ export async function buildTaskAgent(
       // are never bound in this builder's tools array (see
       // buildSkillScopedTools()'s own comment), so its filter is inert here.
       attachmentAwarenessMiddleware,
+      wikiReferenceExpansionMiddleware,
       binaryContentFetchMiddleware,
       toolSyntaxMiddleware,
       skillGatedToolsMiddleware,

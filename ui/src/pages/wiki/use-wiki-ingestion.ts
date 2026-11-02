@@ -5,7 +5,7 @@ import {
   type ThreadInstance,
   type ThreadInstanceOptions,
 } from '@/hooks/use-thread';
-import type { StagedAttachment } from '@/components/chat-input';
+import type { StagedAttachment, StagedWikiReference } from '@/components/chat-input';
 import {
   activeDomainId,
   refreshDomains,
@@ -108,8 +108,9 @@ export async function hydrateWikiThread(id: string): Promise<void> {
 export async function sendWikiMessage(
   content: string,
   attachments?: StagedAttachment[],
+  wikiReferences?: StagedWikiReference[],
 ): Promise<void> {
-  await currentWikiThread().sendMessage(content, attachments);
+  await currentWikiThread().sendMessage(content, attachments, wikiReferences);
 }
 
 export async function submitWikiHitlAnswer(promptId: string, answer: string): Promise<void> {
