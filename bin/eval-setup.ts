@@ -21,6 +21,8 @@ import { makeCreateTasksTool } from '../api/src/agents/tools/create-tasks.tool.j
 import { makeCompleteTaskTool } from '../api/src/agents/tools/complete-task.tool.js';
 import { makeUpdatePlanTool } from '../api/src/agents/tools/update-plan.tool.js';
 import { makeReadTaskRunTool } from '../api/src/agents/tools/read-task-run.tool.js';
+import { makeWriteTaskNoteTool } from '../api/src/agents/tools/write-task-note.tool.js';
+import { makeReadTaskNotesTool } from '../api/src/agents/tools/read-task-notes.tool.js';
 import { listTasksTool } from '../api/src/agents/tools/list-tasks.tool.js';
 import { getTaskOutcomeTool } from '../api/src/agents/tools/get-task-outcome.tool.js';
 import { readWorkspaceTaskRunTool } from '../api/src/agents/tools/read-workspace-task-run.tool.js';
@@ -181,6 +183,17 @@ export const evalTools = [
   // Bound in real task runs only when a previous finished run exists; the
   // eval harness never executes tools, so its store lookups never run here.
   makeReadTaskRunTool('eval-task', 'eval-run'),
+  // Bound in real task runs only when a Task File exists for the task
+  // (buildTaskAgent's `...(taskFile ? [makeWriteTaskNoteTool(), ...] : [])`),
+  // always as this same pair. Included here unconditionally for the same
+  // reason as makeCreateTasksTool above: suites/scheduled-task-runs.yaml's
+  // str-006/str-007 (issue #368) need read_task_notes actually offered to be
+  // meaningful — confirmed the hard way, exactly like create_tasks's own
+  // comment above: a real eval run had a model reason "read_task_notes isn't
+  // among the tools available to this run" and fall back to read_task_run
+  // instead, because this tool genuinely wasn't bound.
+  makeWriteTaskNoteTool(),
+  makeReadTaskNotesTool('eval-task'),
   // Workspace-chat-only in production (buildTaskVisibilityTools() in
   // chat-agent.ts). Included here unconditionally, same reasoning as
   // makeCreateTasksTool() above: suites/task-visibility.yaml needs all

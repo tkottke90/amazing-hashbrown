@@ -23,7 +23,13 @@ import {
 import { getTaskAbort, setAbortIntent, type AbortIntent } from './active-task-abort.js';
 import { drainPendingTurns } from './pending-thread-turns.js';
 import { executeTask, finishTaskFile, type QueueEntryWithTask } from './task-execution.js';
-import { loadTaskState, listWorkspaceTaskFiles, EMPTY_TASK_STATE } from '../services/task-file.js';
+import {
+  loadTaskState,
+  listWorkspaceTaskFiles,
+  EMPTY_TASK_STATE,
+  writeTaskFile,
+  type TaskState,
+} from '../services/task-file.js';
 import type {
   buildTaskAgent,
   buildSubAgentAgent,
@@ -2414,6 +2420,82 @@ describe('agents/task-execution', () => {
       expect(calls[1]!.outcomeSummary).to.match(/^Stopped without completing/);
       expect(calls[3]!.outcomeSummary).to.equal('Run cancelled by the user.');
       expect(calls[4]!.outcomeSummary).to.equal('Run taken over by the user.');
+    });
+
+    describe("next run's kickoff carries Handoff Notes forward (issue #368)", () => {
+      // Stubs finishTaskFile the same way finishTaskFileSpy above does, but
+      // actually persists a Task File (via the real writeTaskFile) instead
+      // of just recording the call — the real finishTaskFile would attempt
+      // a real generateHandoffNotes model call that's unreachable in tests
+      // and degrades to an empty handoff (see "the real finishTaskFile
+      // degrades gracefully" test below), so this is how a test gets a
+      // known, non-empty Handoff Notes value onto disk.
+      function stubbedFinishTaskFile(handoff: string) {
+        return (async (
+          task: Task,
+          _agentForState: unknown,
+          filePath: string,
+          fallbackState: TaskState,
+          outcomeSummary: string,
+        ) => {
+          await writeTaskFile(
+            filePath,
+            { ...fallbackState, outcome: outcomeSummary, handoff },
+            { taskId: task.id, title: task.title },
+          );
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }) as any;
+      }
+
+      function rerunFileEligible(taskId: string): QueueEntryWithTask {
+        store.patchTask(taskId, { status: 'ready' });
+        store.enqueueTask(taskId);
+        return store.dequeueNext()! as QueueEntryWithTask;
+      }
+
+      it("inlines the previous run's Handoff Notes with a read_task_notes nudge", async () => {
+        const first = makeFileEligibleEntry();
+        await executeTask(first, {
+          buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+          finishTaskFile: stubbedFinishTaskFile(
+            'The off-by-one fix in the comparator still needs to be applied.',
+          ),
+        });
+
+        const second = rerunFileEligible(first.task.id);
+        const capture: { input: unknown } = { input: null };
+        await executeTask(second, {
+          buildTaskAgent: fakeBuildTaskAgent(fakeCapturingAgent([], capture)),
+        });
+
+        const content = (capture.input as { messages: { content: string }[] }).messages[0]!.content;
+        expect(content).to.include(
+          'Handoff notes from the previous run — treat this as something you need to act on ' +
+            'or verify, not just background:',
+        );
+        expect(content).to.include(
+          '"The off-by-one fix in the comparator still needs to be applied."',
+        );
+        expect(content).to.include('read_task_notes()');
+      });
+
+      it('omits the Handoff Notes block when the Task File has none yet (regression)', async () => {
+        const first = makeFileEligibleEntry();
+        await executeTask(first, {
+          buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+          finishTaskFile: stubbedFinishTaskFile(''),
+        });
+
+        const second = rerunFileEligible(first.task.id);
+        const capture: { input: unknown } = { input: null };
+        await executeTask(second, {
+          buildTaskAgent: fakeBuildTaskAgent(fakeCapturingAgent([], capture)),
+        });
+
+        const content = (capture.input as { messages: { content: string }[] }).messages[0]!.content;
+        expect(content).to.not.include('Handoff notes');
+        expect(content).to.not.include('read_task_notes()');
+      });
     });
 
     it('a finishTaskFile failure never changes the run outcome or fails the run', async () => {
