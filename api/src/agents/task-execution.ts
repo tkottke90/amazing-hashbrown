@@ -755,6 +755,7 @@ export async function executeTask(
             task,
             completeTaskBox.current.outcome,
             completeTaskBox.current.summary,
+            threadId,
           );
         }
         if (taskFileScope) {
@@ -786,7 +787,7 @@ export async function executeTask(
           });
         }
         if (task.origin === 'agent') {
-          await deliverSubAgentCompletion(task, 'handed_off', handOffBox.current.summary);
+          await deliverSubAgentCompletion(task, 'handed_off', handOffBox.current.summary, threadId);
         }
         if (taskFileScope) {
           await finishFile(
@@ -839,7 +840,7 @@ export async function executeTask(
           });
         }
         if (task.origin === 'agent') {
-          await deliverSubAgentCompletion(task, 'failed', stoppedSummary);
+          await deliverSubAgentCompletion(task, 'failed', stoppedSummary, threadId);
         }
         if (taskFileScope) {
           await finishFile(
@@ -889,7 +890,7 @@ export async function executeTask(
           });
         }
         if (task.origin === 'agent') {
-          await deliverSubAgentCompletion(task, 'failed', notifyMessage);
+          await deliverSubAgentCompletion(task, 'failed', notifyMessage, threadId);
         }
         if (taskFileScope) {
           await finishFile(
@@ -917,7 +918,7 @@ export async function executeTask(
         // scope note only says there's no new *cancellation UX*, not that a
         // cancelled origin='agent' row skips notification entirely).
         if (task.origin === 'agent') {
-          await deliverSubAgentCompletion(task, 'cancelled');
+          await deliverSubAgentCompletion(task, 'cancelled', undefined, threadId);
         }
         // Cancel and take-over (below) both extend Task File coverage
         // beyond what recordTaskProgress tracks today (it skips both) — a

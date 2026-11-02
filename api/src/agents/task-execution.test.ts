@@ -1559,6 +1559,9 @@ describe('agents/task-execution', () => {
       expect(payload.role).to.equal('researcher');
       expect(payload.outcome).to.equal('done');
       expect(payload.remainingCount).to.equal(0);
+      // The Run's own thread, minted by this same executeTask() call, must
+      // be the one the completion marker links to.
+      expect(payload.runThreadId).to.equal(store.getQueueEntry(entry.id)!.threadId);
     });
 
     it('computes remainingCount against a still-pending sibling sharing dispatchGroupId', async () => {
@@ -1606,7 +1609,12 @@ describe('agents/task-execution', () => {
       expect(store.getTask(entry.task.id)!.status).to.equal('cancelled');
       const markers = completionMarkers('parent-d');
       expect(markers).to.have.length(1);
-      expect((markers[0]!.payload as Record<string, unknown>).outcome).to.equal('cancelled');
+      const payload = markers[0]!.payload as Record<string, unknown>;
+      expect(payload.outcome).to.equal('cancelled');
+      // cancelled is delivered with no summary (deliverSubAgentCompletion's
+      // 3rd arg omitted) — confirms runThreadId still threads through as
+      // the 4th arg regardless.
+      expect(payload.runThreadId).to.equal(store.getQueueEntry(entry.id)!.threadId);
     });
 
     it("does not write a sub_agent_marker for an ordinary origin='user' task", async () => {
