@@ -196,8 +196,11 @@ export function buildRunKickoff(input: RunKickoffInput): string {
       'Handoff notes from the previous run — treat this as something you need to act on ' +
         'or verify, not just background:',
       `"${input.handoffNotes}"`,
-      "If that doesn't tell you everything you need, call read_task_notes() for the full " +
-        'Task File — goal, notes, and outcome across every run.',
+      'Decide this now too, before doing anything else: does this note already give you ' +
+        "something you can act on directly, or does it leave out what you'd need — like " +
+        "exactly where or what to change? If it's actionable as written, act on it " +
+        "directly. If it doesn't, call read_task_notes() now for the full Task File — " +
+        'goal, notes, and outcome across every run — instead of guessing at what it left out.',
     );
   }
 

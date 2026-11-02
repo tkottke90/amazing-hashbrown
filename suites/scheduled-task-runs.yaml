@@ -197,7 +197,7 @@ scenarios:
 
           Handoff notes from the previous run — treat this as something you need to act on or verify, not just background:
           "The comparator's off-by-one bug is still unfixed — subtract 1 from the index in src/audit.js's severity comparison before comparing counts."
-          If that doesn't tell you everything you need, call read_task_notes() for the full Task File — goal, notes, and outcome across every run.
+          Decide this now too, before doing anything else: does this note already give you something you can act on directly, or does it leave out what you'd need — like exactly where or what to change? If it's actionable as written, act on it directly. If it doesn't, call read_task_notes() now for the full Task File — goal, notes, and outcome across every run — instead of guessing at what it left out.
       - tool: shell_exec
         args: { command: 'cat src/audit.js' }
         result:
@@ -213,10 +213,12 @@ scenarios:
     purpose: >
       Held-out counterpart to str-006. The Handoff Note names a real,
       unresolved problem but deliberately withholds the detail needed to
-      act on it ("see this run's notes"), so the agent must call
-      read_task_notes for the full Task File rather than guess at what the
-      fix was — the same escalation str-001 already verifies for a vague
-      previous-run summary.
+      act on it, so the agent must call read_task_notes for the full Task
+      File rather than guess at what the fix was — the same escalation
+      str-001 already verifies for a vague previous-run summary. Wording is
+      deliberately kept free of "run"/"transcript" vocabulary (see #383
+      review notes) so the agent doesn't conflate this with the separate
+      read_task_run escalation above it.
     type: tool-call
     input: |
       Begin work on this task now: Weekly dependency audit.
@@ -229,6 +231,6 @@ scenarios:
       Earlier runs: #1 1d9e8b7a-0c3f-4e21-8b6a-7a5c4d3e2f10 (done)
 
       Handoff notes from the previous run — treat this as something you need to act on or verify, not just background:
-      "Found a real bug in the comparator during the last run that still needs fixing — see this run's notes for exactly what and where."
-      If that doesn't tell you everything you need, call read_task_notes() for the full Task File — goal, notes, and outcome across every run.
+      "There's a real, unfixed bug in the comparator — the specifics are written down for this task but not repeated here."
+      Decide this now too, before doing anything else: does this note already give you something you can act on directly, or does it leave out what you'd need — like exactly where or what to change? If it's actionable as written, act on it directly. If it doesn't, call read_task_notes() now for the full Task File — goal, notes, and outcome across every run — instead of guessing at what it left out.
     tool: read_task_notes
