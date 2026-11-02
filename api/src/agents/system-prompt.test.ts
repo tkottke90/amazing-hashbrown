@@ -213,14 +213,14 @@ describe('agents/system-prompt', () => {
       expect(result).to.include(
         'Don\'t let "the next single tool call is obvious" talk you out of this. wiki_locate being the\n' +
           'obvious first step toward a wiki question, or list_tasks being the obvious first step toward a\n' +
-          'failed task, doesn\'t mean the overall path is clear — it only means the first step is.',
+          "failed task, doesn't mean the overall path is clear — it only means the first step is.",
       );
     });
 
     it('tells the agent to state an unresolved ambiguity inside goal rather than asking which item the user means', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        'The same goes for not knowing exactly which page, task, or record the user means — don\'t\n' +
+        "The same goes for not knowing exactly which page, task, or record the user means — don't\n" +
           'call ask_user to narrow it down first; state the ambiguity inside goal itself ("identify which\n' +
           'task failed and why") and let the sub-agent resolve it.',
       );
