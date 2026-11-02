@@ -413,6 +413,22 @@ describe('routes/v1/tasks-board.handlers', () => {
         failedRunStreaks: 1,
       });
     });
+
+    it(`never lists or boards a Sub-Agent Task, even alongside ordinary tasks ${TestTypes.UNIT}`, () => {
+      queued('ordinary');
+      store.createSubAgentTask({
+        role: 'researcher',
+        goal: 'dispatched goal',
+        parentThreadId: 'parent-thread-1',
+        dispatchGroupId: 'group-1',
+      });
+
+      const listed = store.listTasks();
+      expect(listed.map((t) => t.origin)).to.deep.equal(['user']);
+
+      const boards = withBoards(store, threads, listed);
+      expect(boards).to.have.length(1);
+    });
   });
 
   describe('archiveTaskHandler / unarchiveTaskHandler', () => {

@@ -390,6 +390,20 @@ _Avoid_: Sub-agent profile, agent persona
 The one Role `spawn_sub_agent` dispatches to when the calling model supplies an unknown or empty `role`, instead of erroring. The system never allows zero Roles to exist, so a Default Role can always be resolved — see ADR-0050 and ADR-0051.
 _Avoid_: Fallback role, catch-all role
 
+# Sub-Agent Dispatch
+
+How `spawn_sub_agent` creates and reports on delegated work, and why a Sub-Agent Task behaves differently from a Task a user creates directly.
+
+## Language
+
+**Sub-Agent Task**:
+A Task created by `spawn_sub_agent` — identified not by `origin: 'agent'` alone (another mechanism, the after-agent pipeline's Placement Review Task, also sets that for provenance/tracking and is meant to surface to a human like any other Task) but by `origin: 'agent'` together with a non-null `parentThreadId`/`dispatchGroupId`/`role`, which only a real dispatch ever sets. Executed through the same Task Run machinery as any other Task but structurally unable to reach a human — `ask_user`, `hand_off_task`, and `complete_task` are absent from its Run's tool list by default, same as `spawn_sub_agent` itself — so it is always dispatched and reported on strictly agent-to-agent, like an assignment to an intern who reports back to the agent that sent it, never to the user directly. Never appears on the Task board/drawer and never gets a Task File.
+_Avoid_: Sub-agent thread, delegated task, background task, any origin: 'agent' Task (too broad — see above)
+
+**Dispatch**:
+One call to `spawn_sub_agent` — creates one or more Sub-Agent Tasks (several when the calling model's single turn issues several parallel calls, correlated by a shared `dispatchGroupId`) and returns immediately, without awaiting any of their Runs.
+_Avoid_: Spawn, invocation
+
 # Live SSE Events
 
 How a running turn's live events reach a client and, for some event types, also become durable history — the one registered writer every live turn's events flow through, and the two event kinds that must leave a record behind.

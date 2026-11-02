@@ -18,6 +18,7 @@ import {
   recordWikiUpdate,
   recordResourceCard,
   recordTaskRunMarker,
+  recordSubAgentMarker,
   mirrorPendingTaskPrompts,
   linkedPromptCopy,
 } from './thread-message-writer.js';
@@ -535,6 +536,50 @@ describe('agents/thread-message-writer', () => {
       recordTaskRunMarker(store, 't1', 'm2', 'task-1', 'Nightly backup', 'start');
       const msg = store.getMessage('t1', 'm2')!;
       expect(msg.payload).to.not.have.property('summary');
+    });
+  });
+
+  describe('recordSubAgentMarker', () => {
+    let store: ThreadStore;
+    let dir: string;
+
+    before(() => {
+      ({ store, dir } = makeStore());
+      store.upsertThreadOnFirstMessage('t1', 'Hello');
+    });
+    after(() => {
+      store.close();
+      rmSync(dir, { recursive: true });
+    });
+
+    it('carries runThreadId through to the payload on a completion marker when one is given', () => {
+      recordSubAgentMarker(store, 't1', 'm1', {
+        taskId: 'task-1',
+        role: 'researcher',
+        phase: 'completion',
+        outcome: 'done',
+        remainingCount: 1,
+        runThreadId: 'run-1',
+      });
+      const msg = store.getMessage('t1', 'm1')!;
+      expect(msg.payload).to.deep.equal({
+        taskId: 'task-1',
+        role: 'researcher',
+        phase: 'completion',
+        outcome: 'done',
+        remainingCount: 1,
+        runThreadId: 'run-1',
+      });
+    });
+
+    it('omits runThreadId entirely (not just falsy) on a dispatch marker, since the run has no thread yet', () => {
+      recordSubAgentMarker(store, 't1', 'm2', {
+        taskId: 'task-1',
+        role: 'researcher',
+        phase: 'dispatch',
+      });
+      const msg = store.getMessage('t1', 'm2')!;
+      expect(msg.payload).to.not.have.property('runThreadId');
     });
   });
 

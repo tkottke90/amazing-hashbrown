@@ -41,6 +41,7 @@ export async function deliverSubAgentCompletion(
   task: Task,
   outcome: SubAgentOutcome,
   summary?: string,
+  runThreadId?: string,
 ): Promise<void> {
   if (!task.parentThreadId || !task.dispatchGroupId) {
     logger.error('sub-agent-notification: origin=agent task missing parent/dispatch group', {
@@ -64,6 +65,7 @@ export async function deliverSubAgentCompletion(
       phase: 'completion',
       outcome,
       remainingCount,
+      ...(runThreadId ? { runThreadId } : {}),
     });
 
     const resolved = await resolveThreadAgent(parentThreadId);
