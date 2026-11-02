@@ -6,6 +6,8 @@ export {
   type ChatErrorCategory,
   UserMessageAttachmentSchema,
   type UserMessageAttachment,
+  UserMessageWikiReferenceSchema,
+  type UserMessageWikiReference,
 } from './sse-events.js';
 export {
   AppBroadcastEventSchema,

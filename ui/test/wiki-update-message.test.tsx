@@ -64,4 +64,56 @@ describe('WikiUpdateMessage', () => {
     render(<WikiUpdateMessage message={wikiUpdateMessage({ path: undefined })} />);
     expect(screen.queryByTestId('wiki-update-open-link')).not.toBeInTheDocument();
   });
+
+  it('does not render the "Add to Message" button when onStageWikiReference is omitted', () => {
+    render(<WikiUpdateMessage message={wikiUpdateMessage()} />);
+    expect(screen.queryByTestId('wiki-update-add-to-message')).not.toBeInTheDocument();
+  });
+
+  it('does not render the "Add to Message" button when path is absent, even with onStageWikiReference set', () => {
+    render(
+      <WikiUpdateMessage
+        message={wikiUpdateMessage({ path: undefined })}
+        onStageWikiReference={jest.fn()}
+      />,
+    );
+    expect(screen.queryByTestId('wiki-update-add-to-message')).not.toBeInTheDocument();
+  });
+
+  it('calls onStageWikiReference with the card\'s own {wikiId, path, title} when "Add to Message" is clicked', () => {
+    const onStageWikiReference = jest.fn();
+    render(
+      <WikiUpdateMessage
+        message={wikiUpdateMessage({
+          wikiName: 'homelab',
+          path: 'entities/router.md',
+          pageTitle: 'Router',
+        })}
+        onStageWikiReference={onStageWikiReference}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('wiki-update-add-to-message'));
+    expect(onStageWikiReference).toHaveBeenCalledWith({
+      wikiId: 'homelab',
+      path: 'entities/router.md',
+      title: 'Router',
+    });
+  });
+
+  it('renders a disabled "Added" state instead of "Add to Message" when isStaged is true', () => {
+    const onStageWikiReference = jest.fn();
+    render(
+      <WikiUpdateMessage
+        message={wikiUpdateMessage()}
+        onStageWikiReference={onStageWikiReference}
+        isStaged
+      />,
+    );
+    const button = screen.getByTestId('wiki-update-add-to-message');
+    expect(button).toBeDisabled();
+    expect(screen.getByText('Added')).toBeInTheDocument();
+    expect(screen.queryByText('Add to Message')).not.toBeInTheDocument();
+    fireEvent.click(button);
+    expect(onStageWikiReference).not.toHaveBeenCalled();
+  });
 });

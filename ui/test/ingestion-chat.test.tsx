@@ -52,7 +52,7 @@ describe('IngestionChat', () => {
     expect(sendButton).not.toBeDisabled();
 
     fireEvent.click(sendButton);
-    expect(mockSendWikiMessage).toHaveBeenCalledWith('add this', []);
+    expect(mockSendWikiMessage).toHaveBeenCalledWith('add this', [], []);
     expect(textarea.value).toBe('');
   });
 });

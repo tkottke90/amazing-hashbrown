@@ -2,28 +2,46 @@ import { useState } from 'preact/hooks';
 import { fireEvent, render, screen, waitFor } from '@testing-library/preact';
 import { act } from 'preact/test-utils';
 
-import { ChatInput, ChatInputChip, type StagedAttachment } from '@/components/chat-input';
+import {
+  ChatInput,
+  ChatInputChip,
+  stageWikiReference,
+  type StagedAttachment,
+  type StagedWikiReference,
+} from '@/components/chat-input';
 import { MODEL_SUBMENU_CLOSE_GRACE_MS } from '@/components/provider-model-picker';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { showToast } from '@/lib/toast';
+
+jest.mock('@/lib/toast', () => ({ showToast: jest.fn() }));
 
 function ControlledChatInput(props: Partial<Parameters<typeof ChatInput>[0]> = {}) {
   const [value, setValue] = useState(props.value ?? '');
   const [attachments, setAttachments] = useState<StagedAttachment[]>(props.attachments ?? []);
+  const [wikiReferences, setWikiReferences] = useState<StagedWikiReference[]>(
+    props.wikiReferences ?? [],
+  );
   return (
     <ChatInput
       value={value}
       onValueChange={setValue}
       onSend={() => {}}
       {...props}
-      // Attachments stay internally controlled even when a test passes its
-      // own onAttachmentsChange spy — that spy is for assertions, not a
-      // replacement for the state that actually drives the chip row's
-      // render, same reason `value`'s own internal setValue above is never
-      // overridden by a caller-supplied onValueChange.
+      // Attachments/wikiReferences stay internally controlled even when a
+      // test passes its own onAttachmentsChange/onWikiReferencesChange spy —
+      // that spy is for assertions, not a replacement for the state that
+      // actually drives the chip row's render, same reason `value`'s own
+      // internal setValue above is never overridden by a caller-supplied
+      // onValueChange.
       attachments={props.attachments ?? attachments}
       onAttachmentsChange={(next) => {
         setAttachments(next);
         props.onAttachmentsChange?.(next);
+      }}
+      wikiReferences={props.wikiReferences ?? wikiReferences}
+      onWikiReferencesChange={(next) => {
+        setWikiReferences(next);
+        props.onWikiReferencesChange?.(next);
       }}
     />
   );
@@ -493,6 +511,8 @@ describe('ChatInput — file attachment', () => {
         threadId="t1"
         attachments={[uploaded]}
         onAttachmentsChange={() => {}}
+        wikiReferences={[]}
+        onWikiReferencesChange={() => {}}
       />,
     );
 
@@ -509,10 +529,119 @@ describe('ChatInput — file attachment', () => {
         threadId="t1"
         attachments={[]}
         onAttachmentsChange={() => {}}
+        wikiReferences={[]}
+        onWikiReferencesChange={() => {}}
       />,
     );
 
     expect(screen.queryByText('notes.txt')).not.toBeInTheDocument();
+  });
+});
+
+describe('ChatInput — wiki references', () => {
+  afterEach(() => {
+    (showToast as jest.Mock).mockClear();
+  });
+
+  function ref(overrides: Partial<StagedWikiReference> = {}): StagedWikiReference {
+    return { wikiId: 'homelab', path: 'entities/router.md', title: 'Router', ...overrides };
+  }
+
+  it('renders a chip per staged wiki reference, with its title', () => {
+    render(<ControlledChatInput wikiReferences={[ref()]} />);
+    expect(screen.getByText('Router')).toBeInTheDocument();
+  });
+
+  it('removing a wiki reference chip calls onWikiReferencesChange with it filtered out', () => {
+    const onWikiReferencesChange = jest.fn();
+    render(
+      <ControlledChatInput
+        wikiReferences={[ref(), ref({ path: 'entities/switch.md', title: 'Switch' })]}
+        onWikiReferencesChange={onWikiReferencesChange}
+      />,
+    );
+
+    const routerChip = screen.getByText('Router').closest('[data-slot="chat-input-chip"]')!;
+    fireEvent.click(routerChip.querySelector('button')!);
+
+    expect(onWikiReferencesChange).toHaveBeenCalledWith([
+      ref({ path: 'entities/switch.md', title: 'Switch' }),
+    ]);
+  });
+
+  it('stageWikiReference appends a new reference under both caps', () => {
+    const result = stageWikiReference([], 0, ref());
+    expect(result).toEqual([ref()]);
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('stageWikiReference no-ops and toasts an error when the same page is already staged', () => {
+    const result = stageWikiReference([ref()], 0, ref());
+    expect(result).toBe(null);
+    expect(showToast).toHaveBeenCalledWith('error', 'Already added to message');
+  });
+
+  it('stageWikiReference no-ops and toasts when the wiki-reference sub-limit (2) is reached', () => {
+    const current = [ref(), ref({ path: 'entities/switch.md', title: 'Switch' })];
+    const result = stageWikiReference(current, 0, ref({ path: 'entities/ap.md', title: 'AP' }));
+    expect(result).toBe(null);
+    expect(showToast).toHaveBeenCalledWith('error', 'Only 2 wiki pages allowed per message');
+  });
+
+  it('stageWikiReference no-ops and toasts when the pooled cap (4) would be exceeded, even under the sub-limit', () => {
+    // 1 wiki reference already staged + 3 attachments = 4 already filled.
+    const result = stageWikiReference([ref()], 3, ref({ path: 'entities/switch.md' }));
+    expect(result).toBe(null);
+    expect(showToast).toHaveBeenCalledWith(
+      'error',
+      'Only 4 attachments/wiki references allowed per message',
+    );
+  });
+});
+
+describe('ChatInput — pooled attachment/wiki-reference cap', () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("stageFiles' remaining slots account for already-staged wiki references, not just attachments", async () => {
+    global.fetch = jest.fn(async (_url: unknown, init?: RequestInit) => {
+      const body = init?.body as FormData;
+      const file = body.get('file') as File;
+      return {
+        ok: true,
+        json: async () => ({
+          id: `artifact-${file.name}`,
+          mimeType: file.type,
+          displayFilename: file.name,
+          requiresVision: false,
+        }),
+      };
+    }) as unknown as typeof fetch;
+
+    render(
+      <ControlledChatInput
+        threadId="t1"
+        wikiReferences={[
+          { wikiId: 'homelab', path: 'entities/router.md', title: 'Router' },
+          { wikiId: 'homelab', path: 'entities/switch.md', title: 'Switch' },
+        ]}
+      />,
+    );
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireFileInputChange(input, [
+      new File(['a'], 'one.txt', { type: 'text/plain' }),
+      new File(['b'], 'two.txt', { type: 'text/plain' }),
+      new File(['c'], 'three.txt', { type: 'text/plain' }),
+    ]);
+
+    await waitFor(() => expect(screen.getByText('one.txt')).toBeInTheDocument());
+    expect(screen.getByText('two.txt')).toBeInTheDocument();
+    expect(screen.queryByText('three.txt')).not.toBeInTheDocument();
+    expect(screen.getByText(/only 4 attachments allowed/i)).toBeInTheDocument();
   });
 });
 

@@ -63,6 +63,61 @@ describe('routes/v1/chat.route — POST /:threadId/stop', () => {
   });
 });
 
+// Covers the pooled attachment/wiki-reference cap on a fresh message — see
+// docs/superpowers/specs/2026-11-01-wiki-reference-chat-staging-design.md.
+// Wiki References count *inside* the existing 4-item cap, not in a separate
+// pool on top of it, in addition to their own 2-item sub-limit.
+describe('routes/v1/chat.route — wiki reference cap validation', () => {
+  let baseUrl: string;
+  let close: () => Promise<void>;
+
+  before(async () => {
+    ({ baseUrl, close } = await startTestServer(chatRouter, '/api/v1/chat'));
+  });
+
+  after(async () => {
+    await close();
+  });
+
+  it('rejects more than 2 wiki references with 400, independent of the shared pool', async () => {
+    const res = await fetch(`${baseUrl}/${randomUUID()}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        content: 'hello',
+        wikiReferences: [
+          { wikiId: 'homelab', path: 'a.md', title: 'A' },
+          { wikiId: 'homelab', path: 'b.md', title: 'B' },
+          { wikiId: 'homelab', path: 'c.md', title: 'C' },
+        ],
+      }),
+    });
+    expect(res.status).to.equal(400);
+    expect(await res.json()).to.deep.equal({
+      error: 'A message may carry at most 2 wiki references',
+    });
+  });
+
+  it('rejects when attachments and wiki references individually fit their own sub-limits but exceed the shared pool of 4', async () => {
+    const res = await fetch(`${baseUrl}/${randomUUID()}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        content: 'hello',
+        attachmentIds: ['a1', 'a2', 'a3'],
+        wikiReferences: [
+          { wikiId: 'homelab', path: 'a.md', title: 'A' },
+          { wikiId: 'homelab', path: 'b.md', title: 'B' },
+        ],
+      }),
+    });
+    expect(res.status).to.equal(400);
+    expect(await res.json()).to.deep.equal({
+      error: 'A message may carry at most 4 attachments/wiki references combined',
+    });
+  });
+});
+
 // Covers the task-run half of the chat routes — see
 // docs/superpowers/specs/2026-09-26-cron-task-triggers-design.md §4. An
 // Inbox task run's thread is a type='task' thread opened in the normal chat

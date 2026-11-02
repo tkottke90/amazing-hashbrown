@@ -2,7 +2,8 @@ import type { ComponentChildren, JSX } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
 import { flushSync } from 'preact/compat';
-import { Plus, Send, Square, X, AlertTriangle, Loader2 } from 'lucide-preact';
+import { Plus, Send, Square, X, AlertTriangle, Loader2, BookOpen } from 'lucide-preact';
+import { showToast } from '@/lib/toast';
 
 import { cn, randomUUID } from '@/lib/utils';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -49,6 +50,51 @@ export type StagedAttachment = UploadedArtifact & { previewUrl?: string };
 // size that doesn't need to scroll — see the design spec's "Staging
 // behavior" section.
 export const MAX_ATTACHMENTS_PER_MESSAGE = 4;
+
+// A Wiki Reference staged on the composer — see GLOSSARY.md's "Wiki
+// References in Chat" section and
+// docs/superpowers/specs/2026-11-01-wiki-reference-chat-staging-design.md.
+// Canonical definition lives here (alongside StagedAttachment); other
+// components (e.g. wiki-update-message.tsx) import it from this module.
+export interface StagedWikiReference {
+  wikiId: string;
+  path: string;
+  title: string;
+}
+
+// Sub-limit on top of the shared MAX_ATTACHMENTS_PER_MESSAGE pool — a Wiki
+// Reference counts *inside* that shared cap, it doesn't add a separate pool
+// on top of it (see the design spec's "Caps are pooled, not independent").
+export const MAX_WIKI_REFERENCES_PER_MESSAGE = 2;
+
+// The one staging decision both the "Add to Message" button on a
+// WikiUpdateMessage card and (in principle) any other future trigger call
+// through, so the dedupe/cap rule lives in exactly one place. Returns the
+// next array to pass to onWikiReferencesChange, or null (having already
+// shown a toast) when the reference is already staged or either cap would
+// be exceeded.
+export function stageWikiReference(
+  current: StagedWikiReference[],
+  attachmentsCount: number,
+  ref: StagedWikiReference,
+): StagedWikiReference[] | null {
+  if (current.some((r) => r.wikiId === ref.wikiId && r.path === ref.path)) {
+    showToast('error', 'Already added to message');
+    return null;
+  }
+  if (current.length >= MAX_WIKI_REFERENCES_PER_MESSAGE) {
+    showToast('error', `Only ${MAX_WIKI_REFERENCES_PER_MESSAGE} wiki pages allowed per message`);
+    return null;
+  }
+  if (attachmentsCount + current.length >= MAX_ATTACHMENTS_PER_MESSAGE) {
+    showToast(
+      'error',
+      `Only ${MAX_ATTACHMENTS_PER_MESSAGE} attachments/wiki references allowed per message`,
+    );
+    return null;
+  }
+  return [...current, ref];
+}
 
 export interface ChatInputProps {
   /**
@@ -99,6 +145,17 @@ export interface ChatInputProps {
    * expected to store this value and pass it back as `attachments`.
    */
   onAttachmentsChange: (attachments: StagedAttachment[]) => void;
+  /**
+   * The currently staged Wiki References (up to MAX_WIKI_REFERENCES_PER_MESSAGE,
+   * pooled with `attachments` under the shared MAX_ATTACHMENTS_PER_MESSAGE
+   * cap) — same controlled pattern as `attachments`. Staged from outside
+   * ChatInput (a WikiUpdateMessage card's "Add to Message" button, via
+   * stageWikiReference), not from any menu inside ChatInput itself; this
+   * component only renders the chips and handles removal.
+   */
+  wikiReferences: StagedWikiReference[];
+  /** Fires with the filtered array when a staged Wiki Reference's chip is removed. */
+  onWikiReferencesChange: (refs: StagedWikiReference[]) => void;
   /**
    * Scopes the slash-command menu to a workspace: its own .agents/skills are
    * listed (badged "repo") alongside the global skills. Omit for the global
@@ -182,6 +239,8 @@ export function ChatInput({
   threadId,
   attachments,
   onAttachmentsChange,
+  wikiReferences,
+  onWikiReferencesChange,
   workspaceId,
   autoApproveShell,
   onToggleAutoApproveShell,
@@ -238,6 +297,12 @@ export function ChatInput({
   const attachmentsRef = useRef(attachments);
   attachmentsRef.current = attachments;
 
+  // Mirrors the controlled `wikiReferences` prop the same way attachmentsRef
+  // mirrors `attachments` — stageFiles below reads it to compute the shared
+  // pooled cap without closing over a stale snapshot.
+  const wikiReferencesRef = useRef(wikiReferences);
+  wikiReferencesRef.current = wikiReferences;
+
   // Appends one file's upload to the staged list — never replaces. Multiple
   // files land here one call per file (see stageFiles below), each tracked
   // independently in uploadsInFlight so a slow upload doesn't block the
@@ -279,7 +344,10 @@ export function ChatInput({
   // count is rejected with a count-naming error instead of silently dropped.
   function stageFiles(files: File[]) {
     const remainingSlots =
-      MAX_ATTACHMENTS_PER_MESSAGE - attachmentsRef.current.length - uploadsInFlight.value.length;
+      MAX_ATTACHMENTS_PER_MESSAGE -
+      attachmentsRef.current.length -
+      uploadsInFlight.value.length -
+      wikiReferencesRef.current.length;
     const toUpload = files.slice(0, Math.max(0, remainingSlots));
     const skipped = files.length - toUpload.length;
     if (skipped > 0) {
@@ -309,6 +377,12 @@ export function ChatInput({
     // local state either way, per the design's error-handling section;
     // a failed delete just leaves an orphan for the GC sweep.
     deleteArtifact(current.id).catch(() => {});
+  }
+
+  function handleRemoveWikiReference(ref: StagedWikiReference) {
+    onWikiReferencesChange(
+      wikiReferencesRef.current.filter((r) => !(r.wikiId === ref.wikiId && r.path === ref.path)),
+    );
   }
 
   function handleDragOver(event: JSX.TargetedDragEvent<HTMLDivElement>) {
@@ -705,6 +779,7 @@ export function ChatInput({
       >
         {header ||
         attachments.length > 0 ||
+        wikiReferences.length > 0 ||
         uploadsInFlight.value.length > 0 ||
         attachmentErrors.value.length > 0 ? (
           <div
@@ -716,6 +791,15 @@ export function ChatInput({
             {attachments.map((a) => (
               <ChatInputChip key={a.id} onRemove={() => handleRemoveAttachment(a.id)}>
                 {a.displayFilename}
+              </ChatInputChip>
+            ))}
+            {wikiReferences.map((r) => (
+              <ChatInputChip
+                key={`${r.wikiId}:${r.path}`}
+                onRemove={() => handleRemoveWikiReference(r)}
+              >
+                <BookOpen className="mr-1 inline size-3" />
+                {r.title}
               </ChatInputChip>
             ))}
             {uploadsInFlight.value.map((u) => (

@@ -22,6 +22,7 @@ import { buildWikiIngestionSystemPrompt } from './wiki-ingestion-system-prompt.j
 import { contentBlockSanitizerMiddleware } from './content-block-sanitizer.middleware.js';
 import { createRecursionGuardMiddleware } from './recursion-guard.middleware.js';
 import { attachmentAwarenessMiddleware } from './attachment-awareness.middleware.js';
+import { wikiReferenceExpansionMiddleware } from './wiki-reference-expansion.middleware.js';
 import { binaryContentFetchMiddleware } from './binary-content-fetch.middleware.js';
 import { env } from '../config/env.js';
 
@@ -69,6 +70,7 @@ async function buildWikiIngestionAgent(provider?: string, model?: string) {
         escalationMode: 'interrupt',
       }),
       attachmentAwarenessMiddleware,
+      wikiReferenceExpansionMiddleware,
       binaryContentFetchMiddleware,
       createContextWindowMiddleware(env.chat?.contextWindow),
       ambientContextMiddleware,

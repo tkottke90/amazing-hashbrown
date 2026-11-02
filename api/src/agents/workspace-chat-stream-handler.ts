@@ -5,6 +5,7 @@ import type { Response } from 'express';
 import { Command } from '@langchain/langgraph';
 import { logger, serializeError } from '../config/logger.js';
 import { cloneEmptyTaskState } from '../services/task-file.js';
+import type { UserMessageWikiReference } from '@tkottke90/llm-common-types/chat';
 import { getWorkspaceChatAgent, type WorkspaceChatContext } from './chat-agent.js';
 import { setActiveSseWriter, getActiveSseWriter, type SseWriter } from './active-sse-writer.js';
 import { endThreadTurn } from './pending-thread-turns.js';
@@ -145,6 +146,7 @@ export async function streamWorkspaceChatToSse(
   model?: string,
   afterAgent?: boolean,
   attachmentIds?: string[],
+  wikiReferences?: UserMessageWikiReference[],
   deps: WorkspaceChatStreamDeps = {},
 ): Promise<void> {
   const resolveWorkspaceChatAgent = deps.getWorkspaceChatAgent ?? getWorkspaceChatAgent;
@@ -208,6 +210,7 @@ export async function streamWorkspaceChatToSse(
       thread_id: threadId,
       workspaceId: workspace.id,
       attachmentInjections,
+      wikiReferences,
     },
   };
 
@@ -218,6 +221,7 @@ export async function streamWorkspaceChatToSse(
     content,
     turnSentAt,
     turnAttachments,
+    wikiReferences,
   );
   for (const record of attachmentRecords) await markArtifactReferenced(record.id);
 

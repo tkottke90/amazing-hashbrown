@@ -2,6 +2,7 @@ import type {
   HitlKind,
   ChatErrorCategory,
   UserMessageAttachment,
+  UserMessageWikiReference,
 } from '@tkottke90/llm-common-types/chat';
 import type { TriggerSource } from '@/services/tasks-api';
 
@@ -31,6 +32,11 @@ export type ThreadMessage =
       // `previewUrl` is UI-local only (chat-input.tsx's stageFile) — a blob:
       // URL for the just-picked file, never part of the server's payload.
       attachments?: (UserMessageAttachment & { previewUrl?: string })[];
+      // Absent for a message persisted before this field existed. Present
+      // (as an array, up to 2 items) from the moment the optimistic local
+      // bubble is built — no `previewUrl`-equivalent here since a Wiki
+      // Reference carries no binary preview, only a {wikiId, path, title}.
+      wikiReferences?: UserMessageWikiReference[];
     }
   | {
       kind: 'assistant';

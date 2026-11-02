@@ -7,6 +7,7 @@ import type {
   ChatSSEEvent,
   ChatErrorCategory,
   UserMessageAttachment,
+  UserMessageWikiReference,
 } from '@tkottke90/llm-common-types/chat';
 import { classifyChatError } from './error-classification.js';
 import { getChatAgent, type ChatAgent } from './chat-agent.js';
@@ -892,6 +893,7 @@ export async function streamChatToSse(
   model?: string,
   afterAgent?: boolean,
   attachmentIds?: string[],
+  wikiReferences?: UserMessageWikiReference[],
   deps: ChatStreamDeps = {},
 ): Promise<void> {
   if (refuseIfThreadBusy(res, threadId)) return;
@@ -925,7 +927,7 @@ export async function streamChatToSse(
     );
   const turnAttachments = attachmentRecords.length ? attachmentRecords : undefined;
   const config = {
-    configurable: { thread_id: threadId, attachmentInjections },
+    configurable: { thread_id: threadId, attachmentInjections, wikiReferences },
   };
 
   const userSeq = recordUserMessage(
@@ -935,6 +937,7 @@ export async function streamChatToSse(
     content,
     turnSentAt,
     turnAttachments,
+    wikiReferences,
   );
   // Regardless of whether an attachment ended up included or excluded —
   // an excluded attachment was still resolved by this send, not

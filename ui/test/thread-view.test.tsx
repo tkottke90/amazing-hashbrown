@@ -66,7 +66,7 @@ describe('ThreadView', () => {
     expect(sendButton).not.toBeDisabled();
 
     fireEvent.click(sendButton);
-    expect(thread.sendMessage).toHaveBeenCalledWith('hello thread', []);
+    expect(thread.sendMessage).toHaveBeenCalledWith('hello thread', [], []);
     expect(textarea.value).toBe('');
   });
 

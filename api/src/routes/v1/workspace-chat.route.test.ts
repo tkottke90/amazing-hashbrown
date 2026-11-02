@@ -5,6 +5,7 @@ import { describe, it, before, after, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { startTestServer } from '@/tests/utilities/http-test-server.js';
+import { randomUUID } from 'node:crypto';
 import { workspaceChatRouter } from './workspace-chat.route.js';
 import {
   bootWorkspaceStore,
@@ -90,6 +91,66 @@ describe('routes/v1/workspace-chat.route — POST /:threadId/stop', () => {
     expect(res.status).to.equal(202);
     expect(await res.json()).to.deep.equal({ ok: true });
     expect(controller.signal.aborted).to.equal(true);
+  });
+});
+
+// Covers the pooled attachment/wiki-reference cap on a fresh message — see
+// docs/superpowers/specs/2026-11-01-wiki-reference-chat-staging-design.md.
+// Validation happens before resolveWorkspaceForThread, so no workspace
+// needs to exist for these — a 400 fires regardless.
+describe('routes/v1/workspace-chat.route — wiki reference cap validation', () => {
+  const BASE_PATH = '/api/v1/workspaces/:id/chat';
+  let baseUrl: string;
+  let close: () => Promise<void>;
+
+  before(async () => {
+    ({ baseUrl, close } = await startTestServer(workspaceChatRouter, BASE_PATH));
+  });
+
+  after(async () => {
+    await close();
+  });
+
+  function postUrl(workspaceId: string, tid: string): string {
+    return baseUrl.replace(':id', workspaceId) + `/${tid}`;
+  }
+
+  it('rejects more than 2 wiki references with 400, independent of the shared pool', async () => {
+    const res = await fetch(postUrl('any-workspace', randomUUID()), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        content: 'hello',
+        wikiReferences: [
+          { wikiId: 'homelab', path: 'a.md', title: 'A' },
+          { wikiId: 'homelab', path: 'b.md', title: 'B' },
+          { wikiId: 'homelab', path: 'c.md', title: 'C' },
+        ],
+      }),
+    });
+    expect(res.status).to.equal(400);
+    expect(await res.json()).to.deep.equal({
+      error: 'A message may carry at most 2 wiki references',
+    });
+  });
+
+  it('rejects when attachments and wiki references individually fit their own sub-limits but exceed the shared pool of 4', async () => {
+    const res = await fetch(postUrl('any-workspace', randomUUID()), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        content: 'hello',
+        attachmentIds: ['a1', 'a2', 'a3'],
+        wikiReferences: [
+          { wikiId: 'homelab', path: 'a.md', title: 'A' },
+          { wikiId: 'homelab', path: 'b.md', title: 'B' },
+        ],
+      }),
+    });
+    expect(res.status).to.equal(400);
+    expect(await res.json()).to.deep.equal({
+      error: 'A message may carry at most 4 attachments/wiki references combined',
+    });
   });
 });
 

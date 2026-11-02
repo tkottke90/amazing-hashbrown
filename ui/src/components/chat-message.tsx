@@ -1,10 +1,14 @@
 import type { ComponentChildren } from 'preact';
-import { Copy, GitFork, Save } from 'lucide-preact';
-import type { UserMessageAttachment } from '@tkottke90/llm-common-types/chat';
+import { Copy, GitFork, Save, BookOpen } from 'lucide-preact';
+import type {
+  UserMessageAttachment,
+  UserMessageWikiReference,
+} from '@tkottke90/llm-common-types/chat';
 
 import { cn } from '@/lib/utils';
 import { Markdown } from '@/components/markdown';
 import { AttachmentPreviewModal } from '@/components/attachment-preview-modal';
+import { ChatInputChip } from '@/components/chat-input';
 
 function formatTime(date: Date): string {
   const diffMs = Date.now() - date.getTime();
@@ -114,6 +118,8 @@ export interface ChatMessageProps {
    * are independent per attachment.
    */
   attachments?: ChatMessageAttachment[];
+  /** Up to 2 staged Wiki References, rendered as non-removable chips above the message body. */
+  wikiReferences?: UserMessageWikiReference[];
 }
 
 const metaClass = 'flex items-center text-xs text-muted-foreground';
@@ -128,6 +134,7 @@ export function ChatMessage({
   showBG = false,
   className,
   attachments,
+  wikiReferences,
 }: ChatMessageProps) {
   return (
     <div
@@ -159,6 +166,16 @@ export function ChatMessage({
                 excluded={a.included === false}
                 exclusionReason={a.exclusionReason}
               />
+            ))}
+          </div>
+        )}
+        {wikiReferences && wikiReferences.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-2">
+            {wikiReferences.map((r) => (
+              <ChatInputChip key={`${r.wikiId}:${r.path}`}>
+                <BookOpen className="mr-1 inline size-3" />
+                {r.title}
+              </ChatInputChip>
             ))}
           </div>
         )}

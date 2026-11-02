@@ -425,3 +425,53 @@ scenarios:
             text: "# Wiki Orientation: user\n## Index (1 page total)\n- entities/work-schedule.md — user's work-from-home schedule",
           }
     tool: wiki_create_page
+
+  - id: wwrite-011-edits-via-staged-wiki-reference
+    name: Agent edits using the exact wikiId/path from a staged Wiki Reference citation
+    purpose: >
+      New for the Wiki Reference Chat Staging feature (see
+      docs/superpowers/specs/2026-11-01-wiki-reference-chat-staging-design.md
+      and docs/adr/0055-wiki-references-resolve-lazily-like-skills-not-attachments.md).
+      wiki-reference-expansion.middleware.ts injects a citation line
+      ("Wiki Reference — Wiki Domain "...", path "...") plus the full page
+      body into the user's message right before the model sees it — a new
+      input shape the model has never been tested against. Confirms the
+      model calls wiki_update_page with the wikiId/path copied verbatim from
+      that citation when asked to edit "this page", rather than calling
+      wiki_search/wiki_locate to re-find it or guessing a different path.
+      The input text below reproduces the middleware's exact assembly
+      (api/src/agents/wiki-reference-expansion.middleware.ts:54,56,82-83)
+      rather than approximating it.
+      A first eval run (model: local, Lemonade, Ornith, Digital Ocean;
+      judge: anthropic) found 2/4 models (local, Digital Ocean) passed
+      cleanly, correctly parsing the citation's wikiId/path and calling
+      wiki_update_page directly — but Lemonade and Ornith both produced
+      pure prose ("I'll read the current page first, then update it...")
+      with no tool call at all, not a wrong-path call. That suggested the
+      citation wasn't signaling clearly enough that its content was
+      already current and didn't need re-verifying via a read first —
+      undermining the feature's whole point ("no tool call or inference
+      required"). The citation line was reworded to say so explicitly
+      ("current content, already up to date — use it directly, no need to
+      re-read the page"); this scenario's input was updated to match. Not
+      yet re-confirmed against a live model run.
+    type: tool-call
+    input: |
+      Can you update this page — the router's IP range changed to 10.0.5.0/24?
+
+      ---
+      Wiki Reference — Wiki Domain "user", path "entities/router.md" (current content, already up to date — use it directly, no need to re-read the page):
+      # Router
+
+      Type: entity
+      Tags: networking
+
+      A router at 10.0.1.1 serving the home network.
+    tool: wiki_update_page
+    argChecks:
+      - path: wikiId
+        match: equals
+        value: user
+      - path: path
+        match: equals
+        value: entities/router.md

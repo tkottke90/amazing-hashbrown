@@ -145,6 +145,59 @@ describe('routes/v1/wiki.route buildMergedGraph', () => {
   });
 });
 
+// Covers the pooled attachment/wiki-reference cap on a fresh message — see
+// docs/superpowers/specs/2026-11-01-wiki-reference-chat-staging-design.md.
+describe('routes/v1/wiki.route — wiki reference cap validation', () => {
+  let baseUrl: string;
+  let close: () => Promise<void>;
+
+  before(async () => {
+    ({ baseUrl, close } = await startTestServer(wikiRouter, '/api/v1/wiki'));
+  });
+
+  after(async () => {
+    await close();
+  });
+
+  it('rejects more than 2 wiki references with 400, independent of the shared pool', async () => {
+    const res = await fetch(`${baseUrl}/chat/${randomUUID()}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        content: 'hello',
+        wikiReferences: [
+          { wikiId: 'homelab', path: 'a.md', title: 'A' },
+          { wikiId: 'homelab', path: 'b.md', title: 'B' },
+          { wikiId: 'homelab', path: 'c.md', title: 'C' },
+        ],
+      }),
+    });
+    expect(res.status).to.equal(400);
+    expect(await res.json()).to.deep.equal({
+      error: 'A message may carry at most 2 wiki references',
+    });
+  });
+
+  it('rejects when attachments and wiki references individually fit their own sub-limits but exceed the shared pool of 4', async () => {
+    const res = await fetch(`${baseUrl}/chat/${randomUUID()}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        content: 'hello',
+        attachmentIds: ['a1', 'a2', 'a3'],
+        wikiReferences: [
+          { wikiId: 'homelab', path: 'a.md', title: 'A' },
+          { wikiId: 'homelab', path: 'b.md', title: 'B' },
+        ],
+      }),
+    });
+    expect(res.status).to.equal(400);
+    expect(await res.json()).to.deep.equal({
+      error: 'A message may carry at most 4 attachments/wiki references combined',
+    });
+  });
+});
+
 // Covers the new POST /chat/:threadId/stop route — see
 // docs/superpowers/specs/2026-09-21-interactive-chat-cancel-design.md. Thin
 // wiring around active-sse-writer.ts's stopTurnResponse(), which already
