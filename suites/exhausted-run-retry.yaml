@@ -82,12 +82,33 @@ scenarios:
       [User] Begin work on this task now: Find why the nightly import job is slow.
       [Agent] Let me pull the full job log to see where time is spent.
       [Tool call] shell_exec: cat logs/nightly-import-2026-11-04.log
-      [Tool call] shell_exec result: [a very large log dump, truncated by the harness — the last visible line reads] ... 02:14:55 processed batch 8831/9000 in 11ms ... 02:41:02 processed batch 8999/9000 in 8200ms ... 02:41:10 processed batch 9000/9000 in 7950ms
+      [Tool call] shell_exec result: (truncated — last lines shown) ... 02:14:55 processed batch 8831/9000 in 11ms ... 02:41:02 processed batch 8999/9000 in 8200ms ... 02:41:10 processed batch 9000/9000 in 7950ms
       [Agent] The last two batches are each taking almost a second each, nearly 1000x slower than the typical 11ms batch — that's the actual slowdown, isolated to the very end of the run.
     rubric: >
-      The response should capture that the slowdown is isolated to the final one or two
-      batches of the import job (batch 8999-9000), not the job as a whole, since that's the
-      specific finding the transcript's last message already extracted. A generic summary like
-      "the log was too large to process and the agent ran out of context" that omits the
-      batch-8999/9000 finding should score low. Exact wording does not matter.
+      Score on three explicit criteria — do not weigh anything beyond them:
+
+      1. The response must identify the slowdown as isolated to batches 8999 and 9000
+      specifically (not the job as a whole, and not vaguely "the final batches" without those
+      numbers) — that's the specific finding the transcript's last message already extracted.
+      A generic summary like "the log was too large to process and the agent ran out of
+      context" that omits this finding should score low.
+
+      2. The response must convey that the previous attempt hit its resource limit by
+      cat-ing the entire log file, and that the retry should extract just the relevant
+      batch-timing lines (e.g. via grep/tail/awk) instead of repeating a full dump — this is
+      the one concrete "avoid this dead end" fact the transcript hands it (the prompt's own
+      prefix states a hard resource limit was hit, and the only action in the transcript is
+      the full `cat`). Do not require any particular root-cause hypothesis for the slowdown
+      itself (commit/fsync, lock contention, etc.) — those are optional elaboration, not a
+      scoring criterion.
+
+      3. The response must NOT misattribute which batch numbers were slow — e.g. claiming
+      batch 8831 (the fast, 11ms reference batch) was itself slow. A response that gets
+      criterion 1 right but mixes up the batch numbers here should score low on this
+      criterion specifically, since it would mislead a retry with a wrong fact.
+
+      Whether the response hedges the finding as tentative (given the log was truncated) or
+      states it as settled, and whether it speculates about root causes beyond what's given,
+      do not affect the score either way — those are not part of what this scenario tests.
+      Exact wording and length otherwise do not matter.
     minScore: 7
