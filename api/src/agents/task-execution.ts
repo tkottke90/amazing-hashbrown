@@ -6,6 +6,7 @@ import { env, type AnyProviderConfig, type RoleConfig } from '../config/env.js';
 import { getThreadStore, type ThreadStore } from '../services/thread-store.js';
 import {
   getWorkspaceStore,
+  scopeUnchanged,
   type Task,
   type TaskQueueEntry,
   type TaskRun,
@@ -42,6 +43,7 @@ import {
   type TaskState,
 } from '../services/task-file.js';
 import { generateTaskGoal, generateHandoffNotes } from './task-file-generators.js';
+import { summarizeExhaustedRun } from './exhausted-run-summarizer.js';
 import {
   recordAssistantStart,
   finalizeAssistant,
@@ -196,6 +198,42 @@ export async function finishTaskFile(
   }
 }
 
+// Builds a Narrowed Retry's condensed "what was already tried" summary
+// over its predecessor Exhausted Run — called only when isNarrowedRetry is
+// true. Persisting the result (setQueueEntryRetryContext) is the caller's
+// job, not this function's, so a test-injected replacement doesn't also
+// have to reimplement that side effect. Degrades silently on any failure
+// (including a provider that can no longer be built): a missing condensed
+// summary just means a plainer kickoff, not a failed run. See ADR-0056,
+// GLOSSARY.md § Narrowed Retry.
+export async function buildNarrowedRetryContext(
+  store: WorkspaceStore,
+  threadStore: ThreadStore,
+  task: Task,
+  previousRuns: PreviousRun[],
+  { provider, model }: { provider: string | undefined; model: string | undefined },
+): Promise<string | undefined> {
+  const predecessor = previousRuns[0] ? store.getTaskRun(previousRuns[0].id) : null;
+  if (!predecessor?.threadId || !predecessor.failureReason) return undefined;
+  try {
+    const retryModel = createProvider(provider, model);
+    const condensed = await summarizeExhaustedRun(
+      threadStore,
+      retryModel,
+      provider,
+      model,
+      predecessor,
+    );
+    return condensed ?? undefined;
+  } catch (err) {
+    logger.warn('task-execution: failed to build a model for the Narrowed Retry summary', {
+      taskId: task.id,
+      err: serializeError(err),
+    });
+    return undefined;
+  }
+}
+
 export interface ExecuteTaskDeps {
   // Test-only seam — buildTaskAgent() calls the real createProvider()/
   // createAgent() machinery, which a unit test driving a fake event stream
@@ -208,6 +246,9 @@ export interface ExecuteTaskDeps {
   // call (Handoff Notes generation) a unit test driving a fake event stream
   // cannot exercise directly. Defaults to the real implementation.
   finishTaskFile?: typeof finishTaskFile;
+  // Test-only seam, same rationale as finishTaskFile above — used to build
+  // a Narrowed Retry's condensed summary.
+  buildNarrowedRetryContext?: typeof buildNarrowedRetryContext;
 }
 
 // Runs one automated task to completion (or to a waiting_on_user pause).
@@ -221,6 +262,7 @@ export async function executeTask(
   const buildAgent = deps.buildTaskAgent ?? buildTaskAgent;
   const buildSubAgent = deps.buildSubAgentAgent ?? buildSubAgentAgent;
   const finishFileImpl = deps.finishTaskFile ?? finishTaskFile;
+  const buildNarrowedRetryContextImpl = deps.buildNarrowedRetryContext ?? buildNarrowedRetryContext;
   // The real finishTaskFile already catches everything internally, but a
   // test (or any future caller) injecting a different implementation via
   // ExecuteTaskDeps.finishTaskFile must not be able to break that guarantee
@@ -284,6 +326,12 @@ export async function executeTask(
       threadId = randomUUID();
       threadStore.upsertThreadOnFirstMessage(threadId, `${task.title} — run #${runNumber}`, 'task');
       store.setQueueEntryThread(entry.id, threadId);
+      // A Scope Snapshot of the task as of THIS run's kickoff — the
+      // unchanged-scope test an Exhaustion Streak/Cap decision compares a
+      // later attempt against. Captured once, on a fresh run only (not on a
+      // HITL/crash-recovery resume of this same row). See ADR-0056,
+      // GLOSSARY.md § Scope Snapshot.
+      store.setQueueEntryScopeSnapshot(entry.id, task.title, task.description);
     }
   } catch (err) {
     logger.error('task-execution: thread resolution failed', {
@@ -337,6 +385,15 @@ export async function executeTask(
     }
   }
   const previousRuns = previousRunsOf(store, entry);
+  // Computed once, synchronously, before provider/model resolve — only a
+  // fresh Run (isNewRun) can be a Narrowed Retry; a HITL/crash resume of
+  // the same row continues the same Run, not a new one. See ADR-0056,
+  // GLOSSARY.md § Narrowed Retry.
+  const exhaustionStreak = isNewRun ? store.exhaustionStreaks([task.id]).get(task.id) : undefined;
+  const isNarrowedRetry =
+    exhaustionStreak !== undefined &&
+    exhaustionStreak.length === 1 &&
+    scopeUnchanged(task, exhaustionStreak);
   const markerRun: TaskRunMarkerRun = {
     runThreadId: threadId,
     runNumber,
@@ -499,6 +556,18 @@ export async function executeTask(
         ({ provider, model } = resolveTurnModel(env.defaultProvider));
       }
 
+      // The Narrowed Retry's condensed summary of what the prior Exhausted
+      // Run already tried/ruled out — generated here (not in enqueueTask(),
+      // which is synchronous and can't call a model) and persisted so it's
+      // never regenerated. See ADR-0056, GLOSSARY.md § Narrowed Retry.
+      const retryContext = isNarrowedRetry
+        ? await buildNarrowedRetryContextImpl(store, threadStore, task, previousRuns, {
+            provider,
+            model,
+          })
+        : undefined;
+      if (retryContext) store.setQueueEntryRetryContext(entry.id, retryContext);
+
       if (taskFileEligible) {
         const relPath =
           runTask.taskFilePath ??
@@ -647,6 +716,7 @@ export async function executeTask(
         scheduledFor: entry.scheduledFor,
         previousRuns,
         handoffNotes: taskFileScope?.state.handoff || undefined,
+        retryContext,
       });
       // A resumed run's Command({ resume }) continues the exact interrupted
       // checkpoint, which already has this run's correct taskState from
@@ -777,6 +847,7 @@ export async function executeTask(
         // completeTaskBox's 'done'/'failed': see ADR-0054.
         finalOutcome = 'handed_off';
         store.setQueueEntrySummary(entry.id, handOffBox.current.summary);
+        store.setQueueEntryHandoffReason(entry.id, 'agent_requested');
         store.completeQueueEntry(entry.id, 'handed_off');
         if (workspaceScope) {
           await recordTaskProgress({
@@ -892,6 +963,50 @@ export async function executeTask(
         }
         if (task.origin === 'agent') {
           await deliverSubAgentCompletion(task, 'failed', notifyMessage, threadId);
+        }
+        if (taskFileScope) {
+          await finishFile(
+            task,
+            { agent, config },
+            taskFileScope.filePath,
+            taskFileScope.state,
+            summary,
+            provider,
+            model,
+          );
+        }
+      };
+
+      // Shared by both Exhausted-Run failure branches below: if this Run
+      // was already the one allowed Narrowed Retry (isNarrowedRetry) and it
+      // hits the same kind of hard limit again with unchanged scope, the
+      // Exhaustion Cap settles it as a Handed-Off Run instead of a second
+      // plain failure. See ADR-0056, GLOSSARY.md § Exhaustion Cap.
+      const finishExhaustedRun = async (
+        failureReason: 'out_of_steps' | 'turn_overflow',
+        notifyMessage: string,
+        summary = notifyMessage,
+      ): Promise<void> => {
+        store.setQueueEntryFailureReason(entry.id, failureReason);
+        if (!isNarrowedRetry) {
+          await finishFailedRun(notifyMessage, summary);
+          return;
+        }
+        finalOutcome = 'handed_off';
+        store.setQueueEntrySummary(entry.id, summary);
+        store.setQueueEntryHandoffReason(entry.id, 'exhaustion_cap');
+        store.completeQueueEntry(entry.id, 'handed_off');
+        if (workspaceScope) {
+          await recordTaskProgress({
+            task,
+            workspace: workspaceScope.workspace,
+            outcome: 'handed_off',
+            summary,
+            startSha,
+          });
+        }
+        if (task.origin === 'agent') {
+          await deliverSubAgentCompletion(task, 'handed_off', summary, threadId);
         }
         if (taskFileScope) {
           await finishFile(
@@ -1032,20 +1147,24 @@ export async function executeTask(
           reason: (err as StagnationLimitError).reason,
         });
         traceError = (err as StagnationLimitError).summary;
+        // Sub-agent-only (escalationMode: 'throw'); out of this feature's
+        // scope per ADR-0056, but still classified as 'other' for a
+        // consistent failure_reason column.
+        store.setQueueEntryFailureReason(entry.id, 'other');
         await finishFailedRun((err as StagnationLimitError).summary);
       } else if ((err as Error).name === 'ContextBudgetExceededError') {
         // Thrown by boundaryAwareTrim's Turn Overflow recovery
         // (summary-boundary.ts) when even fully truncating the current
-        // turn's tool output still doesn't fit the configured budget —
-        // the sub-agent-run analogue of StagnationLimitError just above.
-        // Must not fall through to the generic branch below: that one
-        // runs classifyChatError and prefixes the summary with "Run
-        // failed: ", losing this error's own distinct message.
+        // turn's tool output still doesn't fit the configured budget — an
+        // Exhausted Run (failure_reason: 'turn_overflow'). Must not fall
+        // through to the generic branch below: that one runs
+        // classifyChatError and prefixes the summary with "Run failed: ",
+        // losing this error's own distinct message. See ADR-0056.
         logger.info('task-execution: run stopped — context budget exceeded even after truncation', {
           taskId: task.id,
         });
         traceError = (err as Error).message;
-        await finishFailedRun((err as Error).message);
+        await finishExhaustedRun('turn_overflow', (err as Error).message);
       } else {
         finalOutcome = 'failed';
         const outOfSteps = (err as Error).name === 'GraphRecursionError';
@@ -1099,7 +1218,18 @@ export async function executeTask(
             );
           }
         }
-        await finishFailedRun((err as Error)?.message ?? 'Run failed.', failureSummary);
+        if (outOfSteps) {
+          // An Exhausted Run (failure_reason: 'out_of_steps') — see
+          // ADR-0056.
+          await finishExhaustedRun(
+            'out_of_steps',
+            (err as Error)?.message ?? 'Run failed.',
+            failureSummary,
+          );
+        } else {
+          store.setQueueEntryFailureReason(entry.id, 'other');
+          await finishFailedRun((err as Error)?.message ?? 'Run failed.', failureSummary);
+        }
       }
 
       // For an aborted run (any of the three intents), the streaming

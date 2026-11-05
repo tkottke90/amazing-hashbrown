@@ -22,6 +22,7 @@ import {
   archiveTask as apiArchiveTask,
   unarchiveTask as apiUnarchiveTask,
   resumeTask as apiResumeTask,
+  saveHandOffGuidance as apiSaveHandOffGuidance,
   generatePlan as apiGeneratePlan,
   generatePlanForNewTask as apiGeneratePlanForNewTask,
   type TaskFilters,
@@ -151,6 +152,14 @@ export async function resumeTask(id: string): Promise<Task> {
   const updated = await apiResumeTask(id);
   tasks.value = tasks.value.map((t) => (t.id === id ? updated : t));
   await refreshQueue();
+  return updated;
+}
+
+// Never changes status or queue state (ADR-0057), so unlike resumeTask
+// above this needs no refreshQueue().
+export async function saveHandOffGuidance(id: string, guidance: string): Promise<Task> {
+  const updated = await apiSaveHandOffGuidance(id, guidance);
+  replaceTask(updated);
   return updated;
 }
 

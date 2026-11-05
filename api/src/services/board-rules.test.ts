@@ -66,6 +66,11 @@ function queueEntry(status: TaskQueueEntry['status']): TaskQueueEntry {
     summary: null,
     triggerSource: 'manual',
     scheduledFor: null,
+    failureReason: null,
+    handoffReason: null,
+    scopeTitle: null,
+    scopeDescription: null,
+    retryContext: null,
   };
 }
 
@@ -153,6 +158,36 @@ const SOURCES = {
   blockedPaused: () => ({
     t: task({ status: 'blocked' }),
     c: ctx({ queueEntry: queueEntry('paused') }),
+  }),
+  blockedHandoffExhaustionCapUnchanged: () => ({
+    t: task({ status: 'blocked', title: 'Fix the flaky test' }),
+    c: ctx({
+      handoff: {
+        reason: 'exhaustion_cap',
+        scopeTitle: 'Fix the flaky test',
+        scopeDescription: null,
+      },
+    }),
+  }),
+  blockedHandoffExhaustionCapChanged: () => ({
+    t: task({ status: 'blocked', title: 'Fix the flaky test (narrowed to the login spec)' }),
+    c: ctx({
+      handoff: {
+        reason: 'exhaustion_cap',
+        scopeTitle: 'Fix the flaky test',
+        scopeDescription: null,
+      },
+    }),
+  }),
+  blockedHandoffAgentRequested: () => ({
+    t: task({ status: 'blocked', title: 'Fix the flaky test' }),
+    c: ctx({
+      handoff: {
+        reason: 'agent_requested',
+        scopeTitle: 'Fix the flaky test',
+        scopeDescription: null,
+      },
+    }),
   }),
   blockedDependencyFailed: () => ({
     t: task({ status: 'blocked', blockedReason: 'dependency_failed' }),
@@ -476,6 +511,18 @@ describe('services/board-rules', () => {
         ));
       it(`closes out the paused run then marks done ${TestTypes.UNIT}`, () =>
         expectAllowed('blockedPaused', 'done', [{ kind: 'detach_paused' }, ...DONE]));
+    });
+
+    describe('from Needs attention (handed off, Exhaustion Cap — ADR-0056, ADR-0057)', () => {
+      it(`rejects Queue while scope is still unchanged ${TestTypes.UNIT}`, () =>
+        expectRejected('blockedHandoffExhaustionCapUnchanged', 'queue', /retry limit twice/));
+      it(`resumes on Queue once the scope has been edited ${TestTypes.UNIT}`, () =>
+        expectAllowed('blockedHandoffExhaustionCapChanged', 'queue', [{ kind: 'resume' }]));
+      it(
+        `does not gate an agent_requested hand-off at all — it was never about repeated ` +
+          `identical scope ${TestTypes.UNIT}`,
+        () => expectAllowed('blockedHandoffAgentRequested', 'queue', [{ kind: 'resume' }]),
+      );
     });
 
     describe('from Needs attention (dependency failed)', () => {

@@ -154,6 +154,15 @@ export interface Task {
   // Present on every task the tasks API returns; absent on the loose task
   // copies embedded in queue broadcasts.
   board?: Board;
+  // The task's single most recent run, present on GET /tasks/:id (never on
+  // the board/list response) — lets the drawer tell a Handed-Off Run apart
+  // from an ordinary manual pause. See GLOSSARY.md § Hand-Off Note, Hand-Off
+  // Cause, ADR-0057.
+  latestRun?: {
+    status: TaskQueueEntry['status'];
+    handoffReason: 'agent_requested' | 'exhaustion_cap' | null;
+    summary: string | null;
+  } | null;
 }
 
 export interface TaskDependency {
@@ -180,6 +189,11 @@ export interface TaskQueueEntry {
   summary: string | null;
   triggerSource: TriggerSource;
   scheduledFor: string | null;
+  // Set only on a 'handed_off' run: which of the two things produced it —
+  // the agent itself ('agent_requested') or the system, after a Narrowed
+  // Retry also hit a hard limit with unchanged scope ('exhaustion_cap').
+  // See GLOSSARY.md § Hand-Off Cause.
+  handoffReason: 'agent_requested' | 'exhaustion_cap' | null;
 }
 
 // One run of a task, as the drawer's run history lists it.
@@ -326,6 +340,18 @@ export async function moveTask(id: string, move: MoveRequest): Promise<Task> {
 
 export async function resumeTask(id: string): Promise<Task> {
   return patchTask(id, { status: 'ready' });
+}
+
+// Folds a human's Hand-Off Guidance into a rewritten title/description via
+// a one-shot LLM call on the server; never changes status, so the task
+// stays where it is until the human drags it back to Queue themselves. See
+// GLOSSARY.md § Hand-Off Guidance, ADR-0057.
+export async function saveHandOffGuidance(id: string, guidance: string): Promise<Task> {
+  return request<Task>(`/api/v1/tasks/${id}/hand-off-guidance`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ guidance }),
+  });
 }
 
 export async function generatePlan(taskId: string): Promise<PlanStep[]> {

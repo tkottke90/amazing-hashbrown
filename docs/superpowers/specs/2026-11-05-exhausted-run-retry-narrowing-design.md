@@ -58,8 +58,8 @@ the same as `'other'` — it never contributes to a streak.
 Add `scope_title TEXT NULL` / `scope_description TEXT NULL` to
 `task_queue`, written once at every Run's kickoff (not only Exhausted-Run
 kickoffs — simpler to always capture it than to special-case when). The
-unchanged-scope check compares the *current* Task's title/description
-(trimmed, whitespace-normalized) against the *most recent Exhausted Run's*
+unchanged-scope check compares the _current_ Task's title/description
+(trimmed, whitespace-normalized) against the _most recent Exhausted Run's_
 Scope Snapshot.
 
 ### 3. Exhaustion Streak

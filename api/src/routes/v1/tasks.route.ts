@@ -33,6 +33,7 @@ import {
   removeTaskDependencyHandler,
   generatePlanForNewTaskHandler,
   generatePlanForTaskHandler,
+  saveHandOffGuidanceHandler,
 } from './tasks.handlers.js';
 
 export const tasksRouter = Router();
@@ -345,4 +346,43 @@ tasksRouter.post('/:id/generate-plan', async (req: Request, res: Response) => {
     return;
   }
   res.status(200).json(result.data);
+});
+
+// Never changes status, trigger or queue state (ADR-0057) — like archive/
+// unarchive above, no scheduler wake or cron resync needed.
+tasksRouter.post('/:id/hand-off-guidance', async (req: Request, res: Response) => {
+  const { id } = req.params as { id: string };
+  const {
+    provider,
+    model: modelName,
+    guidance,
+  } = req.body as {
+    provider?: string;
+    model?: string;
+    guidance?: unknown;
+  };
+
+  let model;
+  try {
+    model = createProvider(provider, modelName);
+  } catch (err) {
+    res.status(500).json({
+      error: `No provider available: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    return;
+  }
+
+  const result = await saveHandOffGuidanceHandler(
+    getWorkspaceStore(),
+    model,
+    provider,
+    modelName,
+    id,
+    guidance,
+  );
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.status(200).json(boarded(result.data));
 });

@@ -101,6 +101,10 @@ export interface RunKickoffInput {
   // filters out (non-FINISHED_RUN status, or threadId === null) — see
   // docs/superpowers/specs/2026-11-01-handoff-notes-kickoff-continuity-design.md.
   handoffNotes?: string;
+  // The Narrowed Retry's condensed summary of what the prior Exhausted Run
+  // already tried/ruled out — set only when this Run is the one allowed
+  // Narrowed Retry (see ADR-0056, GLOSSARY.md § Narrowed Retry).
+  retryContext?: string;
 }
 
 // Previous run + this many older ones — enough to spot a pattern, small
@@ -201,6 +205,22 @@ export function buildRunKickoff(input: RunKickoffInput): string {
         "exactly where or what to change? If it's actionable as written, act on it " +
         "directly. If it doesn't, call read_task_notes() now for the full Task File — " +
         'goal, notes, and outcome across every run — instead of guessing at what it left out.',
+    );
+  }
+
+  // Gated solely on retryContext, same additive idiom as handoffNotes above
+  // — this is a different thing from both previousRuns' own summary and
+  // handoffNotes, so it gets its own paragraph rather than folding into
+  // either. See ADR-0056, GLOSSARY.md § Narrowed Retry.
+  if (input.retryContext) {
+    lines.push(
+      '',
+      'This is a Narrowed Retry — the previous attempt hit a hard resource limit. Condensed ' +
+        'summary of what it already tried and ruled out:',
+      `"${input.retryContext}"`,
+      'A second run that hits the same limit with this same scope will hand this task off to ' +
+        "a human instead of retrying again — so if you're hitting the same wall, stop and " +
+        'narrow your approach rather than repeating the prior attempt.',
     );
   }
 

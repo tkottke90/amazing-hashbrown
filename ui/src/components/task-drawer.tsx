@@ -24,6 +24,7 @@ import {
   pauseTask,
   takeOverTask,
   resumeTask,
+  saveHandOffGuidance,
   archiveTask,
   unarchiveTask,
   tasks,
@@ -238,6 +239,10 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
     'pause' | 'take-over' | 'cancel' | 'resume' | 'archive' | 'unarchive' | null
   >(null);
   const actionError = useSignal('');
+
+  const guidanceText = useSignal('');
+  const guidanceSaving = useSignal(false);
+  const guidanceError = useSignal('');
 
   const dependencies = useSignal<TaskDependency[]>([]);
   const selectedDependsOnId = useSignal('');
@@ -494,6 +499,25 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
       actionError.value = err instanceof Error ? err.message : 'Failed to resume.';
     } finally {
       actionLoading.value = null;
+    }
+  }
+
+  // Does not close the drawer, and never touches liveStatus/status — a
+  // successful rewrite only changes title/description; the human still
+  // drags the task back to Queue themselves afterward. See ADR-0057.
+  async function handleSaveGuidance() {
+    if (!task) return;
+    guidanceSaving.value = true;
+    guidanceError.value = '';
+    try {
+      const updated = await saveHandOffGuidance(task.id, guidanceText.value.trim());
+      title.value = updated.title;
+      description.value = updated.description ?? '';
+      guidanceText.value = '';
+    } catch (err) {
+      guidanceError.value = err instanceof Error ? err.message : 'Failed to save guidance.';
+    } finally {
+      guidanceSaving.value = false;
     }
   }
 
@@ -965,6 +989,47 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
               {actionError.value && (
                 <p class="text-xs text-destructive w-full">{actionError.value}</p>
               )}
+            </div>
+          )}
+
+        {!isNew &&
+          task &&
+          liveStatus.value === 'blocked' &&
+          runs.value[0]?.status === 'handed_off' && (
+            <div
+              class="rounded-lg bg-muted/50 border border-border p-3 flex flex-col gap-2"
+              data-testid="hand-off-guidance"
+            >
+              <div class="flex flex-col gap-1">
+                <span class="text-xs font-medium text-muted-foreground">Why this got stuck</span>
+                <p class="text-sm">{runs.value[0]?.summary ?? 'No note was recorded.'}</p>
+              </div>
+              <label
+                class="text-xs font-medium text-muted-foreground"
+                htmlFor="hand-off-guidance-input"
+              >
+                Hand-Off Guidance
+              </label>
+              <textarea
+                id="hand-off-guidance-input"
+                data-testid="hand-off-guidance-input"
+                placeholder="Tell the agent how to approach this differently…"
+                value={guidanceText.value}
+                onInput={(e) => {
+                  guidanceText.value = (e.target as HTMLTextAreaElement).value;
+                }}
+                class="border border-input rounded-lg px-3 py-2 text-sm resize-none h-20 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
+              />
+              <Button
+                size="xs"
+                variant="outline"
+                type="button"
+                disabled={guidanceSaving.value || !guidanceText.value.trim()}
+                onClick={() => void handleSaveGuidance()}
+              >
+                {guidanceSaving.value ? 'Rewriting…' : 'Save guidance'}
+              </Button>
+              {guidanceError.value && <p class="text-xs text-destructive">{guidanceError.value}</p>}
             </div>
           )}
 

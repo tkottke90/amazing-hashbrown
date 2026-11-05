@@ -6,12 +6,14 @@
 // BoardContext. See docs/superpowers/specs/2026-09-28-kanban-board-v2-design.md.
 
 import type { TaskSchedule } from './cron-config.js';
-import type {
-  CohortSummary,
-  DependencyEdgeSummary,
-  FailedRunStreak,
-  Task,
-  TaskQueueEntry,
+import {
+  scopeUnchanged,
+  type CohortSummary,
+  type DependencyEdgeSummary,
+  type FailedRunStreak,
+  type LatestHandoff,
+  type Task,
+  type TaskQueueEntry,
 } from './workspace-store.js';
 
 export type Lane = 'backlog' | 'scheduled' | 'queue' | 'attention' | 'done';
@@ -79,6 +81,9 @@ export interface BoardContext {
   pendingPrompt: PendingPrompt | null;
   failedStreak: FailedRunStreak | null;
   cohort: CohortSummary | null; // set while this task holds an open cohort
+  // Set only while this task's latest run is still 'handed_off' — see
+  // GLOSSARY.md § Hand-Off Cause, ADR-0056, ADR-0057.
+  handoff: LatestHandoff | null;
 }
 
 // One concrete operation of a move, executed in order by the move handler.
@@ -272,6 +277,12 @@ function scheduleOnce(task: Task, prefix: MoveStep[] = []): MovePlan {
 const ALREADY_HERE = 'Already in this lane.';
 const ATTENTION_IS_AUTOMATIC =
   'Tasks land in Needs attention on their own; only a running task can be paused into it.';
+// Only an exhaustion_cap Hand-Off Cause with unchanged scope is ever
+// rejected here — an agent_requested hand-off was never about repeated
+// identical scope. See ADR-0056, ADR-0057, GLOSSARY.md § Exhaustion Cap.
+const EXHAUSTION_CAP_UNCHANGED_SCOPE =
+  'This task hit its retry limit twice with the same scope — edit the title or description ' +
+  '(or use Hand-Off Guidance) before retrying.';
 
 // The move table (spec §1.3): which steps turn a task from `source` into a
 // task in lane `to`, or why it can't go there.
@@ -342,7 +353,18 @@ function planFrom(task: Task, ctx: BoardContext, source: Source, to: Lane): Move
       return reject("Answer the agent's question first.");
 
     case 'blocked_paused':
-      if (to === 'queue') return plan([{ kind: 'resume' }]);
+      if (to === 'queue') {
+        if (
+          ctx.handoff?.reason === 'exhaustion_cap' &&
+          scopeUnchanged(task, {
+            scopeTitle: ctx.handoff.scopeTitle,
+            scopeDescription: ctx.handoff.scopeDescription,
+          })
+        ) {
+          return reject(EXHAUSTION_CAP_UNCHANGED_SCOPE);
+        }
+        return plan([{ kind: 'resume' }]);
+      }
       if (to === 'backlog') {
         return plan([{ kind: 'detach_paused' }, { kind: 'patch_status', status: 'pending' }]);
       }

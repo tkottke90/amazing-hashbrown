@@ -3,10 +3,12 @@ import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import type {
   WorkspaceStore,
   EnqueueOptions,
+  HandoffReason,
   NewTaskInput,
   PatchTaskInput,
   PlanStep,
   TaskListFilters,
+  TaskRun,
   TaskStatus,
   TriggerType,
 } from '../../services/workspace-store.js';
@@ -39,6 +41,7 @@ import {
   runPathA,
   runPathB,
 } from '../../agents/plan-generation.js';
+import { rewriteTaskForHandOffGuidance } from '../../agents/hand-off-guidance.js';
 
 function ok<T>(data: T): HandlerResult<T> {
   return { ok: true, data };
@@ -175,10 +178,82 @@ export function listTasksHandler(store: WorkspaceStore, filters: TaskListFilters
   return ok(store.listTasks(filters).map((task) => withSchedule(store, task)));
 }
 
+// A task's single most recent run, as the Task Drawer needs it to tell a
+// Handed-Off Run apart from an ordinary manual pause and show its Hand-Off
+// Note. A per-task lookup (not a batched one like latestHandoffs() below)
+// is the right fit here: this is the single-task GET /tasks/:id endpoint,
+// never the list/board endpoint — "one query per fact type, not per task"
+// (docs/superpowers/specs/2026-09-28-kanban-board-v2-design.md) governs
+// that one instead (see BoardContext.handoff). See ADR-0057.
+export interface LatestRunInfo {
+  status: TaskRun['status'];
+  handoffReason: HandoffReason | null;
+  summary: string | null;
+}
+
+export function withLatestRun<T extends Task>(
+  store: WorkspaceStore,
+  task: T,
+): T & { latestRun: LatestRunInfo | null } {
+  const run = store.listTaskRuns(task.id, { limit: 1 })[0];
+  return {
+    ...task,
+    latestRun: run
+      ? { status: run.status, handoffReason: run.handoffReason, summary: run.summary }
+      : null,
+  };
+}
+
 export function getTaskHandler(store: WorkspaceStore, id: string) {
   const task = store.getTask(id);
   if (!task) return notFound(`Task ${id} not found`);
-  return ok(withSchedule(store, task));
+  return ok(withLatestRun(store, withSchedule(store, task)));
+}
+
+// Folds a human's Hand-Off Guidance into a rewritten title/description via
+// a one-shot LLM call, then writes it through patchTaskHandler's own path
+// — not a parallel persistence mechanism. Available for any Handed-Off
+// Run regardless of Hand-Off Cause (the standard way a human responds to a
+// hand-off); on a rewrite failure, nothing is written. Never changes
+// status — no auto re-enqueue, the human still drags the task back to
+// `queue` themselves afterward. See ADR-0057.
+export async function saveHandOffGuidanceHandler(
+  store: WorkspaceStore,
+  model: BaseChatModel,
+  provider: string | undefined,
+  modelName: string | undefined,
+  id: string,
+  guidance: unknown,
+): Promise<HandlerResult<TaskResponse>> {
+  const task = store.getTask(id);
+  if (!task) return notFound(`Task ${id} not found`);
+  if (typeof guidance !== 'string' || !guidance.trim()) {
+    return badRequest('guidance is required');
+  }
+
+  const latestRun = store.listTaskRuns(id, { limit: 1 })[0];
+  if (!latestRun || latestRun.status !== 'handed_off') {
+    return conflict('This task has no standing Handed-Off Run to respond to.');
+  }
+
+  let rewritten: { title: string; description: string | null };
+  try {
+    rewritten = await rewriteTaskForHandOffGuidance(model, provider, modelName, {
+      title: task.title,
+      description: task.description,
+      handOffNote: latestRun.summary,
+      guidance,
+    });
+  } catch (err) {
+    return serverError(
+      `Hand-Off Guidance rewrite failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  return patchTaskHandler(store, id, {
+    title: rewritten.title,
+    description: rewritten.description,
+  });
 }
 
 export function createTaskHandler(

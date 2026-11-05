@@ -1,0 +1,95 @@
+suite:
+  id: hand-off-guidance
+  name: Hand-Off Guidance — rewrite
+  purpose: >
+    Verify hand-off-guidance.ts's rewriteTaskForHandOffGuidance() actually folds a human's
+    guidance and the Hand-Off Note into a meaningfully rewritten title/description — not a
+    verbatim echo of the raw guidance text, which ADR-0057 explicitly rejects as a failure
+    fallback — before it's relied on in production. See ADR-0057, GLOSSARY.md § Hand-Off
+    Guidance.
+  passingThreshold: 0.75
+  # rewriteTaskForHandOffGuidance() is a bare, non-agentic model.invoke(prompt) call asking
+  # for JSON back in plain text (no withStructuredOutput(), no tool harness, no chat-agent
+  # system prompt) — the `input` field on every scenario below already IS that exact
+  # production prompt. A `type: structured` scenario would invoke the model through a
+  # different (schema-constrained) path than production actually uses, so this suite uses
+  # `llm-judge` against the raw text instead, matching rewriteTaskForHandOffGuidance()'s own
+  # manual-JSON-parse contract.
+  appliesHarnessSystemPrompt: false
+
+scenarios:
+  - id: hog-001-merges-guidance-into-rewrite
+    name: Merges specific guidance into a rewritten title/description
+    type: llm-judge
+    purpose: >
+      The core contract: the rewrite must incorporate the human's specific instruction (scope
+      to just the login flow), not just restate the original task or echo the guidance text
+      verbatim back as the description.
+    # Keep this input in sync with hand-off-guidance.ts's buildPrompt().
+    input: >
+      Current title: Fix the flaky test
+
+
+      Current description: (none)
+
+
+      Why this got stuck (Hand-Off Note): Ran out of steps twice with unchanged scope —
+      investigated the comparator, the test fixture, and the random-item generator without
+      finding the actual cause.
+
+
+      Human guidance for how to proceed: Narrow it to just the login flow test — ignore the
+      other flaky tests in the suite for now, they're a separate ticket.
+
+
+      Rewrite the title and description so a fresh attempt at this task incorporates the
+      guidance above and avoids repeating what got it stuck. Respond with ONLY a JSON object:
+      {"title": "...", "description": "..."} — no markdown, no preamble.
+    rubric: >
+      The response should be a JSON object with "title" and "description" string fields (a
+      markdown code fence around it is fine). The rewritten title and/or description must
+      specifically narrow scope to the login flow test, and should not mention the comparator/
+      fixture/random-item investigation as something still to redo (that's what got it stuck).
+      Score low if the description is just the human's guidance sentence copied verbatim
+      ("Narrow it to just the login flow test — ignore the other flaky tests...") rather than a
+      genuine task description written in the task's own voice, or if the rewrite ignores the
+      guidance and just restates the original "Fix the flaky test" title/description
+      unchanged. Exact phrasing otherwise does not matter.
+    minScore: 7
+
+  - id: hog-002-respects-existing-description
+    name: Preserves relevant detail from the existing description rather than discarding it
+    type: llm-judge
+    purpose: >
+      A task already has useful detail in its description before the hand-off — the rewrite
+      should build on it, not throw it away just because guidance was added.
+    input: >
+      Current title: Audit the payments webhook for missing idempotency keys
+
+
+      Current description: Check every webhook handler under src/webhooks/payments/ for a
+      missing or incorrectly-scoped idempotency key, and list each file that needs a fix.
+
+
+      Why this got stuck (Hand-Off Note): Ran out of steps twice with unchanged scope — there
+      are 40+ handler files and the agent kept re-reading the same ones without making
+      progress through the full list.
+
+
+      Human guidance for how to proceed: Just check the refund and chargeback handlers first —
+      those are the highest risk. The rest can be a follow-up task.
+
+
+      Rewrite the title and description so a fresh attempt at this task incorporates the
+      guidance above and avoids repeating what got it stuck. Respond with ONLY a JSON object:
+      {"title": "...", "description": "..."} — no markdown, no preamble.
+    rubric: >
+      The response should be a JSON object with "title" and "description" fields. The
+      rewritten description should still mention checking for missing/incorrectly-scoped
+      idempotency keys (the substantive goal from the original description), while narrowing
+      the scope to the refund and chargeback handlers specifically per the guidance, rather
+      than discarding the original description's detail entirely or just repeating the
+      guidance sentence verbatim as the new description. Score low if the rewrite loses the
+      "idempotency key" detail entirely, or if it still describes auditing all 40+ handlers
+      without the narrowing. Exact phrasing otherwise does not matter.
+    minScore: 7
