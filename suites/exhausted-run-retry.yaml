@@ -22,6 +22,16 @@ scenarios:
       calls against one file before running out of steps. The condensed summary must name
       what was actually tried (the comparator rewrite, the specific test file) so the retry
       doesn't repeat it blind — not just restate "ran out of steps."
+      Known capability ceiling for local: before SUMMARY_PROMPT_PREFIX was sharpened to ask
+      directly for what caused the resource limit (commit a81b9c9), local passed this scenario
+      but consistently failed err-002 below (eval:probe-confirmed IDENTICAL, 3/3). After that
+      fix, a follow-up run showed local flip to failing this scenario instead — hallucinating
+      that node -e can't load .ts files, contradicting its own already-correct narrowing to the
+      fixture — also eval:probe-confirmed IDENTICAL, 3/3, not noise. Across every round of this
+      suite local has never passed both err-001 and err-002 in the same run; which one it fails
+      shifts with prompt wording, but the 1-of-2 ceiling itself doesn't move. Treated as a
+      capability ceiling for this model on this suite as a whole, not a wording gap in either
+      scenario — left as a known ceiling, not chased further with more prompt edits.
     # Keep this input in sync with exhausted-run-summarizer.ts's
     # SUMMARY_PROMPT_PREFIX + its transcriptLine() formatting ([User]/[Agent]/[Tool call]).
     input: >
@@ -72,6 +82,8 @@ scenarios:
       The other Exhausted Run flavor (failure_reason turn_overflow, not out_of_steps) — a
       single oversized tool result rather than many small steps. The summary must still
       extract the concrete finding, not just note that output was large.
+      See err-001's purpose above for local's documented capability ceiling spanning both
+      scenarios in this suite — not duplicated here.
     input: >
       The previous attempt at this task hit a hard resource limit before finishing. Condense
       what it already tried, found, and ruled out into a short briefing for whoever retries it
