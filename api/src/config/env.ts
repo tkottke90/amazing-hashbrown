@@ -179,7 +179,9 @@ export const AnyProviderSchema = z.union([
   OpenAiCompatibleProviderSchema,
 ]);
 export type AnyProviderConfig =
-  ProviderConfig | AzureOpenAiProviderConfig | OpenAiCompatibleProviderConfig;
+  | ProviderConfig
+  | AzureOpenAiProviderConfig
+  | OpenAiCompatibleProviderConfig;
 
 // A user-pinned provider/model pair, surfaced at the top of the chat
 // Provider menu (issue #137). An ordered list rather than a Record — a
@@ -408,6 +410,18 @@ export const TaskBoardSchema = z.object({
   doneRetentionDays: z.number().int().min(0).default(5),
 });
 
+// Config for scheduled-task creation — deliberately named TaskCreationSchema
+// rather than TasksConfigSchema (below) or TaskBoardSchema (above), neither
+// of which this belongs under: TasksConfigSchema is an unrelated section
+// (env.workspaces.tasks.trackers — GitHub issue-tracker tokens), and this
+// isn't about the Kanban board.
+export const TaskCreationSchema = z.object({
+  // How close two cron_once tasks' fireAt values must be to count as the
+  // same Duplicate Time Slot Tolerance (see GLOSSARY.md's "Scheduled Task
+  // Deduplication" section, ADR-0058, and Issue #365).
+  duplicateTimeSlotToleranceMinutes: z.number().int().min(0).default(10),
+});
+
 export const EmbeddingsSchema = z.object({
   enabled: z.boolean().default(true),
   type: z.enum(['ollama', 'openai']).default('ollama'),
@@ -612,6 +626,7 @@ const AppConfigSchema = z.object({
   updates: UpdatesSchema.optional(),
   chat: ChatSchema.optional(),
   taskBoard: TaskBoardSchema.optional(),
+  taskCreation: TaskCreationSchema.optional(),
   embeddings: EmbeddingsSchema.optional(),
   agent: AgentSchema.optional(),
   artifactGc: ArtifactGcSchema.optional(),
@@ -762,6 +777,16 @@ export const env = {
       >;
     } catch {
       return TaskBoardSchema.parse({});
+    }
+  },
+  get taskCreation(): z.infer<typeof TaskCreationSchema> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (configManager as any).getSection('taskCreation', TaskCreationSchema) as z.infer<
+        typeof TaskCreationSchema
+      >;
+    } catch {
+      return TaskCreationSchema.parse({});
     }
   },
   get embeddings(): z.infer<typeof EmbeddingsSchema> {

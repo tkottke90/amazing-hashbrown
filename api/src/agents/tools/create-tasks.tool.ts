@@ -247,6 +247,12 @@ export function makeCreateTasksTool(
 
       return JSON.stringify({
         created: created.map((t, i) => {
+          // A Reused Task (see GLOSSARY.md): nothing was created for this
+          // entry. Stop here rather than describing a schedule below — the
+          // resolved trigger for *this* request belongs to the duplicate
+          // that got discarded, not to the existing task actually returned,
+          // and would be misleading attached to it (Issue #365, D6).
+          if (t.reused) return { id: t.id, title: t.title, reused: true as const };
           const resolvedTrigger = resolvedTriggers[i];
           const triggerType = tasks[i]!.trigger?.type;
           if (!resolvedTrigger || !triggerType) return { id: t.id, title: t.title };

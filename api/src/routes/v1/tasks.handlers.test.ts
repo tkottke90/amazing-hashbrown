@@ -209,6 +209,39 @@ describe('routes/v1/tasks.handlers', () => {
         expect(config?.webhookToken).to.not.equal('client-supplied');
       }
     });
+
+    // Issue #365 / GLOSSARY.md's "Scheduled Task Deduplication": a second
+    // cron_once create for the same title and a nearby fireAt reuses the
+    // first task instead of inserting (and scheduling) a duplicate.
+    it('reuses an existing cron_once task instead of creating a second one for the same slot', () => {
+      const fireAtFirst = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+      const fireAtSecond = new Date(Date.now() + 60 * 60 * 1000 + 60 * 1000).toISOString();
+
+      const first = createTaskHandler(store, {
+        title: 'One-off Scheduler trigger test',
+        triggerType: 'cron_once',
+        triggerConfig: { fireAt: fireAtFirst },
+      });
+      expect(first.ok).to.equal(true);
+      const firstData = first.ok ? first.data : undefined;
+      const firstUpdatedAt = firstData!.updatedAt;
+
+      const second = createTaskHandler(store, {
+        title: 'One-off Scheduler trigger test',
+        triggerType: 'cron_once',
+        triggerConfig: { fireAt: fireAtSecond },
+      });
+
+      expect(second.ok).to.equal(true);
+      if (second.ok) {
+        expect(second.data!.reused).to.equal(true);
+        expect(second.data!.id).to.equal(firstData!.id);
+      }
+      expect(store.listTasks({})).to.have.length(1);
+      // The original task is left completely untouched by the "duplicate"
+      // create call — no re-patch onto its schedule.
+      expect(store.getTask(firstData!.id)!.updatedAt).to.equal(firstUpdatedAt);
+    });
   });
 
   describe('enqueueTaskHandler()', () => {

@@ -428,6 +428,82 @@ describe('agents/tools/create-tasks', () => {
     });
   });
 
+  describe('scheduled task deduplication (Issue #365)', () => {
+    function fakeCronRegistry() {
+      return { resyncAll: () => {} } as unknown as CronRegistry;
+    }
+
+    it('reuses an existing cron_once task instead of creating a second one for the same slot', async () => {
+      const fireAtFirst = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+      const fireAtSecond = new Date(Date.now() + 60 * 60 * 1000 + 60 * 1000).toISOString();
+
+      const firstResult = await makeCreateTasksTool(
+        undefined,
+        undefined,
+        fakeCronRegistry(),
+      ).invoke(
+        {
+          tasks: [
+            {
+              title: 'One-off Scheduler trigger test',
+              trigger: { type: 'cron_once', fireAt: fireAtFirst },
+            },
+          ],
+        },
+        invokeConfig(workspaceId),
+      );
+      const firstParsed = JSON.parse(String(firstResult)) as { created: { id: string }[] };
+
+      const secondResult = await makeCreateTasksTool(
+        undefined,
+        undefined,
+        fakeCronRegistry(),
+      ).invoke(
+        {
+          tasks: [
+            {
+              title: 'One-off Scheduler trigger test',
+              trigger: { type: 'cron_once', fireAt: fireAtSecond },
+            },
+          ],
+        },
+        invokeConfig(workspaceId),
+      );
+      const secondParsed = JSON.parse(String(secondResult)) as {
+        created: { id: string; reused?: boolean }[];
+      };
+
+      expect(secondParsed.created[0]!.reused).to.equal(true);
+      expect(secondParsed.created[0]!.id).to.equal(firstParsed.created[0]!.id);
+      expect(getWorkspaceStore().listTasks({}).length).to.equal(1);
+    });
+
+    it('reuses a duplicate entry within the same batch call', async () => {
+      const fireAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+      const result = await makeCreateTasksTool(undefined, undefined, fakeCronRegistry()).invoke(
+        {
+          tasks: [
+            {
+              title: 'One-off Scheduler trigger test',
+              trigger: { type: 'cron_once', fireAt },
+            },
+            {
+              title: 'One-off Scheduler trigger test',
+              trigger: { type: 'cron_once', fireAt },
+            },
+          ],
+        },
+        invokeConfig(workspaceId),
+      );
+      const parsed = JSON.parse(String(result)) as { created: { id: string; reused?: boolean }[] };
+
+      expect(parsed.created[0]!.reused).to.not.equal(true);
+      expect(parsed.created[1]!.reused).to.equal(true);
+      expect(parsed.created[1]!.id).to.equal(parsed.created[0]!.id);
+      expect(getWorkspaceStore().listTasks({}).length).to.equal(1);
+    });
+  });
+
   describe('asCohort', () => {
     function scheduledCronTask(store: ReturnType<typeof getWorkspaceStore>) {
       const task = store.createTask({
