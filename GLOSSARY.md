@@ -471,3 +471,25 @@ _Avoid_: wiki_updated, wiki write event
 **Wiki Update Message**:
 The durable `wiki_update`-kind `thread_messages` row a Wiki Update Event becomes once persisted (`recordWikiUpdate()`). `wikiWriteCount` and the `wiki_mismatch` anomaly both read only these rows, never a Wiki Update Event directly — a Wiki Update Event that's never turned into one is invisible to both, which was the entire defect behind Issue #363.
 _Avoid_: wiki_update, wiki write record (see Wiki Update Event — the live signal, not the stored row)
+
+# Scheduled Task Deduplication
+
+How a `cron_once`/`cron_repeat` task creation request is checked against already-existing tasks before being inserted, so two independently-created tasks never end up covering the same scheduled work.
+
+## Language
+
+**Duplicate Signature**:
+A `cron_once`/`cron_repeat` task's normalized `title` and `description` (case-insensitive, internal whitespace collapsed to single spaces), together with its `trackerId` — the comparison input used to decide whether two tasks describe the same work. Computed fresh from a task's own stored fields on every comparison; never itself persisted. Distinct from **Task Goal** (a Task File's own regenerated restatement of intent) — the Duplicate Signature is raw comparison input, not a restatement.
+_Avoid_: Goal, task goal (see Task Goal — a different, already-defined concept), fingerprint
+
+**Matching Time Slot**:
+The condition under which two scheduled tasks are considered to occupy the same slot: both `cron_once` with `fireAt` within the Duplicate Time Slot Tolerance of each other, or both `cron_repeat` with an identical normalized `expression` and `timezone`. A `cron_once` task and a `cron_repeat` task never share a Matching Time Slot with each other, regardless of overlap — comparing a point-in-time fire to a recurring schedule is out of scope.
+_Avoid_: Schedule match, slot overlap
+
+**Duplicate Time Slot Tolerance**:
+The config value `tasks.duplicateTimeSlotToleranceMinutes` (default 10) governing how close two `cron_once` tasks' `fireAt` values must be to count as a Matching Time Slot. `cron_repeat`'s Matching Time Slot is an exact `expression`/`timezone` comparison and has no tolerance.
+_Avoid_: Slot window, fire tolerance
+
+**Reused Task**:
+The outcome when a task creation request's Duplicate Signature, Matching Time Slot, and `trackerId` all match an existing task (or an earlier entry in the same creation batch): no new row is inserted, the existing task's `id`/`title` is returned with `reused: true`, and the existing task itself is left completely unmodified.
+_Avoid_: Skipped task, deduped task, merged task
