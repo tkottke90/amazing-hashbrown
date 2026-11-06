@@ -11,8 +11,10 @@ const SUMMARY_PROMPT_PREFIX =
   'The previous attempt at this task hit a hard resource limit before finishing. Condense ' +
   'what it already tried, found, and ruled out into a short briefing for whoever retries it ' +
   "next, so the retry doesn't repeat the same dead ends. Capture: what was attempted, what " +
-  'worked or failed, and what to try differently. Write a few sentences of plain prose. Do ' +
-  'not include pleasantries or restate these instructions.\n\nTranscript:\n';
+  'worked or failed; what specifically contributed to hitting the resource limit (e.g. one ' +
+  'oversized tool result, or too many repeated steps) and what the retry should avoid doing ' +
+  'again as a result; and anything else to try differently. Write a few sentences of plain ' +
+  'prose. Do not include pleasantries or restate these instructions.\n\nTranscript:\n';
 
 const MAX_RUN_MESSAGES = 10_000; // same cap as formatRunTranscript
 const MAX_TRANSCRIPT_CHARS = 16_000; // same cap as workspace-summarizer
