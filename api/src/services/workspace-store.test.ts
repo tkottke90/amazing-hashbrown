@@ -2154,7 +2154,10 @@ describe('services/workspace-store', () => {
 
     it('lists only idle cron tasks for the registry to arm on boot [unit]', () => {
       const scheduled = scheduledRepeatTask();
-      const busy = scheduledRepeatTask();
+      // A distinct expression keeps this a genuinely separate task rather
+      // than a Reused Task (Issue #365) — scheduledRepeatTask()'s default
+      // fixture is otherwise identical to `scheduled`'s.
+      const busy = scheduledRepeatTask({ expression: '0 1 * * *' });
       store.fireCronTask(busy.id, '2026-09-26T00:00:00.000Z', 'schedule');
       store.createTask({ title: 'manual' });
 
