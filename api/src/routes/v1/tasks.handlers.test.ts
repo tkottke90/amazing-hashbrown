@@ -25,6 +25,7 @@ import {
   removeTaskDependencyHandler,
   generatePlanForNewTaskHandler,
   generatePlanForTaskHandler,
+  saveHandOffGuidanceHandler,
   answerTaskPrompt,
   listTaskRunsHandler,
 } from './tasks.handlers.js';
@@ -1124,6 +1125,181 @@ describe('routes/v1/tasks.handlers', () => {
     });
   });
 
+  describe('saveHandOffGuidanceHandler() (ADR-0057)', () => {
+    let obsDir: string;
+    let store: WorkspaceStore;
+    let dir: string;
+
+    before(() => {
+      obsDir = mkdtempSync(join(tmpdir(), 'tasks-handlers-hand-off-guidance-obs-'));
+      bootObservability(openDatabase(join(obsDir, 'observability.db')));
+      configManager.set('providers', [
+        {
+          name: 'test-guidance-provider',
+          type: 'ollama',
+          baseUrl: 'http://localhost:11434',
+          defaultModel: 'test-guidance-model',
+        },
+      ]);
+      configManager.set('defaultProvider', 'test-guidance-provider');
+    });
+    after(() => {
+      rmSync(obsDir, { recursive: true, force: true });
+      configManager.set('providers', []);
+      configManager.set('defaultProvider', '');
+    });
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'tasks-handlers-hand-off-guidance-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    function handedOffTask(summary: string): { id: string } {
+      const task = store.createTask({ title: 'Fix the flaky test', assignedTo: 'agent' });
+      const entry = store.enqueueTask(task.id);
+      store.setQueueEntryHandoffReason(entry.id, 'exhaustion_cap');
+      store.setQueueEntrySummary(entry.id, summary);
+      store.completeQueueEntry(entry.id, 'handed_off');
+      return task;
+    }
+
+    it('returns 404 for a nonexistent task id', async () => {
+      const model = new FakeListChatModel({ responses: ['{"title":"x","description":null}'] });
+      const result = await saveHandOffGuidanceHandler(
+        store,
+        model,
+        undefined,
+        undefined,
+        'does-not-exist',
+        'try something else',
+      );
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
+    });
+
+    it('rejects empty guidance', async () => {
+      const task = handedOffTask('Ran out of steps.');
+      const model = new FakeListChatModel({ responses: ['{"title":"x","description":null}'] });
+      const result = await saveHandOffGuidanceHandler(
+        store,
+        model,
+        undefined,
+        undefined,
+        task.id,
+        '   ',
+      );
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+    });
+
+    it('rejects a task with no standing Handed-Off Run', async () => {
+      const task = store.createTask({ title: 'Plain task' });
+      const model = new FakeListChatModel({ responses: ['{"title":"x","description":null}'] });
+      const result = await saveHandOffGuidanceHandler(
+        store,
+        model,
+        undefined,
+        undefined,
+        task.id,
+        'try something else',
+      );
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(409);
+    });
+
+    it('rewrites the title/description and writes through patchTaskHandler, leaving status unchanged', async () => {
+      const task = handedOffTask('Ran out of steps twice with unchanged scope.');
+      const model = new FakeListChatModel({
+        responses: [
+          '{"title":"Fix the flaky test (narrowed)","description":"Focus only on the login spec"}',
+        ],
+      });
+
+      const result = await saveHandOffGuidanceHandler(
+        store,
+        model,
+        undefined,
+        undefined,
+        task.id,
+        'Narrow it to just the login spec',
+      );
+
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(result.data!.title).to.equal('Fix the flaky test (narrowed)');
+        expect(result.data!.description).to.equal('Focus only on the login spec');
+      }
+      const stored = store.getTask(task.id)!;
+      expect(stored.title).to.equal('Fix the flaky test (narrowed)');
+      expect(stored.status, 'never auto re-enqueues').to.equal('blocked');
+    });
+
+    it('returns 500 and writes nothing when the rewrite model throws', async () => {
+      const task = handedOffTask('Ran out of steps.');
+      const model = new ThrowingChatModel({});
+
+      const result = await saveHandOffGuidanceHandler(
+        store,
+        model,
+        undefined,
+        undefined,
+        task.id,
+        'try something else',
+      );
+
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(500);
+      expect(store.getTask(task.id)!.title).to.equal('Fix the flaky test');
+    });
+
+    it('returns 500 when the rewrite response is not parseable JSON', async () => {
+      const task = handedOffTask('Ran out of steps.');
+      const model = new FakeListChatModel({ responses: ['sure, here you go'] });
+
+      const result = await saveHandOffGuidanceHandler(
+        store,
+        model,
+        undefined,
+        undefined,
+        task.id,
+        'try something else',
+      );
+
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(500);
+    });
+
+    it('includes the Hand-Off Note and the guidance text in the prompt sent to the model', async () => {
+      const task = handedOffTask('Ran out of steps twice with unchanged scope.');
+      let capturedPrompt = '';
+      class CapturingModel extends FakeListChatModel {
+        override async invoke(input: unknown, options?: unknown) {
+          capturedPrompt = String(input);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return super.invoke(input as any, options as any);
+        }
+      }
+      const model = new CapturingModel({ responses: ['{"title":"x","description":null}'] });
+
+      await saveHandOffGuidanceHandler(
+        store,
+        model,
+        undefined,
+        undefined,
+        task.id,
+        'Narrow it to just the login spec',
+      );
+
+      expect(capturedPrompt).to.include('Ran out of steps twice with unchanged scope.');
+      expect(capturedPrompt).to.include('Narrow it to just the login spec');
+    });
+  });
+
   describe('answerTaskPrompt() — shared task HITL answering (cron task triggers design §4)', () => {
     let store: WorkspaceStore;
     let threads: ThreadStore;
@@ -1486,6 +1662,39 @@ describe('routes/v1/tasks.handlers', () => {
     it('leaves the schedule summary off tasks that have no schedule [unit]', () => {
       const created = createTaskHandler(store, { title: 'plain' });
       expect(created.ok && created.data).to.not.have.property('schedule');
+    });
+
+    describe('latestRun (ADR-0057)', () => {
+      it('is null for a task with no runs [unit]', () => {
+        const created = createTaskHandler(store, { title: 'plain' });
+        const id = created.ok ? created.data!.id : '';
+
+        const result = getTaskHandler(store, id) as { data: TaskResponse & { latestRun: unknown } };
+        expect(result.data.latestRun).to.equal(null);
+      });
+
+      it("carries the latest run's status, Hand-Off Cause and Hand-Off Note [unit]", () => {
+        const created = createTaskHandler(store, {
+          title: 'Fix the flaky test',
+          assignedTo: 'agent',
+        });
+        const id = created.ok ? created.data!.id : '';
+        const entry = store.enqueueTask(id);
+        store.setQueueEntryHandoffReason(entry.id, 'exhaustion_cap');
+        store.setQueueEntrySummary(entry.id, 'Ran out of steps twice with unchanged scope.');
+        store.completeQueueEntry(entry.id, 'handed_off');
+
+        const result = getTaskHandler(store, id) as {
+          data: TaskResponse & {
+            latestRun: { status: string; handoffReason: string | null; summary: string | null };
+          };
+        };
+        expect(result.data.latestRun).to.deep.equal({
+          status: 'handed_off',
+          handoffReason: 'exhaustion_cap',
+          summary: 'Ran out of steps twice with unchanged scope.',
+        });
+      });
     });
 
     it('deletes a task that has run before, taking its run history with it [unit]', () => {

@@ -1,0 +1,130 @@
+suite:
+  id: exhausted-run-retry
+  name: Exhausted-Run Retry — condensed summary
+  purpose: >
+    Verify exhausted-run-summarizer.ts's summarizeExhaustedRun() actually condenses an
+    Exhausted Run's transcript into something a Narrowed Retry can use — not a generic
+    restatement of "ran out of steps" — before it's relied on in production. See ADR-0056,
+    GLOSSARY.md § Narrowed Retry.
+  passingThreshold: 0.75
+  # summarizeExhaustedRun() is a bare, non-agentic model.invoke(prompt) call (no tool
+  # harness, no chat-agent system prompt) — the `input` field on every scenario below
+  # already IS that exact production prompt (SUMMARY_PROMPT_PREFIX + transcript). Applying
+  # the chat harness's own system prompt on top would test a combination that never happens.
+  appliesHarnessSystemPrompt: false
+
+scenarios:
+  - id: err-001-condenses-shell-exec-transcript
+    name: Condenses a shell_exec-heavy transcript into a specific briefing
+    type: llm-judge
+    purpose: >
+      The gmail-labeler regression this issue exists for: a run that made many shell_exec
+      calls against one file before running out of steps. The condensed summary must name
+      what was actually tried (the comparator rewrite, the specific test file) so the retry
+      doesn't repeat it blind — not just restate "ran out of steps."
+      Known capability ceiling for local: before SUMMARY_PROMPT_PREFIX was sharpened to ask
+      directly for what caused the resource limit (commit a81b9c9), local passed this scenario
+      but consistently failed err-002 below (eval:probe-confirmed IDENTICAL, 3/3). After that
+      fix, a follow-up run showed local flip to failing this scenario instead — hallucinating
+      that node -e can't load .ts files, contradicting its own already-correct narrowing to the
+      fixture — also eval:probe-confirmed IDENTICAL, 3/3, not noise. Across every round of this
+      suite local has never passed both err-001 and err-002 in the same run; which one it fails
+      shifts with prompt wording, but the 1-of-2 ceiling itself doesn't move. Treated as a
+      capability ceiling for this model on this suite as a whole, not a wording gap in either
+      scenario — left as a known ceiling, not chased further with more prompt edits.
+    # Keep this input in sync with exhausted-run-summarizer.ts's
+    # SUMMARY_PROMPT_PREFIX + its transcriptLine() formatting ([User]/[Agent]/[Tool call]).
+    input: >
+      The previous attempt at this task hit a hard resource limit before finishing. Condense
+      what it already tried, found, and ruled out into a short briefing for whoever retries it
+      next, so the retry doesn't repeat the same dead ends. Capture: what was attempted, what
+      worked or failed; what specifically contributed to hitting the resource limit (e.g. one
+      oversized tool result, or too many repeated steps) and what the retry should avoid doing
+      again as a result; and anything else to try differently. Write a few sentences of plain
+      prose. Do not include pleasantries or restate these instructions.
+
+
+      Transcript:
+      [User] Begin work on this task now: Fix the flaky comparator test.
+      [Agent] I'll start by running the failing test to see the exact error.
+      [Tool call] shell_exec: npm test -- comparator.test.ts
+      [Tool call] shell_exec result: FAIL comparator.test.ts > sorts items by priority (timeout 5000ms exceeded)
+      [Agent] The test is timing out, not asserting wrong. Let me check the comparator implementation.
+      [Tool call] shell_exec: cat src/utils/comparator.ts
+      [Tool call] shell_exec result: export function compareByPriority(a, b) { return a.priority - b.priority; }
+      [Agent] The comparator itself looks fine. Let me check the test's setup fixture for an infinite loop.
+      [Tool call] shell_exec: cat test/fixtures/comparator-fixture.ts
+      [Tool call] shell_exec result: export function buildFixtureItems() { let items = []; while (items.length < 1000) { items.push(randomItem()); } return items; }
+      [Agent] randomItem() might be the issue — let me check it.
+      [Tool call] shell_exec: cat src/utils/random-item.ts
+      [Tool call] shell_exec result: export function randomItem() { return { priority: Math.random() }; }
+      [Agent] That looks fine too. Let me re-run the test with verbose logging to see where it actually hangs.
+      [Tool call] shell_exec: npm test -- comparator.test.ts --verbose
+      [Tool call] shell_exec result: FAIL comparator.test.ts > sorts items by priority (timeout 5000ms exceeded)
+      [Agent] Still no new information. Let me try running just the fixture in isolation.
+      [Tool call] shell_exec: node -e "require('./test/fixtures/comparator-fixture.ts').buildFixtureItems()"
+      [Tool call] shell_exec result: (hung, no output)
+    rubric: >
+      The response should specifically mention the comparator-fixture.ts file or its
+      buildFixtureItems function as the likely source of the hang, since the transcript's own
+      investigation narrowed the problem there in its last step. It should also convey that
+      the comparator implementation itself (compareByPriority) was already checked and ruled
+      out. A generic restatement like "the run tried several things and ran out of steps
+      investigating a test timeout" with no specific file or function named should score low —
+      it gives a retry nothing to act on differently. Exact wording, length, and whether it
+      explicitly names "Narrowed Retry" do not matter.
+    minScore: 7
+
+  - id: err-002-condenses-turn-overflow-transcript
+    name: Condenses a Turn-Overflow transcript (large tool output, not a step-count issue)
+    type: llm-judge
+    purpose: >
+      The other Exhausted Run flavor (failure_reason turn_overflow, not out_of_steps) — a
+      single oversized tool result rather than many small steps. The summary must still
+      extract the concrete finding, not just note that output was large.
+      See err-001's purpose above for local's documented capability ceiling spanning both
+      scenarios in this suite — not duplicated here.
+    input: >
+      The previous attempt at this task hit a hard resource limit before finishing. Condense
+      what it already tried, found, and ruled out into a short briefing for whoever retries it
+      next, so the retry doesn't repeat the same dead ends. Capture: what was attempted, what
+      worked or failed; what specifically contributed to hitting the resource limit (e.g. one
+      oversized tool result, or too many repeated steps) and what the retry should avoid doing
+      again as a result; and anything else to try differently. Write a few sentences of plain
+      prose. Do not include pleasantries or restate these instructions.
+
+
+      Transcript:
+      [User] Begin work on this task now: Find why the nightly import job is slow.
+      [Agent] Let me pull the full job log to see where time is spent.
+      [Tool call] shell_exec: cat logs/nightly-import-2026-11-04.log
+      [Tool call] shell_exec result: (truncated — last lines shown) ... 02:14:55 processed batch 8831/9000 in 11ms ... 02:41:02 processed batch 8999/9000 in 8200ms ... 02:41:10 processed batch 9000/9000 in 7950ms
+      [Agent] The last two batches are each taking almost a second each, nearly 1000x slower than the typical 11ms batch — that's the actual slowdown, isolated to the very end of the run.
+    rubric: >
+      Score on three explicit criteria — do not weigh anything beyond them:
+
+      1. The response must identify the slowdown as isolated to batches 8999 and 9000
+      specifically (not the job as a whole, and not vaguely "the final batches" without those
+      numbers) — that's the specific finding the transcript's last message already extracted.
+      A generic summary like "the log was too large to process and the agent ran out of
+      context" that omits this finding should score low.
+
+      2. The response must convey that the previous attempt hit its resource limit by
+      cat-ing the entire log file, and that the retry should extract just the relevant
+      batch-timing lines (e.g. via grep/tail/awk) instead of repeating a full dump — this is
+      the one concrete "avoid this dead end" fact the transcript hands it (the prompt's own
+      prefix states a hard resource limit was hit, and the only action in the transcript is
+      the full `cat`). Do not require any particular root-cause hypothesis for the slowdown
+      itself (commit/fsync, lock contention, etc.) — those are optional elaboration, not a
+      scoring criterion.
+
+      3. The response must NOT misattribute which batch numbers were slow — e.g. claiming
+      batch 8831 (the fast, 11ms reference batch) was itself slow. A response that gets
+      criterion 1 right but mixes up the batch numbers here should score low on this
+      criterion specifically, since it would mislead a retry with a wrong fact.
+
+      Whether the response hedges the finding as tentative (given the log was truncated) or
+      states it as settled, and whether it speculates about root causes beyond what's given,
+      do not affect the score either way — those are not part of what this scenario tests.
+      Exact wording and length otherwise do not matter.
+    minScore: 7

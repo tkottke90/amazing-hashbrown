@@ -349,6 +349,52 @@ describe('agents/task-context', () => {
       });
     });
 
+    describe('retryContext (Narrowed Retry, ADR-0056)', () => {
+      it('inlines the condensed summary with the escalation warning [unit]', () => {
+        const text = buildRunKickoff({
+          title: 'Fix the flaky test',
+          resume: false,
+          runNumber: 2,
+          triggerSource: 'manual',
+          previousRuns: [run(1)],
+          retryContext: 'Tried rewriting the comparator; the race is in the setup fixture.',
+        });
+        expect(text).to.include(
+          [
+            'This is a Narrowed Retry — the previous attempt hit a hard resource limit. ' +
+              'Condensed summary of what it already tried and ruled out:',
+            '"Tried rewriting the comparator; the race is in the setup fixture."',
+            'A second run that hits the same limit with this same scope will hand this task ' +
+              "off to a human instead of retrying again — so if you're hitting the same wall, " +
+              'stop and narrow your approach rather than repeating the prior attempt.',
+          ].join('\n'),
+        );
+      });
+
+      it('omits the block entirely when there is no retryContext [unit]', () => {
+        const text = buildRunKickoff({
+          title: 'Audit',
+          resume: false,
+          runNumber: 2,
+          triggerSource: 'manual',
+          previousRuns: [run(1)],
+        });
+        expect(text).to.not.include('Narrowed Retry');
+      });
+
+      it('never shows retryContext on the resume path (regression) [unit]', () => {
+        const text = buildRunKickoff({
+          title: 'Audit',
+          resume: true,
+          runNumber: 3,
+          triggerSource: 'manual',
+          previousRuns: [run(2)],
+          retryContext: 'Should never appear here.',
+        });
+        expect(text).to.equal('Resume this task — continue from where you left off: Audit.');
+      });
+    });
+
     describe('siblingContext (shared progress record, issue #302)', () => {
       const trackerEntry = (overrides: Partial<TaskProgressEntry> = {}): TaskProgressEntry => ({
         id: 1,

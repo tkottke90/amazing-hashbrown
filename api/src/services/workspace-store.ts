@@ -286,6 +286,30 @@ export interface HandedOffRunSummary {
   lastSummary: string | null;
 }
 
+// A task's trailing run of Exhausted Runs with unchanged scope — see
+// exhaustionStreaks(). Narrower than FailedRunStreak: only out_of_steps/
+// turn_overflow failures count, and a scope change also breaks it. See
+// ADR-0056, GLOSSARY.md § Exhaustion Streak.
+export interface ExhaustionStreak {
+  length: number;
+  // The streak's newest member's own Scope Snapshot — compare against the
+  // Task's CURRENT title/description with scopeUnchanged() to confirm the
+  // streak is still live (a human may have edited the Task since).
+  scopeTitle: string | null;
+  scopeDescription: string | null;
+}
+
+// A task's single most recent run's Hand-Off Cause + Scope Snapshot,
+// present only when that latest run is still 'handed_off' — see
+// latestHandoffs(). Distinct from HandedOffRunSummary (a lifetime count
+// across every Handed-Off Run ever): this is "is the task CURRENTLY stuck
+// on a hand-off, and why." See ADR-0056, ADR-0057.
+export interface LatestHandoff {
+  reason: HandoffReason;
+  scopeTitle: string | null;
+  scopeDescription: string | null;
+}
+
 export interface NewTaskInput {
   workspaceId?: string | null;
   title: string;
@@ -333,6 +357,15 @@ export interface PatchTaskInput {
 // for the cron trigger, which runs count toward its iteration budget.
 export type TriggerSource = 'manual' | 'webhook' | 'schedule' | 'catch_up' | 'chat' | 'agent';
 
+// Why a 'failed' Run failed — distinguishes an Exhausted Run (hit a hard
+// resource limit) from any other failure. See ADR-0056, GLOSSARY.md §
+// Exhausted Run.
+export type FailureReason = 'out_of_steps' | 'turn_overflow' | 'other';
+
+// Which of the two things produced a 'handed_off' Run. See ADR-0056,
+// GLOSSARY.md § Hand-Off Cause.
+export type HandoffReason = 'agent_requested' | 'exhaustion_cap';
+
 export interface TaskQueueEntry {
   id: string;
   taskId: string;
@@ -352,6 +385,19 @@ export interface TaskQueueEntry {
   summary: string | null;
   triggerSource: TriggerSource;
   scheduledFor: string | null;
+  // null for every non-'failed' Run, and for a 'failed' Run that predates
+  // this column. See ADR-0056, GLOSSARY.md § Exhausted Run.
+  failureReason: FailureReason | null;
+  // null for every non-'handed_off' Run, and for a 'handed_off' Run that
+  // predates this column. See ADR-0056, GLOSSARY.md § Hand-Off Cause.
+  handoffReason: HandoffReason | null;
+  // A Scope Snapshot of the Task's title/description, captured once at this
+  // Run's kickoff. See ADR-0056, GLOSSARY.md § Scope Snapshot.
+  scopeTitle: string | null;
+  scopeDescription: string | null;
+  // The Narrowed Retry's condensed "what was already tried" summary. See
+  // ADR-0056, GLOSSARY.md § Narrowed Retry.
+  retryContext: string | null;
 }
 
 // One run of a task as the run-history surfaces see it (drawer, kickoff
@@ -490,6 +536,11 @@ interface RawQueueRow {
   summary: string | null;
   trigger_source: TriggerSource;
   scheduled_for: string | null;
+  failure_reason: FailureReason | null;
+  handoff_reason: HandoffReason | null;
+  scope_title: string | null;
+  scope_description: string | null;
+  retry_context: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -626,7 +677,29 @@ function mapQueueEntry(row: RawQueueRow): TaskQueueEntry {
     summary: row.summary,
     triggerSource: row.trigger_source,
     scheduledFor: row.scheduled_for,
+    failureReason: row.failure_reason,
+    handoffReason: row.handoff_reason,
+    scopeTitle: row.scope_title,
+    scopeDescription: row.scope_description,
+    retryContext: row.retry_context,
   };
+}
+
+// Whether a Task's current title/description still match a Scope Snapshot —
+// the test behind both the Exhaustion Streak and the Exhaustion Cap's
+// drag-to-queue rejection. See ADR-0056, GLOSSARY.md § Scope Snapshot.
+export function normalizeScope(value: string | null): string {
+  return (value ?? '').trim().replace(/\s+/g, ' ');
+}
+
+export function scopeUnchanged(
+  task: { title: string; description: string | null },
+  snapshot: { scopeTitle: string | null; scopeDescription: string | null },
+): boolean {
+  return (
+    normalizeScope(task.title) === normalizeScope(snapshot.scopeTitle) &&
+    normalizeScope(task.description) === normalizeScope(snapshot.scopeDescription)
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -677,6 +750,11 @@ function mapQueueEntry(row: RawQueueRow): TaskQueueEntry {
 // 45=WorkspaceStore (tasks.task_file_path — Task Files, see
 // docs/superpowers/specs/2026-10-21-workspace-task-files-design.md,
 // GLOSSARY.md § Task Files, ADR-0035).
+// 46=WorkspaceStore (task_queue.failure_reason/handoff_reason/scope_title/
+// scope_description/retry_context, for Exhausted-Run retry narrowing — see
+// docs/adr/0056-exhausted-run-retries-get-one-narrowed-attempt-then-escalate.md,
+// docs/adr/0057-hand-off-resolution-gets-one-guidance-to-rewrite-flow.md,
+// GLOSSARY.md §§ Exhausted Run, Hand-Off Cause, Scope Snapshot, Narrowed Retry).
 const MIGRATIONS: DbMigration[] = [
   {
     version: 18,
@@ -976,6 +1054,30 @@ const MIGRATIONS: DbMigration[] = [
     // docs/superpowers/specs/2026-10-21-workspace-task-files-design.md,
     // GLOSSARY.md § Task Files, ADR-0035.
     sql: `ALTER TABLE tasks ADD COLUMN task_file_path TEXT`,
+  },
+  {
+    version: 46,
+    // failure_reason classifies a 'failed' Run as an Exhausted Run
+    // ('out_of_steps' | 'turn_overflow') or not ('other'/NULL). handoff_reason
+    // distinguishes a 'handed_off' Run's Hand-Off Cause ('agent_requested' |
+    // 'exhaustion_cap'). scope_title/scope_description are a Scope Snapshot
+    // of the Task's title/description, captured once at every Run's kickoff
+    // — the unchanged-scope check (scopeUnchanged() below) compares the
+    // Task's CURRENT title/description against these, never against another
+    // run's live Task row. retry_context is the Narrowed Retry's condensed
+    // "what was already tried" summary, persisted so it's never regenerated.
+    // All nullable, no backfill — a pre-migration row reads failure_reason:
+    // null, treated the same as 'other' (never part of an Exhaustion
+    // Streak). See ADR-0056, ADR-0057, GLOSSARY.md §§ Exhausted Run,
+    // Hand-Off Cause, Scope Snapshot, Exhaustion Streak, Exhaustion Cap,
+    // Narrowed Retry.
+    sql: `
+      ALTER TABLE task_queue ADD COLUMN failure_reason TEXT;
+      ALTER TABLE task_queue ADD COLUMN handoff_reason TEXT;
+      ALTER TABLE task_queue ADD COLUMN scope_title TEXT;
+      ALTER TABLE task_queue ADD COLUMN scope_description TEXT;
+      ALTER TABLE task_queue ADD COLUMN retry_context TEXT;
+    `,
   },
 ];
 
@@ -2123,6 +2225,30 @@ export class WorkspaceStore extends BaseStore {
     this.db.prepare(`UPDATE task_queue SET summary = ? WHERE id = ?`).run(summary, id);
   }
 
+  // Classifies a 'failed' run (Exhausted or not) — see ADR-0056.
+  setQueueEntryFailureReason(id: string, reason: FailureReason): void {
+    this.db.prepare(`UPDATE task_queue SET failure_reason = ? WHERE id = ?`).run(reason, id);
+  }
+
+  // Records a 'handed_off' run's Hand-Off Cause — see ADR-0056.
+  setQueueEntryHandoffReason(id: string, reason: HandoffReason): void {
+    this.db.prepare(`UPDATE task_queue SET handoff_reason = ? WHERE id = ?`).run(reason, id);
+  }
+
+  // Captures a Scope Snapshot — set once, at this run's kickoff (see
+  // task-execution.ts). See ADR-0056, GLOSSARY.md § Scope Snapshot.
+  setQueueEntryScopeSnapshot(id: string, title: string, description: string | null): void {
+    this.db
+      .prepare(`UPDATE task_queue SET scope_title = ?, scope_description = ? WHERE id = ?`)
+      .run(title, description, id);
+  }
+
+  // The Narrowed Retry's condensed summary — see ADR-0056, GLOSSARY.md §
+  // Narrowed Retry.
+  setQueueEntryRetryContext(id: string, text: string): void {
+    this.db.prepare(`UPDATE task_queue SET retry_context = ? WHERE id = ?`).run(text, id);
+  }
+
   // Takes a queued-but-never-started task back out of the queue and returns
   // it to 'pending'. The pending row is deleted rather than marked
   // 'cancelled' (cf. detachQueueEntry) because it never ran, so it must not
@@ -2235,6 +2361,112 @@ export class WorkspaceStore extends BaseStore {
       .all(...taskIds) as { task_id: string; count: number; last_summary: string | null }[];
     for (const row of rows) {
       result.set(row.task_id, { count: row.count, lastSummary: row.last_summary });
+    }
+    return result;
+  }
+
+  // For each task, how many of its most recent FINISHED runs form an
+  // unbroken trailing run of Exhausted Runs with unchanged Scope Snapshots,
+  // newest-first — broken by a success, a non-Exhausted failure, or a scope
+  // change relative to the row directly above it. A live task only ever
+  // observes length 0 or 1 here: a streak that would reach 2 is intercepted
+  // by the Exhaustion Cap (task-execution.ts) and converted to a
+  // 'handed_off' row, which breaks the chain — the general query still
+  // handles higher counts correctly (useful for tests simulating
+  // hand-edited data). See GLOSSARY.md § Exhaustion Streak, ADR-0056.
+  exhaustionStreaks(taskIds: string[]): Map<string, ExhaustionStreak> {
+    const result = new Map<string, ExhaustionStreak>();
+    if (taskIds.length === 0) return result;
+    const placeholders = taskIds.map(() => '?').join(', ');
+    const rows = this.db
+      .prepare(
+        `WITH ranked AS (
+           SELECT task_id, status, failure_reason, scope_title, scope_description,
+                  ROW_NUMBER() OVER (PARTITION BY task_id ORDER BY enqueued_at DESC, rowid DESC) AS rn
+           FROM task_queue
+           WHERE task_id IN (${placeholders})
+             AND status IN ('done', 'failed', 'cancelled', 'handed_off')
+         ),
+         with_prior AS (
+           SELECT ranked.*,
+                  LAG(scope_title) OVER (PARTITION BY task_id ORDER BY rn) AS prior_scope_title,
+                  LAG(scope_description) OVER (PARTITION BY task_id ORDER BY rn) AS prior_scope_description
+           FROM ranked
+         ),
+         breaks AS (
+           SELECT task_id, rn,
+             CASE
+               WHEN status != 'failed' THEN 1
+               WHEN failure_reason IS NULL OR failure_reason = 'other' THEN 1
+               WHEN rn > 1 AND (
+                 TRIM(COALESCE(scope_title, '')) != TRIM(COALESCE(prior_scope_title, ''))
+                 OR TRIM(COALESCE(scope_description, '')) != TRIM(COALESCE(prior_scope_description, ''))
+               ) THEN 1
+               ELSE 0
+             END AS is_break
+           FROM with_prior
+         ),
+         first_break AS (
+           SELECT task_id, MIN(rn) AS rn FROM breaks WHERE is_break = 1 GROUP BY task_id
+         )
+         SELECT ranked.task_id AS task_id, COUNT(*) AS streak_length,
+                MAX(CASE WHEN ranked.rn = 1 THEN ranked.scope_title END) AS scope_title,
+                MAX(CASE WHEN ranked.rn = 1 THEN ranked.scope_description END) AS scope_description
+         FROM ranked
+         LEFT JOIN first_break ON first_break.task_id = ranked.task_id
+         WHERE ranked.status = 'failed'
+           AND ranked.failure_reason IN ('out_of_steps', 'turn_overflow')
+           AND (first_break.rn IS NULL OR ranked.rn < first_break.rn)
+         GROUP BY ranked.task_id`,
+      )
+      .all(...taskIds) as {
+      task_id: string;
+      streak_length: number;
+      scope_title: string | null;
+      scope_description: string | null;
+    }[];
+    for (const row of rows) {
+      result.set(row.task_id, {
+        length: row.streak_length,
+        scopeTitle: row.scope_title,
+        scopeDescription: row.scope_description,
+      });
+    }
+    return result;
+  }
+
+  // For each task, its single most recent run's Hand-Off Cause + Scope
+  // Snapshot, present only when that latest run is still 'handed_off' (a
+  // task that's been resumed and re-run has moved on, so this naturally
+  // disappears for it). See GLOSSARY.md § Hand-Off Cause, ADR-0056,
+  // ADR-0057.
+  latestHandoffs(taskIds: string[]): Map<string, LatestHandoff> {
+    const result = new Map<string, LatestHandoff>();
+    if (taskIds.length === 0) return result;
+    const placeholders = taskIds.map(() => '?').join(', ');
+    const rows = this.db
+      .prepare(
+        `WITH ranked AS (
+           SELECT task_id, status, handoff_reason, scope_title, scope_description,
+                  ROW_NUMBER() OVER (PARTITION BY task_id ORDER BY enqueued_at DESC, rowid DESC) AS rn
+           FROM task_queue
+           WHERE task_id IN (${placeholders})
+         )
+         SELECT task_id, handoff_reason, scope_title, scope_description
+         FROM ranked WHERE rn = 1 AND status = 'handed_off' AND handoff_reason IS NOT NULL`,
+      )
+      .all(...taskIds) as {
+      task_id: string;
+      handoff_reason: HandoffReason;
+      scope_title: string | null;
+      scope_description: string | null;
+    }[];
+    for (const row of rows) {
+      result.set(row.task_id, {
+        reason: row.handoff_reason,
+        scopeTitle: row.scope_title,
+        scopeDescription: row.scope_description,
+      });
     }
     return result;
   }
@@ -2585,6 +2817,12 @@ export class WorkspaceStore extends BaseStore {
   // paused, turned off, deleted — is a skipped fire, returned as null. The
   // fire time is recorded as lastFiredAt, which is what catch-up and the
   // one-shot "already fired" check read.
+  //
+  // This same idle gate already covers a Handed-Off Run of either Hand-Off
+  // Cause (ADR-0056's exhaustion_cap included): settleTaskAfterRun()'s
+  // outcome === 'handed_off' branch settles the task to 'blocked', never
+  // back to 'scheduled', so task.status !== 'scheduled' skips it here with
+  // no cause-specific code of its own.
   fireCronTask(
     taskId: string,
     scheduledFor: string,

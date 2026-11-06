@@ -114,6 +114,11 @@ describe('shared-database migrations (cross-store)', () => {
       'summary',
       'trigger_source',
       'scheduled_for',
+      'failure_reason',
+      'handoff_reason',
+      'scope_title',
+      'scope_description',
+      'retry_context',
     ]);
 
     const workspaceColumns = (

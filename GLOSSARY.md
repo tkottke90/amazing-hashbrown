@@ -333,12 +333,44 @@ One execution of a Task from dequeue to a terminal or paused stopping point, per
 _Avoid_: Execution, attempt, task execution
 
 **Handed-Off Run**:
-A Run that ends via the `hand_off_task` tool: the agent cooperatively stops after an `ask_user` HITL interrupt has already occurred earlier in that same Run, leaving its own produced summary, rather than reaching `done` or trailing into a Stalled Run. Persisted as `task_queue.status: 'handed_off'`; the owning Task settles to `blocked`, not `failed` (see ADR-0054). Counts as finished for `read_task_run`, and is excluded from a Task's failed-run streak while still surfacing as its own distinct retrospective signal.
+A Run that ends in the `handed_off` status without reaching `done` or trailing into a Stalled Run, settling the owning Task to `blocked` rather than `failed` (see ADR-0054). Produced by one of two Hand-Off Causes: the agent itself calling `hand_off_task` after an `ask_user` HITL interrupt has already occurred earlier in the same Run, or the system settling an Exhausted Run this way once its Exhaustion Cap is reached (see ADR-0056). Counts as finished for `read_task_run`, and is excluded from a Task's failed-run streak while still surfacing as its own distinct retrospective signal.
 _Avoid_: Stopped run, HITL stop, abandoned run
 
+**Hand-Off Cause**:
+A Handed-Off Run's own record of which of the two things produced it: `agent_requested` (the agent cooperatively called `hand_off_task` itself — the only cause before ADR-0056) or `exhaustion_cap` (the system settled it this way once an Exhaustion Cap was reached, see ADR-0056). Only an `exhaustion_cap` hand-off is ever rejected on an unchanged-scope drag back to `queue`; an `agent_requested` one was never about repeated identical scope.
+_Avoid_: Handoff reason, handoff type
+
+**Hand-Off Note**:
+A Handed-Off Run's own summary (`task_queue.summary`) — the agent's own note for an `agent_requested` Hand-Off Cause, or the condensed summary for an `exhaustion_cap` one — surfaced in the Task Drawer as its own labeled section next to Hand-Off Guidance, rather than left to appear unlabeled in run history like any other Run's summary.
+_Avoid_: Handoff summary, handoff reason (see Hand-Off Cause, a different thing with a similar name)
+
+**Exhausted Run**:
+A Run that ends because it hit a hard resource limit — the step/recursion limit (`GraphRecursionError`, `failure_reason: 'out_of_steps'`) or, once even full Turn Overflow truncation still doesn't fit, the trim budget (`ContextBudgetExceededError`, `failure_reason: 'turn_overflow'`) — rather than stopping cooperatively or failing for an undiagnosed reason. Persisted as `task_queue.status: 'failed'`, the same as a Stalled Run, but distinguished from it by that structured `failure_reason` (see ADR-0056).
+_Avoid_: Budget failure, context overflow (see Turn Overflow — too generic on its own), resource-limit failure, timeout
+
 **Stalled Run**:
-A Run that ends with neither `complete_task`, `hand_off_task`, nor an `ask_user` interrupt — the agent simply stopped producing further action. Persisted as `task_queue.status: 'failed'`, the same as a genuinely broken/crashed Run; the only distinguishing record is whatever plain text the agent's last message actually contained, preserved as the Run's summary instead of being discarded (see ADR-0054).
+A Run that ends with neither `complete_task`, `hand_off_task`, nor an `ask_user` interrupt, and didn't hit a hard resource limit either (see Exhausted Run) — the agent simply stopped producing further action for no detected reason. Persisted as `task_queue.status: 'failed'` with `failure_reason: 'other'`, the same status as a genuinely broken/crashed Run or an Exhausted Run; the only further distinguishing record is whatever plain text the agent's last message actually contained, preserved as the Run's summary instead of being discarded (see ADR-0054, ADR-0056).
 _Avoid_: Stall, timeout, dead run
+
+**Scope Snapshot**:
+An Exhausted Run's own copy of its Task's title and description, captured at that Run's kickoff. The next attempt's title/description is compared against it (exact, whitespace-normalized match) to decide whether that attempt still has unchanged scope — the test behind both the Exhaustion Streak and the Exhaustion Cap's drag-to-queue rejection (see ADR-0056).
+_Avoid_: Task snapshot, retry snapshot
+
+**Exhaustion Streak**:
+A Task's run of consecutive Exhausted Runs with unchanged scope (per their Scope Snapshots) — broken by a success, by a non-Exhausted failure (e.g. a Stalled Run or a tool/API error), or by any scope change, any of which starts a fresh streak on that Task's next Exhausted Run. Narrower than the existing `repeated_failures` retrospective anomaly (`failedRunStreaks()`), which counts any consecutive `'failed'` Run regardless of cause or scope.
+_Avoid_: Failed run streak, repeated failures (see `repeated_failures`, a broader, pre-existing signal this is distinct from)
+
+**Exhaustion Cap**:
+The rule that a Task gets exactly one Narrowed Retry per Exhaustion Streak: its second Exhausted Run in the same streak settles as a Handed-Off Run with Hand-Off Cause `exhaustion_cap` instead of retrying again, and a cron-scheduled fire or a drag back to `queue` with still-unchanged scope is rejected while that Hand-Off Cause stands. A fixed constant, not configurable (see ADR-0056).
+_Avoid_: Retry cap, budget-retry cap, retry limit
+
+**Narrowed Retry**:
+The one retry an Exhaustion Streak's first Exhausted Run is allowed, with its Scope Snapshot's title/description still unchanged. Its kickoff gets an additive section — alongside the existing one-line Run summary and Handoff Notes — carrying a condensed summary of what the prior attempt already tried/ruled out (a new, dedicated one-shot LLM summarizer) and an explicit statement that a second Exhausted Run will trigger the Exhaustion Cap. That condensed summary is persisted on the retry's own Run row, not generated fresh each time it's read (see ADR-0056).
+_Avoid_: Scoped retry, smart retry, condensed retry
+
+**Hand-Off Guidance**:
+A free-text field in the Task Drawer, offered on any Handed-Off Run's Task regardless of Hand-Off Cause — the standard way a human responds to a hand-off. On save, a one-shot LLM call folds the guidance together with the Hand-Off Note into a rewritten title/description, through the Task's existing title/description save path; a failed rewrite surfaces an error rather than falling back to raw text, and a successful one does not itself re-enqueue the Task (see ADR-0057).
+_Avoid_: Handoff response, resolution notes, override field
 
 # MCP Tooling
 

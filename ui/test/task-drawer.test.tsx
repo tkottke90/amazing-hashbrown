@@ -7,6 +7,7 @@ const mockTakeOverTask = jest.fn();
 const mockResumeTask = jest.fn();
 const mockPatchTask = jest.fn();
 const mockUpdatePlan = jest.fn();
+const mockSaveHandOffGuidance = jest.fn();
 
 jest.mock('@/hooks/use-tasks', () => ({
   ...jest.requireActual('@/hooks/use-tasks'),
@@ -16,6 +17,7 @@ jest.mock('@/hooks/use-tasks', () => ({
   resumeTask: (...args: unknown[]) => mockResumeTask(...args),
   patchTask: (...args: unknown[]) => mockPatchTask(...args),
   updatePlan: (...args: unknown[]) => mockUpdatePlan(...args),
+  saveHandOffGuidance: (...args: unknown[]) => mockSaveHandOffGuidance(...args),
 }));
 
 const mockListTaskDependencies = jest.fn();
@@ -262,6 +264,98 @@ describe('TaskDrawer — running task controls', () => {
       expect(getPanel()!.getByRole('button', { name: 'Resume' })).toBeInTheDocument(),
     );
     expect(getPanel()!.queryByRole('button', { name: 'Pause' })).not.toBeInTheDocument();
+  });
+});
+
+describe('TaskDrawer — Hand-Off Guidance (ADR-0057)', () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('shows the Hand-Off Note and guidance field for a handed_off run [unit]', async () => {
+    mockFetchTaskRuns.mockResolvedValueOnce([
+      {
+        ...runFixture,
+        status: 'handed_off',
+        handoffReason: 'exhaustion_cap',
+        summary: 'Ran out of steps twice with unchanged scope.',
+      },
+    ]);
+    renderDrawer({ ...baseTask, status: 'blocked' });
+
+    const block = within(await screen.findByTestId('hand-off-guidance'));
+    expect(block.getByText('Ran out of steps twice with unchanged scope.')).toBeInTheDocument();
+    expect(block.getByTestId('hand-off-guidance-input')).toBeInTheDocument();
+  });
+
+  it('does not show the Hand-Off Guidance block for an ordinary manual pause [unit]', async () => {
+    mockFetchTaskRuns.mockResolvedValueOnce([{ ...runFixture, status: 'done' }]);
+    renderDrawer({ ...baseTask, status: 'blocked' });
+
+    await waitFor(() => expect(mockFetchTaskRuns).toHaveBeenCalled());
+    expect(screen.queryByTestId('hand-off-guidance')).not.toBeInTheDocument();
+    expect(screen.getByText('Paused task controls')).toBeInTheDocument();
+  });
+
+  it('saves guidance, updates the title/description fields in place, and keeps the drawer open [unit]', async () => {
+    mockFetchTaskRuns.mockResolvedValueOnce([
+      {
+        ...runFixture,
+        status: 'handed_off',
+        handoffReason: 'exhaustion_cap',
+        summary: 'Ran out of steps.',
+      },
+    ]);
+    mockSaveHandOffGuidance.mockResolvedValue({
+      ...baseTask,
+      status: 'blocked',
+      title: 'Fix the flaky test (narrowed)',
+      description: 'Focus only on the login spec',
+    });
+    renderDrawer({ ...baseTask, status: 'blocked' });
+    await screen.findByTestId('hand-off-guidance');
+
+    fireEvent.input(screen.getByTestId('hand-off-guidance-input'), {
+      target: { value: 'Narrow it to just the login spec' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save guidance' }));
+
+    await waitFor(() =>
+      expect(mockSaveHandOffGuidance).toHaveBeenCalledWith(
+        'task-1',
+        'Narrow it to just the login spec',
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.getByDisplayValue('Fix the flaky test (narrowed)')).toBeInTheDocument(),
+    );
+    expect(screen.getByDisplayValue('Focus only on the login spec')).toBeInTheDocument();
+    // Still open — a successful rewrite never closes the drawer (ADR-0057).
+    expect(screen.getByTestId('hand-off-guidance-input')).toBeInTheDocument();
+  });
+
+  it('shows an error and leaves the fields untouched when the rewrite fails [unit]', async () => {
+    mockFetchTaskRuns.mockResolvedValueOnce([
+      {
+        ...runFixture,
+        status: 'handed_off',
+        handoffReason: 'exhaustion_cap',
+        summary: 'Ran out of steps.',
+      },
+    ]);
+    mockSaveHandOffGuidance.mockRejectedValue(new Error('Hand-Off Guidance rewrite failed: boom'));
+    renderDrawer({ ...baseTask, status: 'blocked' });
+    await screen.findByTestId('hand-off-guidance');
+
+    fireEvent.input(screen.getByTestId('hand-off-guidance-input'), {
+      target: { value: 'Narrow it to just the login spec' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save guidance' }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/Hand-Off Guidance rewrite failed: boom/)).toBeInTheDocument(),
+    );
+    expect(screen.getByDisplayValue('Do the thing')).toBeInTheDocument();
   });
 });
 

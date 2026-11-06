@@ -22,7 +22,12 @@ import {
 } from './active-sse-writer.js';
 import { getTaskAbort, setAbortIntent, type AbortIntent } from './active-task-abort.js';
 import { drainPendingTurns } from './pending-thread-turns.js';
-import { executeTask, finishTaskFile, type QueueEntryWithTask } from './task-execution.js';
+import {
+  executeTask,
+  finishTaskFile,
+  buildNarrowedRetryContext,
+  type QueueEntryWithTask,
+} from './task-execution.js';
 import {
   loadTaskState,
   listWorkspaceTaskFiles,
@@ -1727,6 +1732,181 @@ describe('agents/task-execution', () => {
       await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
 
       expect(store.getTask(entry.task.id)!.status).to.equal('failed');
+      expect(
+        store.getQueueEntry(entry.id)!.failureReason,
+        'sub-agent-only, classified other',
+      ).to.equal('other');
+    });
+  });
+
+  describe('Exhaustion Cap (ADR-0056)', () => {
+    function rerun(taskId: string): QueueEntryWithTask {
+      store.patchTask(taskId, { status: 'ready' });
+      store.enqueueTask(taskId);
+      return store.dequeueNext()! as QueueEntryWithTask;
+    }
+
+    const recursionError = () =>
+      Object.assign(new Error('Recursion limit reached'), { name: 'GraphRecursionError' });
+    const contextBudgetError = () =>
+      Object.assign(new Error('Turn Overflow: even fully truncated tool output does not fit.'), {
+        name: 'ContextBudgetExceededError',
+      });
+
+    it('classifies a first GraphRecursionError failure as out_of_steps, with no Hand-Off Cause [orchestration]', async () => {
+      const entry = makeGlobalEntry('Fix the flaky test');
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeThrowingAgent([], recursionError())),
+      });
+
+      const row = store.getQueueEntry(entry.id)!;
+      expect(row.status).to.equal('failed');
+      expect(row.failureReason).to.equal('out_of_steps');
+      expect(row.handoffReason).to.equal(null);
+    });
+
+    it('classifies a first ContextBudgetExceededError failure as turn_overflow [orchestration]', async () => {
+      const entry = makeGlobalEntry('Fix the flaky test');
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeThrowingAgent([], contextBudgetError())),
+      });
+
+      expect(store.getQueueEntry(entry.id)!.failureReason).to.equal('turn_overflow');
+    });
+
+    it('classifies a first non-Exhausted failure as other [orchestration]', async () => {
+      const entry = makeGlobalEntry('Fix the flaky test');
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(fakeThrowingAgent([])) });
+
+      expect(store.getQueueEntry(entry.id)!.failureReason).to.equal('other');
+    });
+
+    it(
+      'hands off to the user, with Hand-Off Cause exhaustion_cap, when the Narrowed Retry ' +
+        'also hits a hard limit with unchanged scope [orchestration]',
+      async () => {
+        const first = makeGlobalEntry('Fix the flaky test');
+        await executeTask(first, {
+          buildTaskAgent: fakeBuildTaskAgent(fakeThrowingAgent([], recursionError())),
+        });
+
+        const second = rerun(first.task.id);
+        await executeTask(second, {
+          buildTaskAgent: fakeBuildTaskAgent(fakeThrowingAgent([], contextBudgetError())),
+        });
+
+        const row = store.getQueueEntry(second.id)!;
+        expect(row.status).to.equal('handed_off');
+        expect(row.failureReason).to.equal('turn_overflow');
+        expect(row.handoffReason).to.equal('exhaustion_cap');
+        expect(store.getTask(first.task.id)!.status, 'settles to blocked, not handed_off').to.equal(
+          'blocked',
+        );
+      },
+    );
+
+    it('does not cap a Narrowed Retry that fails for an unrelated (non-Exhausted) reason [orchestration]', async () => {
+      const first = makeGlobalEntry('Fix the flaky test');
+      await executeTask(first, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeThrowingAgent([], recursionError())),
+      });
+
+      const second = rerun(first.task.id);
+      await executeTask(second, { buildTaskAgent: fakeBuildTaskAgent(fakeThrowingAgent([])) });
+
+      const row = store.getQueueEntry(second.id)!;
+      expect(row.status).to.equal('failed');
+      expect(row.failureReason).to.equal('other');
+      expect(row.handoffReason).to.equal(null);
+    });
+
+    it('does not cap a Narrowed Retry that hits the same limit after the scope was edited [orchestration]', async () => {
+      const first = makeGlobalEntry('Fix the flaky test');
+      await executeTask(first, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeThrowingAgent([], recursionError())),
+      });
+
+      store.patchTask(first.task.id, { title: 'Fix the flaky test (narrowed to the login spec)' });
+      const second = rerun(first.task.id);
+      await executeTask(second, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeThrowingAgent([], recursionError())),
+      });
+
+      const row = store.getQueueEntry(second.id)!;
+      expect(row.status, 'a changed scope is not a Narrowed Retry, so no cap applies').to.equal(
+        'failed',
+      );
+      expect(row.handoffReason).to.equal(null);
+    });
+
+    it(
+      "builds the Narrowed Retry's condensed summary via the injected seam, persists it, " +
+        'and carries it into the retry kickoff [orchestration]',
+      async () => {
+        const first = makeGlobalEntry('Fix the flaky test');
+        await executeTask(first, {
+          buildTaskAgent: fakeBuildTaskAgent(fakeThrowingAgent([], recursionError())),
+        });
+
+        const second = rerun(first.task.id);
+        let seenArgs: unknown[] | null = null;
+        const fakeBuildNarrowedRetryContext: typeof buildNarrowedRetryContext = async (...args) => {
+          seenArgs = args;
+          return 'Tried rewriting the comparator; the race is in the setup fixture.';
+        };
+        const capture: { input: unknown } = { input: null };
+        await executeTask(second, {
+          buildTaskAgent: fakeBuildTaskAgent(fakeCapturingAgent([], capture)),
+          buildNarrowedRetryContext: fakeBuildNarrowedRetryContext,
+        });
+
+        expect(seenArgs, 'the seam was invoked').to.not.equal(null);
+        expect(store.getQueueEntry(second.id)!.retryContext).to.equal(
+          'Tried rewriting the comparator; the race is in the setup fixture.',
+        );
+        const content = (capture.input as { messages: { content: string }[] }).messages[0]!.content;
+        expect(content).to.include('This is a Narrowed Retry');
+        expect(content).to.include(
+          '"Tried rewriting the comparator; the race is in the setup fixture."',
+        );
+      },
+    );
+
+    it('does not build a Narrowed Retry context on a first run (no streak yet) [orchestration]', async () => {
+      let called = false;
+      const spy: typeof buildNarrowedRetryContext = async (...args) => {
+        called = true;
+        return buildNarrowedRetryContext(...args);
+      };
+      const entry = makeGlobalEntry('Fix the flaky test');
+
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeThrowingAgent([], recursionError())),
+        buildNarrowedRetryContext: spy,
+      });
+
+      expect(
+        called,
+        'isNarrowedRetry is false on a first run, so the seam is never reached',
+      ).to.equal(false);
+    });
+
+    it("sets Hand-Off Cause 'agent_requested' when hand_off_task settles the run [orchestration]", async () => {
+      const entry = makeGlobalEntry();
+      await executeTask(entry, {
+        buildTaskAgent: fakeBuildTaskAgent(
+          fakeAgent([], { kind: 'free_text', question: 'Which region should I use?' }),
+        ),
+      });
+      store.patchTask(entry.task.id, { status: 'ready', assignedTo: 'agent' });
+      store.resumePausedEntry(entry.id);
+      const resumed = store.dequeueNext()! as QueueEntryWithTask;
+
+      await executeTask(resumed, {
+        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(HAND_OFF_TASK_EVENTS)),
+      });
+
+      expect(store.getQueueEntry(entry.id)!.handoffReason).to.equal('agent_requested');
     });
   });
 

@@ -32,6 +32,14 @@ export const TraceSourceSchema = z.enum([
   // (api/src/agents/task-file-generators.ts).
   'task-file-goal',
   'task-file-handoff',
+  // A Narrowed Retry's condensed "what was already tried" summary over the
+  // prior Exhausted Run's transcript (api/src/agents/exhausted-run-summarizer.ts).
+  // See ADR-0056, GLOSSARY.md § Narrowed Retry.
+  'exhausted-run-retry',
+  // The Hand-Off Guidance rewrite that folds a human's guidance into a
+  // Task's title/description (api/src/agents/hand-off-guidance.ts). See
+  // ADR-0057, GLOSSARY.md § Hand-Off Guidance.
+  'hand-off-guidance',
 ]);
 
 export const SpanRecordSchema = z.object({

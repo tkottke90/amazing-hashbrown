@@ -1860,6 +1860,22 @@ describe('services/workspace-store', () => {
       expect(store.fireCronTask(task.id, '2026-09-26T00:00:00.000Z', 'schedule')).to.equal(null);
     });
 
+    it(
+      'skips a fire for a Handed-Off Run (any Hand-Off Cause) — the existing idle gate ' +
+        'already covers this with no new code, since a handed-off task settles to blocked, ' +
+        'not back to scheduled (ADR-0056) [unit]',
+      () => {
+        const task = scheduledRepeatTask();
+        const entry = store.fireCronTask(task.id, '2026-09-26T00:00:00.000Z', 'schedule')!;
+        store.dequeueNext();
+        store.setQueueEntryHandoffReason(entry.id, 'exhaustion_cap');
+        store.completeQueueEntry(entry.id, 'handed_off');
+
+        expect(store.getTask(task.id)!.status).to.equal('blocked');
+        expect(store.fireCronTask(task.id, '2026-09-27T00:00:00.000Z', 'schedule')).to.equal(null);
+      },
+    );
+
     it("settles a finished scheduled run back to 'scheduled' instead of 'done' [orchestration]", () => {
       const task = scheduledRepeatTask();
       const entry = store.fireCronTask(task.id, '2026-09-26T00:00:00.000Z', 'schedule')!;
@@ -2241,6 +2257,126 @@ describe('services/workspace-store', () => {
       store.completeQueueEntry(entry.id, 'done');
 
       expect(store.handedOffRunCounts([task.id]).has(task.id)).to.equal(false);
+    });
+
+    describe('exhaustionStreaks (ADR-0056)', () => {
+      const settleExhausted = (
+        task: { id: string },
+        failureReason: 'out_of_steps' | 'turn_overflow',
+        scope: { title: string; description?: string | null },
+      ) => {
+        const entry = store.enqueueTask(task.id);
+        store.setQueueEntryScopeSnapshot(entry.id, scope.title, scope.description ?? null);
+        store.setQueueEntryFailureReason(entry.id, failureReason);
+        store.completeQueueEntry(entry.id, 'failed');
+        return entry;
+      };
+
+      it('is absent for a task with no failures [unit]', () => {
+        const task = store.createTask({ title: 't', assignedTo: 'agent' });
+        const entry = store.enqueueTask(task.id);
+        store.completeQueueEntry(entry.id, 'done');
+
+        expect(store.exhaustionStreaks([task.id]).has(task.id)).to.equal(false);
+      });
+
+      it('is length 1 for a single Exhausted Run [unit]', () => {
+        const task = store.createTask({ title: 'Fix the flaky test', assignedTo: 'agent' });
+        settleExhausted(task, 'out_of_steps', { title: 'Fix the flaky test' });
+
+        const streak = store.exhaustionStreaks([task.id]).get(task.id);
+
+        expect(streak).to.deep.equal({
+          length: 1,
+          scopeTitle: 'Fix the flaky test',
+          scopeDescription: null,
+        });
+      });
+
+      it('breaks the streak at a non-Exhausted failure [unit]', () => {
+        const task = store.createTask({ title: 't', assignedTo: 'agent' });
+        const other = store.enqueueTask(task.id);
+        store.setQueueEntryFailureReason(other.id, 'other');
+        store.completeQueueEntry(other.id, 'failed');
+        settleExhausted(task, 'out_of_steps', { title: 't' });
+
+        expect(store.exhaustionStreaks([task.id]).get(task.id)?.length).to.equal(1);
+      });
+
+      it('breaks the streak when scope changes between two Exhausted Runs [unit]', () => {
+        const task = store.createTask({ title: 't', assignedTo: 'agent' });
+        settleExhausted(task, 'out_of_steps', { title: 'Original scope' });
+        settleExhausted(task, 'out_of_steps', { title: 'Narrowed scope' });
+
+        expect(store.exhaustionStreaks([task.id]).get(task.id)).to.deep.equal({
+          length: 1,
+          scopeTitle: 'Narrowed scope',
+          scopeDescription: null,
+        });
+      });
+
+      it('counts consecutive Exhausted Runs with unchanged scope [unit]', () => {
+        const task = store.createTask({ title: 'Same scope', assignedTo: 'agent' });
+        settleExhausted(task, 'out_of_steps', { title: 'Same scope' });
+        settleExhausted(task, 'turn_overflow', { title: 'Same scope' });
+
+        expect(store.exhaustionStreaks([task.id]).get(task.id)?.length).to.equal(2);
+      });
+
+      it('breaks the streak at a done or handed_off run [unit]', () => {
+        const task = store.createTask({ title: 't', assignedTo: 'agent' });
+        settleExhausted(task, 'out_of_steps', { title: 't' });
+        const handedOff = store.enqueueTask(task.id);
+        store.completeQueueEntry(handedOff.id, 'handed_off');
+
+        expect(store.exhaustionStreaks([task.id]).has(task.id)).to.equal(false);
+      });
+
+      it('keeps multiple tasks independent in one batched call [unit]', () => {
+        const a = store.createTask({ title: 'a', assignedTo: 'agent' });
+        const b = store.createTask({ title: 'b', assignedTo: 'agent' });
+        settleExhausted(a, 'out_of_steps', { title: 'a' });
+
+        const streaks = store.exhaustionStreaks([a.id, b.id]);
+
+        expect(streaks.get(a.id)?.length).to.equal(1);
+        expect(streaks.has(b.id)).to.equal(false);
+      });
+    });
+
+    describe('latestHandoffs (ADR-0056, ADR-0057)', () => {
+      it('is present with the Hand-Off Cause and Scope Snapshot for a currently handed-off task [unit]', () => {
+        const task = store.createTask({ title: 'Fix the flaky test', assignedTo: 'agent' });
+        const entry = store.enqueueTask(task.id);
+        store.setQueueEntryScopeSnapshot(entry.id, 'Fix the flaky test', null);
+        store.setQueueEntryHandoffReason(entry.id, 'exhaustion_cap');
+        store.completeQueueEntry(entry.id, 'handed_off');
+
+        expect(store.latestHandoffs([task.id]).get(task.id)).to.deep.equal({
+          reason: 'exhaustion_cap',
+          scopeTitle: 'Fix the flaky test',
+          scopeDescription: null,
+        });
+      });
+
+      it('is absent once a handed-off task has been resumed and re-run [unit]', () => {
+        const task = store.createTask({ title: 't', assignedTo: 'agent' });
+        const handedOff = store.enqueueTask(task.id);
+        store.setQueueEntryHandoffReason(handedOff.id, 'agent_requested');
+        store.completeQueueEntry(handedOff.id, 'handed_off');
+        const rerun = store.enqueueTask(task.id);
+        store.completeQueueEntry(rerun.id, 'done');
+
+        expect(store.latestHandoffs([task.id]).has(task.id)).to.equal(false);
+      });
+
+      it('is absent for a task with no handed_off runs [unit]', () => {
+        const task = store.createTask({ title: 't', assignedTo: 'agent' });
+        const entry = store.enqueueTask(task.id);
+        store.completeQueueEntry(entry.id, 'done');
+
+        expect(store.latestHandoffs([task.id]).has(task.id)).to.equal(false);
+      });
     });
 
     it('completeQueueEntry(id, "handed_off") settles the task to blocked, not the run outcome itself (issue #364) [unit]', () => {
