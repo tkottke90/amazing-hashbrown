@@ -7,6 +7,7 @@ import {
   ModelConfigSchema,
   SkillsConfigSchema,
   TaskBoardSchema,
+  TaskCreationSchema,
   parseFavoriteModels,
   parseProviders,
   resolveServerTimezone,
@@ -42,6 +43,31 @@ describe('config/env', () => {
     it('rejects a negative or non-integer doneRetentionDays', () => {
       expect(() => TaskBoardSchema.parse({ doneRetentionDays: -1 })).to.throw();
       expect(() => TaskBoardSchema.parse({ doneRetentionDays: 1.5 })).to.throw();
+    });
+  });
+
+  describe('TaskCreationSchema', () => {
+    it('defaults duplicateTimeSlotToleranceMinutes to 10 (Issue #365, ADR-0058)', () => {
+      expect(TaskCreationSchema.parse({}).duplicateTimeSlotToleranceMinutes).to.equal(10);
+    });
+
+    it('accepts 0, which disables the Duplicate Time Slot Tolerance', () => {
+      expect(
+        TaskCreationSchema.parse({ duplicateTimeSlotToleranceMinutes: 0 })
+          .duplicateTimeSlotToleranceMinutes,
+      ).to.equal(0);
+    });
+
+    it('accepts an overridden duplicateTimeSlotToleranceMinutes', () => {
+      expect(
+        TaskCreationSchema.parse({ duplicateTimeSlotToleranceMinutes: 30 })
+          .duplicateTimeSlotToleranceMinutes,
+      ).to.equal(30);
+    });
+
+    it('rejects a negative or non-integer duplicateTimeSlotToleranceMinutes', () => {
+      expect(() => TaskCreationSchema.parse({ duplicateTimeSlotToleranceMinutes: -1 })).to.throw();
+      expect(() => TaskCreationSchema.parse({ duplicateTimeSlotToleranceMinutes: 1.5 })).to.throw();
     });
   });
 

@@ -1182,6 +1182,257 @@ describe('services/workspace-store', () => {
     });
   });
 
+  // Issue #365 / docs/superpowers/specs/2026-11-06-scheduled-task-dedup-design.md
+  // / GLOSSARY.md's "Scheduled Task Deduplication": createTask/createTasks
+  // must not insert a second row for a cron_once/cron_repeat task that
+  // already shares an existing task's Duplicate Signature, Matching Time
+  // Slot, and trackerId — it should return the existing task (reused: true)
+  // untouched instead.
+  describe('createTask()/createTasks() scheduled task deduplication (Issue #365)', () => {
+    let db: ReturnType<typeof openDatabase>;
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-store-task-dedup-test-'));
+      db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    const CRON_ONCE_CONFIG = {
+      fireAt: '2026-11-06T13:05:00.000Z',
+      timezone: 'UTC',
+      enabled: true,
+      enabledAt: '2026-11-06T12:00:00.000Z',
+      lastFiredAt: null,
+    };
+
+    const CRON_REPEAT_CONFIG = {
+      expression: '0 9 * * *',
+      timezone: 'UTC',
+      enabled: true,
+      maxIterations: null,
+      stopAfter: null,
+      maxConsecutiveFailures: 3,
+      enabledAt: '2026-01-01T00:00:00.000Z',
+      lastFiredAt: null,
+      consecutiveFailures: 0,
+      pausedReason: null,
+    };
+
+    it('reuses an existing cron_once task whose fireAt is within tolerance', () => {
+      const first = store.createTask({
+        title: 'One-off Scheduler trigger test',
+        triggerType: 'cron_once',
+        triggerConfig: { ...CRON_ONCE_CONFIG, fireAt: '2026-11-06T13:04:16.000Z' },
+      });
+
+      const second = store.createTask({
+        title: 'One-off Scheduler trigger test',
+        triggerType: 'cron_once',
+        triggerConfig: { ...CRON_ONCE_CONFIG, fireAt: '2026-11-06T13:05:32.000Z' },
+      });
+
+      expect(second.reused).to.equal(true);
+      expect(second.id).to.equal(first.id);
+      expect(store.listTasks({})).to.have.length(1);
+    });
+
+    it('does not reuse a cron_once task whose fireAt is outside the tolerance window', () => {
+      store.createTask({
+        title: 'One-off Scheduler trigger test',
+        triggerType: 'cron_once',
+        triggerConfig: { ...CRON_ONCE_CONFIG, fireAt: '2026-11-06T13:00:00.000Z' },
+      });
+
+      const second = store.createTask({
+        title: 'One-off Scheduler trigger test',
+        triggerType: 'cron_once',
+        triggerConfig: { ...CRON_ONCE_CONFIG, fireAt: '2026-11-06T13:30:00.000Z' },
+      });
+
+      expect(second.reused).to.not.equal(true);
+      expect(store.listTasks({})).to.have.length(2);
+    });
+
+    it('does not reuse across different workspaces', () => {
+      const wsA = store.createWorkspace({ name: 'A', location: '/tmp/a' });
+      const wsB = store.createWorkspace({ name: 'B', location: '/tmp/b' });
+
+      store.createTask({
+        title: 'Verify',
+        workspaceId: wsA.id,
+        triggerType: 'cron_once',
+        triggerConfig: CRON_ONCE_CONFIG,
+      });
+      const second = store.createTask({
+        title: 'Verify',
+        workspaceId: wsB.id,
+        triggerType: 'cron_once',
+        triggerConfig: CRON_ONCE_CONFIG,
+      });
+
+      expect(second.reused).to.not.equal(true);
+      expect(store.listTasks({})).to.have.length(2);
+    });
+
+    it('does not reuse a task linked to a different trackerId', () => {
+      store.createTask({
+        title: 'Verify',
+        trackerId: 'owner/repo#1',
+        triggerType: 'cron_once',
+        triggerConfig: CRON_ONCE_CONFIG,
+      });
+      const second = store.createTask({
+        title: 'Verify',
+        trackerId: 'owner/repo#2',
+        triggerType: 'cron_once',
+        triggerConfig: CRON_ONCE_CONFIG,
+      });
+
+      expect(second.reused).to.not.equal(true);
+      expect(store.listTasks({})).to.have.length(2);
+    });
+
+    it('does not reuse a task with a different description', () => {
+      store.createTask({
+        title: 'Verify',
+        description: 'first',
+        triggerType: 'cron_once',
+        triggerConfig: CRON_ONCE_CONFIG,
+      });
+      const second = store.createTask({
+        title: 'Verify',
+        description: 'second',
+        triggerType: 'cron_once',
+        triggerConfig: CRON_ONCE_CONFIG,
+      });
+
+      expect(second.reused).to.not.equal(true);
+      expect(store.listTasks({})).to.have.length(2);
+    });
+
+    it('reuses an existing cron_repeat task with an identical expression and timezone', () => {
+      const first = store.createTask({
+        title: 'Nightly summary',
+        triggerType: 'cron_repeat',
+        triggerConfig: CRON_REPEAT_CONFIG,
+      });
+      const second = store.createTask({
+        title: 'Nightly summary',
+        triggerType: 'cron_repeat',
+        triggerConfig: CRON_REPEAT_CONFIG,
+      });
+
+      expect(second.reused).to.equal(true);
+      expect(second.id).to.equal(first.id);
+      expect(store.listTasks({})).to.have.length(1);
+    });
+
+    it('does not reuse a cron_repeat task with a different expression', () => {
+      store.createTask({
+        title: 'Nightly summary',
+        triggerType: 'cron_repeat',
+        triggerConfig: CRON_REPEAT_CONFIG,
+      });
+      const second = store.createTask({
+        title: 'Nightly summary',
+        triggerType: 'cron_repeat',
+        triggerConfig: { ...CRON_REPEAT_CONFIG, expression: '0 10 * * *' },
+      });
+
+      expect(second.reused).to.not.equal(true);
+      expect(store.listTasks({})).to.have.length(2);
+    });
+
+    it('counts a done or cancelled existing task as a match (status is not a filter)', () => {
+      const first = store.createTask({
+        title: 'One-off Scheduler trigger test',
+        triggerType: 'cron_once',
+        triggerConfig: CRON_ONCE_CONFIG,
+      });
+      store.patchTask(first.id, { status: 'done' });
+
+      const second = store.createTask({
+        title: 'One-off Scheduler trigger test',
+        triggerType: 'cron_once',
+        triggerConfig: CRON_ONCE_CONFIG,
+      });
+
+      expect(second.reused).to.equal(true);
+      expect(second.id).to.equal(first.id);
+      expect(store.listTasks({})).to.have.length(1);
+    });
+
+    it('leaves the reused task entirely unmodified — no updatedAt bump, no status change', () => {
+      const first = store.createTask({
+        title: 'One-off Scheduler trigger test',
+        triggerType: 'cron_once',
+        triggerConfig: CRON_ONCE_CONFIG,
+      });
+      store.patchTask(first.id, { status: 'done' });
+      const before = store.getTask(first.id)!;
+
+      store.createTask({
+        title: 'One-off Scheduler trigger test',
+        triggerType: 'cron_once',
+        triggerConfig: CRON_ONCE_CONFIG,
+      });
+
+      const after = store.getTask(first.id)!;
+      expect(after).to.deep.equal(before);
+    });
+
+    it('reuses a duplicate entry within the same createTasks() batch, in list order', () => {
+      const [first, second] = store.createTasks([
+        {
+          title: 'One-off Scheduler trigger test',
+          triggerType: 'cron_once',
+          triggerConfig: CRON_ONCE_CONFIG,
+        },
+        {
+          title: 'One-off Scheduler trigger test',
+          triggerType: 'cron_once',
+          triggerConfig: CRON_ONCE_CONFIG,
+        },
+      ]);
+
+      expect(first!.reused).to.not.equal(true);
+      expect(second!.reused).to.equal(true);
+      expect(second!.id).to.equal(first!.id);
+      expect(store.listTasks({})).to.have.length(1);
+    });
+
+    it('does not re-schedule or re-enqueue a reused task via createTasks()', () => {
+      const [scheduled] = store.createTasks([
+        {
+          title: 'One-off Scheduler trigger test',
+          triggerType: 'cron_once',
+          triggerConfig: CRON_ONCE_CONFIG,
+        },
+      ]);
+      const before = store.getTask(scheduled!.id)!;
+
+      const [, duplicate] = store.createTasks([
+        { title: 'unrelated' },
+        {
+          title: 'One-off Scheduler trigger test',
+          triggerType: 'cron_once',
+          triggerConfig: CRON_ONCE_CONFIG,
+        },
+      ]);
+
+      expect(duplicate!.reused).to.equal(true);
+      const after = store.getTask(scheduled!.id)!;
+      expect(after).to.deep.equal(before);
+      expect(store.listQueue().some((e) => e.taskId === scheduled!.id)).to.equal(false);
+    });
+  });
+
   describe('task dependencies (schema, CRUD, gating)', () => {
     let store: WorkspaceStore;
     let dir: string;
@@ -1903,7 +2154,10 @@ describe('services/workspace-store', () => {
 
     it('lists only idle cron tasks for the registry to arm on boot [unit]', () => {
       const scheduled = scheduledRepeatTask();
-      const busy = scheduledRepeatTask();
+      // A distinct expression keeps this a genuinely separate task rather
+      // than a Reused Task (Issue #365) — scheduledRepeatTask()'s default
+      // fixture is otherwise identical to `scheduled`'s.
+      const busy = scheduledRepeatTask({ expression: '0 1 * * *' });
       store.fireCronTask(busy.id, '2026-09-26T00:00:00.000Z', 'schedule');
       store.createTask({ title: 'manual' });
 

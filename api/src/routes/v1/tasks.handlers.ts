@@ -143,6 +143,9 @@ export type RunOutcome = 'done' | 'failed' | 'cancelled' | 'handed_off';
 export type TaskResponse = Task & {
   schedule?: TaskSchedule & { lastRunOutcome: RunOutcome | null };
   warning?: string;
+  // Set when this task came back as a Reused Task (Issue #365, GLOSSARY.md)
+  // instead of being freshly inserted — the caller created nothing new.
+  reused?: boolean;
 };
 
 const RUN_OUTCOMES: ReadonlySet<string> = new Set(['done', 'failed', 'cancelled', 'handed_off']);
@@ -265,8 +268,16 @@ export function createTaskHandler(
   const trigger = resolveTriggerConfig(null, body, now);
   if (!trigger.ok) return badRequest(trigger.error);
   const task = store.createTask({ ...body, triggerConfig: trigger.triggerConfig } as NewTaskInput);
-  const status = statusAfterTriggerSave(store, task, now);
-  const result = withSchedule(store, status ? store.patchTask(task.id, { status })! : task, now);
+  // A Reused Task (see GLOSSARY.md) is returned exactly as it already was —
+  // it must never be re-patched onto its schedule just because this call
+  // "created" it (Issue #365, D6 of the design).
+  let result: TaskResponse;
+  if (task.reused) {
+    result = { ...withSchedule(store, task, now), reused: true };
+  } else {
+    const status = statusAfterTriggerSave(store, task, now);
+    result = withSchedule(store, status ? store.patchTask(task.id, { status })! : task, now);
+  }
   return ok(trigger.warning ? { ...result, warning: trigger.warning } : result);
 }
 

@@ -5,6 +5,7 @@ import { env } from '../config/env.js';
 import { isCronTrigger, statusForSavedSchedule, type CronConfig } from './cron-config.js';
 import { settleCronRun } from './cron-settlement.js';
 import { resolveProviderConfig } from './provider-factory.js';
+import { findDuplicateTask } from './task-dedup.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -1624,7 +1625,34 @@ export class WorkspaceStore extends BaseStore {
     return row ? mapTask(row) : null;
   }
 
-  createTask(input: NewTaskInput): Task {
+  // Scheduled Task Deduplication (Issue #365, GLOSSARY.md, ADR-0058): before
+  // inserting a new cron_once/cron_repeat task, check for a Reused Task — an
+  // existing task in the same workspace scope that already shares this
+  // input's Duplicate Signature, Matching Time Slot, and trackerId. A match
+  // is returned as-is (reused: true) instead of inserting a new row; the
+  // existing task is never touched. Only cron-eligible candidates are
+  // considered, both as the input and as a match. See
+  // docs/superpowers/specs/2026-11-06-scheduled-task-dedup-design.md.
+  createTask(input: NewTaskInput): Task & { reused?: boolean } {
+    const triggerType = input.triggerType ?? 'manual';
+    if (isCronTrigger(triggerType) && input.triggerConfig) {
+      const candidates = this.listTasks({ workspaceId: input.workspaceId ?? null }).filter((t) =>
+        isCronTrigger(t.triggerType),
+      );
+      const duplicate = findDuplicateTask(
+        candidates,
+        {
+          title: input.title,
+          description: input.description ?? null,
+          trackerId: input.trackerId ?? null,
+          triggerType,
+          triggerConfig: input.triggerConfig,
+        },
+        env.taskCreation.duplicateTimeSlotToleranceMinutes,
+      );
+      if (duplicate) return { ...duplicate, reused: true };
+    }
+
     const id = randomUUID();
     const now = new Date().toISOString();
 
@@ -2572,7 +2600,9 @@ export class WorkspaceStore extends BaseStore {
   // being readied/scheduled/enqueued — see releaseEligibleDependents() for
   // how it's later picked up (readied, or scheduled if it's a cron task)
   // once its dependencies are satisfied.
-  createTasks(inputs: (NewTaskInput & { dependsOnIndexes?: number[] })[]): Task[] {
+  createTasks(
+    inputs: (NewTaskInput & { dependsOnIndexes?: number[] })[],
+  ): (Task & { reused?: boolean })[] {
     return this.db.transaction(() => {
       inputs.forEach((input, i) => {
         for (const depIndex of input.dependsOnIndexes ?? []) {
@@ -2593,6 +2623,12 @@ export class WorkspaceStore extends BaseStore {
       });
 
       return created.map((task) => {
+        // A Reused Task is returned exactly as it already was — it must
+        // never be re-patched onto a schedule or re-enqueued just because
+        // this batch "created" it (see GLOSSARY.md's Reused Task, D6/D7 of
+        // the design). Its own prior run(s), status, and queue state are
+        // left completely alone.
+        if (task.reused) return task;
         if (this.listTaskDependencies(task.id).length === 0) {
           if (isCronTrigger(task.triggerType) && task.triggerConfig) {
             // A cron-triggered task goes straight onto its schedule instead
