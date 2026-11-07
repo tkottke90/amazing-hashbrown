@@ -301,7 +301,7 @@ function McpServerForm({ mode, initial, onSave, openCount }: McpServerFormProps)
   }
 
   return (
-    <form onSubmit={handleSubmit} class="flex min-h-full flex-col">
+    <form onSubmit={handleSubmit} class="flex flex-1 min-h-0 flex-col">
       <div class="flex-1 space-y-4 overflow-y-auto p-4">
         <div class="space-y-1.5">
           <Label htmlFor={`mcp-server-name-${instanceKey}`}>Name</Label>

@@ -78,7 +78,7 @@ function CreateSkillForm() {
   }
 
   return (
-    <div class="flex min-h-full flex-col">
+    <div class="flex flex-1 min-h-0 flex-col">
       <div class="flex-1 space-y-6 overflow-y-auto p-4">
         <FormLayout>
           <div class="space-y-1.5">
