@@ -607,7 +607,7 @@ describe('agents/system-prompt', () => {
     it('describes the workspace-only filename argument in a way that tolerates not being bound', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
-        "right now. If\nyour own tool definition doesn't list a filename argument, you don't have a workspace",
+        "right now. If your own tool definition doesn't list a filename argument, you don't have a workspace\nin this conversation",
       );
     });
 
@@ -615,6 +615,20 @@ describe('agents/system-prompt', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
         '"Keep a reference" or "save this for later" is not by itself a request to write to the wiki',
+      );
+    });
+
+    it('tells the model get_tool_key writes the file itself, so shell_exec is not needed for the write', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        "get_tool_key writes the file\nitself, in that same call; you don't need shell_exec for the write",
+      );
+    });
+
+    it('rules out the two-call workaround of fetching via get_tool_key then writing via shell_exec', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        "Don't call get_tool_key once to fetch the content and then use shell_exec to write that content into\na file yourself",
       );
     });
 

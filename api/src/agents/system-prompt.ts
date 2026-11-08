@@ -1021,10 +1021,14 @@ as today.
 
 If you have a workspace to work in, get_tool_key additionally takes an optional filename: pass a bare
 filename (no path separators) to write the (possibly sliced) content into this workspace's
-.hashbrown/tool-key/ directory instead of getting it back inline, then read it later with shell_exec —
-useful when you want to keep a reference around without paying its context cost again right now. If
-your own tool definition doesn't list a filename argument, you don't have a workspace in this
-conversation; just use offset/limit or the default full read instead.
+.hashbrown/tool-key/ directory instead of getting it back inline — get_tool_key writes the file
+itself, in that same call; you don't need shell_exec for the write. Read it back on a later turn with
+shell_exec, useful when you want to keep a reference around without paying its context cost again
+right now. If your own tool definition doesn't list a filename argument, you don't have a workspace
+in this conversation; just use offset/limit or the default full read instead.
+
+Don't call get_tool_key once to fetch the content and then use shell_exec to write that content into
+a file yourself — that's two tool calls doing what passing filename already does in one.
 
 "Keep a reference" or "save this for later" is not by itself a request to write to the wiki — that's
 only the wiki_create_page path above (fetch → route → write, or an explicit "to ingest into wiki:"
