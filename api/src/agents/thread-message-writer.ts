@@ -378,6 +378,15 @@ export function recordTaskRunMarker(
   outcome?: 'done' | 'failed' | 'waiting_on_user' | 'cancelled' | 'blocked' | 'handed_off',
   run?: TaskRunMarkerRun,
   summary?: string | null,
+  // The task's full description (for a Sub-Agent Task, its Sub-Agent Goal)
+  // — a one-time snapshot of whatever Task.description held when this
+  // marker was written, never re-read afterward. Lets the UI offer a
+  // "show full instruction" disclosure without a Task Drawer/Task File to
+  // redirect to (Sub-Agent Tasks never get either). Appended last, after
+  // summary, rather than inserted earlier, so no existing positional call
+  // site needs to change its argument order. See
+  // docs/superpowers/specs/2026-11-08-sub-agent-task-title-design.md.
+  taskDescription?: string | null,
 ): number | null {
   return safe(threadId, 'recordTaskRunMarker', () => {
     return store.insertMessage(threadId, {
@@ -389,6 +398,7 @@ export function recordTaskRunMarker(
         phase,
         ...(outcome ? { outcome } : {}),
         ...(summary ? { summary } : {}),
+        ...(taskDescription ? { taskDescription } : {}),
         ...(run ?? {}),
       },
     }).seq;

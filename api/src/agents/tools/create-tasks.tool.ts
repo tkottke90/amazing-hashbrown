@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { logger, serializeError } from '../../config/logger.js';
 import {
   getWorkspaceStore,
+  TASK_TITLE_MAX_LENGTH,
   type WorkspaceStore,
   type NewTaskInput,
 } from '../../services/workspace-store.js';
@@ -85,7 +86,9 @@ const CreateTasksSchema = z.object({
   tasks: z
     .array(
       z.object({
-        title: z.string().describe('Short task title.'),
+        title: z
+          .string()
+          .describe(`Short task title (max ${TASK_TITLE_MAX_LENGTH} characters).`),
         description: z.string().optional().describe('What this task should accomplish.'),
         outcome: z.string().optional().describe('What "done" looks like for this task.'),
         plan: z
@@ -142,6 +145,12 @@ export function makeCreateTasksTool(
       for (let i = 0; i < tasks.length; i++) {
         if (!tasks[i]!.title || !tasks[i]!.title.trim()) {
           return `Task ${i + 1} has no title; no tasks were created.`;
+        }
+        if (tasks[i]!.title.length > TASK_TITLE_MAX_LENGTH) {
+          return (
+            `Task ${i + 1}'s title is too long (max ${TASK_TITLE_MAX_LENGTH} characters); ` +
+            'no tasks were created.'
+          );
         }
       }
 

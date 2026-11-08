@@ -62,6 +62,11 @@ export interface ClientThreadDetail extends Omit<ThreadDetail, 'messages'> {
 export interface TaskRunSummary {
   taskId: string;
   taskTitle: string;
+  // The Task's full description (for a Sub-Agent Task, its Sub-Agent Goal)
+  // — live-joined, same as taskTitle, so it reflects the current row on
+  // every GET /api/v1/threads/:id. Lets TaskRunView offer a "show full
+  // instruction" disclosure for a Task type with no Task Drawer/Task File.
+  taskDescription: string | null;
   // null for an Inbox task — where the run view links back to.
   workspaceId: string | null;
   runId: string;

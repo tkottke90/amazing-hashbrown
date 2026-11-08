@@ -1,5 +1,6 @@
 import { useEffect } from 'preact/hooks';
-import { ArrowLeft, Lock } from 'lucide-preact';
+import { useSignal } from '@preact/signals';
+import { ArrowLeft, Lock, ChevronDown, ChevronRight } from 'lucide-preact';
 import { ChatMessageScrollWrapper } from '@/components/chat-message-scroll-wrapper';
 import { HitlPromptMessage } from '@/components/hitl-prompt-message';
 import { ThreadMessageItem } from '@/components/thread-message';
@@ -35,6 +36,7 @@ export function TaskRunView({ threadId }: { threadId: string }) {
   const thread = useThreadInstance(threadId);
   const run = thread.taskRun.value;
   const isLive = run?.status === 'running' || run?.status === 'pending';
+  const isDescriptionOpen = useSignal(false);
 
   useEffect(() => {
     setPageTitle(run ? `${runName(run.runNumber, run.triggerSource)} · ${run.taskTitle}` : 'Run');
@@ -68,7 +70,19 @@ export function TaskRunView({ threadId }: { threadId: string }) {
             <ArrowLeft class="size-3.5" />
             {run?.workspaceId ? 'Workspace' : 'Inbox'}
           </Button>
-          <h1 class="text-sm font-medium" data-testid="task-run-title">
+          {/* min-w-0 is what lets this shrink inside the flex row at all —
+              without it, truncate silently does nothing (see
+              TextEllipsis's own doc comment). Truncates the whole
+              sentence as a backstop, not just the title portion — titles
+              are short by construction (Generated Title /
+              TASK_TITLE_MAX_LENGTH) now, so this is defense-in-depth for
+              historical rows and the rare async-race placeholder, not the
+              primary fix. See
+              docs/superpowers/specs/2026-11-08-sub-agent-task-title-design.md. */}
+          <h1
+            class="block min-w-0 flex-1 truncate text-sm font-medium"
+            data-testid="task-run-title"
+          >
             {run ? (
               <>
                 {runName(run.runNumber, run.triggerSource)} of{' '}
@@ -78,6 +92,23 @@ export function TaskRunView({ threadId }: { threadId: string }) {
               'Automated run'
             )}
           </h1>
+          {run?.taskDescription && (
+            <button
+              type="button"
+              data-testid="task-run-description-toggle"
+              onClick={() => {
+                isDescriptionOpen.value = !isDescriptionOpen.value;
+              }}
+              aria-label={isDescriptionOpen.value ? 'Hide full instruction' : 'Show full instruction'}
+              class="flex shrink-0 items-center opacity-70 transition-opacity hover:opacity-100"
+            >
+              {isDescriptionOpen.value ? (
+                <ChevronDown class="size-3.5 shrink-0" />
+              ) : (
+                <ChevronRight class="size-3.5 shrink-0" />
+              )}
+            </button>
+          )}
           {run && (
             <>
               <CardBadge variant={STATUS_BADGE[run.status] ?? 'blue'}>
@@ -91,6 +122,15 @@ export function TaskRunView({ threadId }: { threadId: string }) {
           <ThreadReportButton threadId={threadId} />
         </div>
       </header>
+
+      {isDescriptionOpen.value && run?.taskDescription && (
+        <p
+          data-testid="task-run-description"
+          class="border-b border-border px-4 py-2 text-xs text-muted-foreground break-words"
+        >
+          {run.taskDescription}
+        </p>
+      )}
 
       <ChatMessageScrollWrapper className="min-h-0 flex-1">
         <div class="flex flex-col gap-4 p-4 pb-2">

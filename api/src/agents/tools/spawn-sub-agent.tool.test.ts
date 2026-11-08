@@ -77,7 +77,14 @@ describe('agents/tools/spawn-sub-agent', () => {
     const store = getWorkspaceStore();
     const task = store.getTask(parsed.dispatched.id)!;
     expect(task.origin).to.equal('agent');
+    // Short enough that truncation is a no-op — title and description are
+    // momentarily identical here. See sub-agent-task-title.test.ts for the
+    // Generated Title call itself, which this suite's beforeEach doesn't
+    // configure a provider for (so the fire-and-forget call fails silently
+    // and title is never overwritten — exercising D5/ADR-0059's silent
+    // fallback for every test in this file "for free").
     expect(task.title).to.equal('Find the answer');
+    expect(task.description).to.equal('Find the answer');
     expect(task.parentThreadId).to.equal(THREAD_ID);
     expect(task.role).to.equal('researcher');
 

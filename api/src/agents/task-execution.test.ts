@@ -1402,6 +1402,28 @@ describe('agents/task-execution', () => {
     expect((end!.payload as Record<string, unknown>).outcome).to.equal('done');
   });
 
+  it('carries the task description through to the task_run_marker payload', async () => {
+    const task = store.createTask({
+      title: 'Global task',
+      description: 'The full instruction this run is working from.',
+      assignedTo: 'agent',
+    });
+    store.patchTask(task.id, { status: 'ready' });
+    store.enqueueTask(task.id);
+    const entry = store.dequeueNext()! as QueueEntryWithTask;
+
+    await executeTask(entry, {
+      buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+    });
+
+    const start = threadStore
+      .getThreadMessages(runThreadOf(entry))
+      .find((m) => m.kind === 'task_run_marker' && (m.payload as Record<string, unknown>).phase === 'start');
+    expect((start!.payload as Record<string, unknown>).taskDescription).to.equal(
+      'The full instruction this run is working from.',
+    );
+  });
+
   it('clears the active SSE writer slot after the run, including after a thrown error', async () => {
     const entry = makeGlobalEntry();
     const agent = fakeThrowingAgent([]);

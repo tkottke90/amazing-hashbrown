@@ -255,6 +255,7 @@ describe('routes/v1/threads.handlers', () => {
       const taskRun = {
         taskId: 'task-1',
         taskTitle: 'Audit',
+        taskDescription: 'Audit the quarterly expense report for anomalies.',
         workspaceId: null,
         runId: 'run-1',
         runNumber: 2,

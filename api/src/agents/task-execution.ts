@@ -418,6 +418,7 @@ export async function executeTask(
         outcome,
         markerRun,
         summary,
+        task.description,
       );
     }
   };

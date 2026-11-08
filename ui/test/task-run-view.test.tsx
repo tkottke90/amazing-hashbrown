@@ -30,6 +30,7 @@ const runThreadResponse = {
   taskRun: {
     taskId: 'task-1',
     taskTitle: 'Weekly audit',
+    taskDescription: null,
     workspaceId: null,
     runId: 'run-3',
     runNumber: 3,
@@ -138,6 +139,38 @@ describe('TaskRunView — read-only record of an automated run', () => {
     expect(openSpy).toHaveBeenCalledWith(`/api/v1/threads/${RUN_THREAD}/report`, '_blank');
     openSpy.mockRestore();
   });
+
+  it('truncates the title to one line as a backstop against an overlong name [unit]', async () => {
+    await renderRunView();
+    expect(screen.getByTestId('task-run-title').className).toContain('truncate');
+  });
+
+  it('offers no "show full instruction" toggle when the task has no description [unit]', async () => {
+    await renderRunView();
+    expect(screen.queryByTestId('task-run-description-toggle')).not.toBeInTheDocument();
+  });
+
+  it('reveals the full task description only after the toggle is clicked [unit]', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ...runThreadResponse,
+        taskRun: {
+          ...runThreadResponse.taskRun,
+          taskDescription: 'Audit the npm registry for expired tokens.',
+        },
+      }),
+    }) as unknown as typeof fetch;
+    await renderRunView();
+
+    expect(screen.queryByTestId('task-run-description')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('task-run-description-toggle'));
+
+    expect(screen.getByTestId('task-run-description')).toHaveTextContent(
+      'Audit the npm registry for expired tokens.',
+    );
+  });
 });
 
 describe('TaskRunMarkerMessage — run links', () => {
@@ -180,6 +213,32 @@ describe('TaskRunMarkerMessage — run links', () => {
     render(<TaskRunMarkerMessage message={legacy} />);
     expect(screen.getByTestId('task-run-marker')).toHaveTextContent(
       'Automated task completed: Weekly audit',
+    );
+  });
+
+  it('truncates the sentence to one line as a backstop against an overlong title [unit]', () => {
+    render(<TaskRunMarkerMessage message={marker} />);
+    expect(screen.getByTestId('task-run-marker-sentence').className).toContain('truncate');
+  });
+
+  it('offers no "show full instruction" toggle when the marker has no description [unit]', () => {
+    render(<TaskRunMarkerMessage message={marker} />);
+    expect(screen.queryByTestId('task-run-marker-toggle')).not.toBeInTheDocument();
+  });
+
+  it('reveals the full task description only after the toggle is clicked [unit]', () => {
+    const withDescription: TaskRunMarkerThreadMessage = {
+      ...marker,
+      taskDescription: 'Audit the npm registry for expired tokens.',
+    };
+    render(<TaskRunMarkerMessage message={withDescription} />);
+
+    expect(screen.queryByTestId('task-run-marker-description')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('task-run-marker-toggle'));
+
+    expect(screen.getByTestId('task-run-marker-description')).toHaveTextContent(
+      'Audit the npm registry for expired tokens.',
     );
   });
 });

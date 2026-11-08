@@ -537,6 +537,31 @@ describe('agents/thread-message-writer', () => {
       const msg = store.getMessage('t1', 'm2')!;
       expect(msg.payload).to.not.have.property('summary');
     });
+
+    it('carries taskDescription through to the payload when given', () => {
+      recordTaskRunMarker(
+        store,
+        't1',
+        'm3',
+        'task-1',
+        'Nightly backup',
+        'start',
+        undefined,
+        undefined,
+        undefined,
+        'Back up the nightly database snapshot to cold storage.',
+      );
+      const msg = store.getMessage('t1', 'm3')!;
+      expect((msg.payload as Record<string, unknown>).taskDescription).to.equal(
+        'Back up the nightly database snapshot to cold storage.',
+      );
+    });
+
+    it('omits the taskDescription field entirely (not just falsy) when none is given', () => {
+      recordTaskRunMarker(store, 't1', 'm4', 'task-1', 'Nightly backup', 'start');
+      const msg = store.getMessage('t1', 'm4')!;
+      expect(msg.payload).to.not.have.property('taskDescription');
+    });
   });
 
   describe('recordSubAgentMarker', () => {

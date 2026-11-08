@@ -4,7 +4,11 @@ import { join } from 'node:path';
 import { describe, it, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
-import { bootWorkspaceStore, getWorkspaceStore } from '../../services/workspace-store.js';
+import {
+  bootWorkspaceStore,
+  getWorkspaceStore,
+  TASK_TITLE_MAX_LENGTH,
+} from '../../services/workspace-store.js';
 import { bootTaskScheduler } from '../../services/task-scheduler.js';
 import { TrackerRegistry } from '../../services/tracker-registry.js';
 import type { TrackerAdapter } from '../../services/tracker-adapter.js';
@@ -92,6 +96,16 @@ describe('agents/tools/create-tasks', () => {
       invokeConfig(workspaceId),
     );
     expect(String(result)).to.include('Task 2');
+    expect(getWorkspaceStore().listTasks({}).length).to.equal(0);
+  });
+
+  it('rejects the whole batch when any single entry’s title is too long', async () => {
+    const result = await makeCreateTasksTool().invoke(
+      { tasks: [{ title: 'good' }, { title: 'x'.repeat(TASK_TITLE_MAX_LENGTH + 1) }] },
+      invokeConfig(workspaceId),
+    );
+    expect(String(result)).to.include('Task 2');
+    expect(String(result)).to.include('too long');
     expect(getWorkspaceStore().listTasks({}).length).to.equal(0);
   });
 
