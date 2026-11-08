@@ -30,6 +30,7 @@ export const usageByModelTokensMetric: Metric = {
         return `${model} (${provider})`;
       }),
       values: sorted.map(([, total]) => total),
+      valueFormat: 'compact',
     };
   },
 };

@@ -103,4 +103,30 @@ describe('PieChart', () => {
       jest.useRealTimers();
     }
   });
+
+  describe('valueFormat="compact"', () => {
+    it('shows the abbreviated value in the legend, with the exact comma-grouped value as its title [unit]', () => {
+      render(<PieChart labels={['A', 'B']} values={[178693706, 12590]} valueFormat="compact" />);
+      const rows = screen.getAllByTestId('pie-chart-legend-row');
+      expect(within(rows[0]!).getByText('178.7M')).toBeTruthy();
+      expect(rows[0]).toHaveAttribute('title', '178,693,706');
+      expect(within(rows[1]!).getByText('12.6k')).toBeTruthy();
+      expect(rows[1]).toHaveAttribute('title', '12,590');
+    });
+
+    it('shows the exact comma-grouped value (not abbreviated) in the hover tooltip [unit]', () => {
+      render(<PieChart labels={['A', 'B']} values={[300000, 100000]} valueFormat="compact" />);
+      const rows = screen.getAllByTestId('pie-chart-legend-row');
+      fireEvent.mouseEnter(rows[0]!);
+      const tooltip = screen.getByTestId('pie-chart-tooltip');
+      expect(within(tooltip).getByText('300,000 (75%)')).toBeTruthy();
+    });
+
+    it('does not add a title attribute or abbreviate when valueFormat is not set [unit]', () => {
+      render(<PieChart labels={['A', 'B']} values={[178693706, 12590]} />);
+      const rows = screen.getAllByTestId('pie-chart-legend-row');
+      expect(rows[0]).not.toHaveAttribute('title');
+      expect(within(rows[0]!).getByText('178693706')).toBeTruthy();
+    });
+  });
 });

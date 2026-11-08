@@ -98,6 +98,14 @@ _Avoid_: Stat, KPI, system metadata
 The in-process lookup from a Metric's id to the function that computes its current value, called directly by the dashboard read handler against the app's own stores — never over HTTP, never from a widget's file.
 _Avoid_: Metrics API, producer registry
 
+**Value Format**:
+An optional hint a Metric sets on its own resolved value, telling whatever renders it how to display its numbers. Declared by the Metric itself, never inferred by a renderer from the Metric's id — a renderer that understands a given Value Format applies it; one that doesn't, ignores it and shows the number unformatted. Currently the only defined Value Format is Compact Number Format, applicable to a Pie Graph-displaying Metric's values.
+_Avoid_: Display format, render hint, formatting flag
+
+**Compact Number Format**:
+The Value Format that abbreviates a number into its largest applicable thousand/million/billion tier with a `k`/`M`/`B` suffix, rounded to at most one decimal place and dropping the decimal when it rounds to `.0` — e.g. `178693706` renders as `178.7M`, `122013` as `122k`. A number's unabbreviated form stays available on hover. A manually-authored widget's values (not backed by a Metric) never carry a Value Format and so are never shown this way.
+_Avoid_: Abbreviated number, short number, k/M notation
+
 # AfterAgent & Wiki Write Scope
 
 The background pipeline that inspects each conversational turn for durable knowledge and files it into the wiki, and the rule set that decides which wiki domain(s) a given turn — chat or AfterAgent — may write to.

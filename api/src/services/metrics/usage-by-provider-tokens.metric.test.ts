@@ -41,6 +41,7 @@ describe('services/metrics/usage-by-provider-tokens.metric', () => {
       displayType: 'pie-graph',
       labels: ['anthropic'],
       values: [175],
+      valueFormat: 'compact',
     });
   });
 
@@ -55,12 +56,18 @@ describe('services/metrics/usage-by-provider-tokens.metric', () => {
       displayType: 'pie-graph',
       labels: ['big', 'medium', 'small'],
       values: [1000, 50, 2],
+      valueFormat: 'compact',
     });
   });
 
   it('returns empty labels/values when usageStore has no rows [unit]', async () => {
     const result = await usageByProviderTokensMetric.resolve(makeDeps([]));
-    expect(result).to.deep.equal({ displayType: 'pie-graph', labels: [], values: [] });
+    expect(result).to.deep.equal({
+      displayType: 'pie-graph',
+      labels: [],
+      values: [],
+      valueFormat: 'compact',
+    });
   });
 
   it('calls usageStore.queryUsage with the epoch floor through today [unit]', async () => {

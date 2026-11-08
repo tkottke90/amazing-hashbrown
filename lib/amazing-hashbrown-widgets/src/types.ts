@@ -88,7 +88,7 @@ export interface PieGraphWidget extends WidgetBase {
 export type ResolvedMetricValue =
   | { displayType: 'big-number'; value?: number; unit?: string }
   | { displayType: 'markdown'; content: string }
-  | { displayType: 'pie-graph'; labels: string[]; values: number[] }
+  | { displayType: 'pie-graph'; labels: string[]; values: number[]; valueFormat?: 'compact' }
   | { displayType: 'line-graph'; labels: string[]; values: number[] };
 
 export interface SystemWidget extends WidgetBase {

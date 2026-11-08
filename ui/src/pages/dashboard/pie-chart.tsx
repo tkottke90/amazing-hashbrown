@@ -3,12 +3,23 @@ import { useSignal } from '@preact/signals';
 import * as d3Selection from 'd3-selection';
 import * as d3Shape from 'd3-shape';
 import { cn } from '@/lib/utils';
+import { formatCompactNumber } from '@/lib/format-compact-number';
 import { getDomainColor } from '@/pages/wiki/domain-filter';
 
 interface PieChartProps {
   labels: string[];
   values: number[];
   colors?: string[];
+  /**
+   * Value Format opt-in (GLOSSARY.md, ADR-0059) — mirrors the field name on
+   * ResolvedMetricValue's `pie-graph` variant 1:1 so callers forward
+   * `metricPreview.value.valueFormat` / `widget.resolved.valueFormat`
+   * straight through with no translation. Left undefined, legend/tooltip
+   * values render exactly as they do today — required for the CSV-driven
+   * Pie Graph widget, whose values are arbitrary user data (D4 of the
+   * design doc), not necessarily Compact-Number-Format-eligible counts.
+   */
+  valueFormat?: 'compact';
 }
 
 const CHART_SIZE = 160;
@@ -18,7 +29,7 @@ const RADIUS = CHART_SIZE / 2;
 // AGENTS.md) — composed by the manual Pie Graph widget (CSV-sourced data),
 // the System Widget's pie-graph case, and the drawer's Metric live preview,
 // instead of each duplicating this d3 effect.
-export function PieChart({ labels, values, colors }: PieChartProps) {
+export function PieChart({ labels, values, colors, valueFormat }: PieChartProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const hoveredIndex = useSignal<number | null>(null);
   const hoverPos = useSignal<{ x: number; y: number } | null>(null);
@@ -65,6 +76,24 @@ export function PieChart({ labels, values, colors }: PieChartProps) {
   function percent(i: number): number {
     const total = values.reduce((a, b) => a + b, 0);
     return total === 0 ? 0 : Math.round((values[i]! / total) * 100);
+  }
+
+  // Compact Number Format opt-in (GLOSSARY.md, ADR-0059): the legend shows
+  // the abbreviated form plus the exact comma-grouped number as a native
+  // `title`; the on-slice tooltip never abbreviates — it only switches
+  // from a raw number to the comma-grouped exact one. Neither happens
+  // unless `valueFormat === 'compact'`, so a caller that never sets it
+  // (the CSV-driven Pie Graph widget) sees unchanged behavior.
+  function legendValue(i: number): string {
+    return valueFormat === 'compact' ? formatCompactNumber(values[i]!) : String(values[i]);
+  }
+
+  function legendTitle(i: number): string | undefined {
+    return valueFormat === 'compact' ? values[i]!.toLocaleString() : undefined;
+  }
+
+  function tooltipValue(i: number): string {
+    return valueFormat === 'compact' ? values[i]!.toLocaleString() : String(values[i]);
   }
 
   useEffect(() => {
@@ -128,6 +157,7 @@ export function PieChart({ labels, values, colors }: PieChartProps) {
               'flex items-center gap-1.5 truncate rounded px-1 py-0.5',
               hoveredIndex.value === i && 'bg-muted',
             )}
+            title={legendTitle(i)}
             onMouseEnter={(e) => setHovered(i, e)}
             onMouseLeave={scheduleClose}
           >
@@ -136,7 +166,9 @@ export function PieChart({ labels, values, colors }: PieChartProps) {
               style={{ background: resolvedColor(i) }}
             />
             <span className="truncate">{label}</span>
-            <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">{values[i]}</span>
+            <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">
+              {legendValue(i)}
+            </span>
           </li>
         ))}
       </ul>
@@ -150,7 +182,7 @@ export function PieChart({ labels, values, colors }: PieChartProps) {
         >
           <div className="font-medium">{labels[hoveredIndex.value]}</div>
           <div className="text-muted-foreground">
-            {values[hoveredIndex.value]} ({percent(hoveredIndex.value)}%)
+            {tooltipValue(hoveredIndex.value)} ({percent(hoveredIndex.value)}%)
           </div>
         </div>
       )}

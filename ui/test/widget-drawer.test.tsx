@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/preact';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/preact';
 import { EditorView } from '@codemirror/view';
 import type { JSX } from 'preact';
 
@@ -671,6 +671,35 @@ describe('WidgetDrawer', () => {
 
       const preview = await screen.findByTestId('widget-metric-preview');
       await waitFor(() => expect(preview.querySelectorAll('svg path')).toHaveLength(2));
+    });
+
+    it('shows a compact-formatted value in the pie chart preview when the metric opts in [unit]', async () => {
+      mockFetchMetricCatalog.mockResolvedValue([
+        {
+          id: 'usage-by-provider-tokens',
+          label: 'Token Usage by Provider',
+          displayType: 'pie-graph',
+        },
+      ]);
+      mockPreviewMetricValue.mockResolvedValue({
+        displayType: 'pie-graph',
+        labels: ['anthropic', 'openai'],
+        values: [178693706, 12590],
+        valueFormat: 'compact',
+      });
+      renderDrawer(
+        <WidgetDrawer
+          mode="add"
+          dashboardId="default"
+          onSaved={jest.fn()}
+          trigger={<button>Add</button>}
+        />,
+      );
+
+      await selectSystemMetric('usage-by-provider-tokens');
+
+      const preview = await screen.findByTestId('widget-metric-preview');
+      expect(await within(preview).findByText('178.7M')).toBeTruthy();
     });
 
     it('shows the preview error message when previewMetricValue rejects [unit]', async () => {

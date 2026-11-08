@@ -21,6 +21,7 @@ export const usageByProviderTokensMetric: Metric = {
       displayType: 'pie-graph',
       labels: sorted.map(([provider]) => provider),
       values: sorted.map(([, total]) => total),
+      valueFormat: 'compact',
     };
   },
 };

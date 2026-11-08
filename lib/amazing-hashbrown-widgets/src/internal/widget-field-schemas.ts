@@ -174,6 +174,7 @@ export const ResolvedMetricValueSchema = z.discriminatedUnion('displayType', [
     displayType: z.literal('pie-graph'),
     labels: z.array(z.string()),
     values: z.array(z.number()),
+    valueFormat: z.literal('compact').optional(),
   }),
   z.object({
     displayType: z.literal('line-graph'),
