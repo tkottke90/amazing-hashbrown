@@ -417,6 +417,93 @@ test.describe(
       await expect(card(lane(page, 'backlog'), 'Rejected move')).toBeVisible();
     });
 
+    test(
+      'shows an Externally Blocked task distinctly and rejects a drag to Queue ' +
+        '(issue #367, ADR-0059)',
+      async ({ page, request }, testInfo) => {
+        const ws = await createWorkspace(request, 'board-externally-blocked');
+        // The real backend only ever produces an awaiting_user_action board
+        // reason from a real Run the e2e no-op executor can't drive (see
+        // e2e/AGENTS.md) — mock the board's own read, per this file's
+        // "mock hydration, not the live turn" convention, rather than the
+        // move endpoint alone.
+        await page.route('**/api/v1/tasks**', async (route) => {
+          const req = route.request();
+          const url = new URL(req.url());
+          if (req.method() !== 'GET' || url.pathname !== '/api/v1/tasks') {
+            return route.fallback();
+          }
+          return route.fulfill({
+            json: [
+              {
+                id: 'e2e-blocked-task',
+                workspaceId: ws.id,
+                title: 'Externally blocked task',
+                description: null,
+                outcome: null,
+                status: 'blocked',
+                assignedTo: 'agent',
+                dueAt: null,
+                expiresAt: null,
+                triggerType: 'manual',
+                triggerConfig: null,
+                trackerType: null,
+                trackerId: null,
+                plan: null,
+                blockedReason: null,
+                provider: null,
+                model: null,
+                archivedAt: null,
+                createdAt: '2026-11-08T00:00:00.000Z',
+                updatedAt: '2026-11-08T00:00:00.000Z',
+                board: {
+                  lane: 'attention',
+                  // Simulates a stale board (same framing as the "rejected
+                  // move" test above): the client's cached board still
+                  // shows the move as legal, so the drag actually fires
+                  // requestMove() and hits the mocked 409 below — exercising
+                  // board-rules.ts's real unconditional rejection, not just
+                  // a mock that laneAccepts() would otherwise short-circuit
+                  // before any request is ever sent.
+                  moves: [
+                    { to: 'queue', needs: 'none' },
+                    { to: 'backlog', needs: 'none' },
+                    { to: 'done', needs: 'none' },
+                  ],
+                  reason: { kind: 'awaiting_user_action' },
+                },
+              },
+            ],
+          });
+        });
+        // Registered after the broad list route above, so Playwright (last
+        // registered first) tries this one first for a /move request and
+        // falls through to the list route's own fallback() for everything
+        // else.
+        await page.route('**/api/v1/tasks/*/move', (route) =>
+          route.fulfill({
+            status: 409,
+            json: {
+              error:
+                'This task is blocked on something only you can do — use Hand-Off Guidance to ' +
+                'say what changed before retrying.',
+            },
+          }),
+        );
+        await openTasksTab(page, ws.id);
+
+        await expect(card(lane(page, 'attention'), 'Externally blocked task')).toContainText(
+          'Externally blocked',
+        );
+
+        await pauseBeforeAction(page, testInfo);
+        await drag(page, card(page, 'Externally blocked task'), lane(page, 'queue'));
+
+        await expect(page.getByRole('alert').filter({ hasText: 'only you can do' })).toBeVisible();
+        await expect(card(lane(page, 'attention'), 'Externally blocked task')).toBeVisible();
+      },
+    );
+
     test('the drawer\'s "Move to" picker moves a task without dragging', async ({
       page,
       request,

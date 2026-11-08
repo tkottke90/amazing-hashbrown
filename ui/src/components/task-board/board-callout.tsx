@@ -54,6 +54,13 @@ export function BoardCallout({ task }: { task: Task }) {
         </div>
       )}
 
+      {reason?.kind === 'awaiting_user_action' && (
+        <p class="text-xs text-amber-600" data-testid="board-callout-awaiting-user-action">
+          Externally blocked — this needs something only you can do before it can continue. Use
+          Hand-Off Guidance below to say what changed, then resume it.
+        </p>
+      )}
+
       {reason?.kind === 'dependency_failed' && (
         <p class="text-xs text-destructive">
           Blocked:{' '}

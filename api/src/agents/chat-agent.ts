@@ -61,6 +61,10 @@ import { makeCreateWorkspaceTool } from './tools/create-workspace.tool.js';
 import { makeCreateProjectTool } from './tools/create-project.tool.js';
 import { makeCompleteTaskTool, type CompleteTaskCall } from './tools/complete-task.tool.js';
 import { makeHandOffTaskTool, type HandOffTaskCall } from './tools/hand-off-task.tool.js';
+import {
+  makeBlockOnUserActionTool,
+  type BlockOnUserActionCall,
+} from './tools/block-on-user-action.tool.js';
 import { makeReadTaskRunTool } from './tools/read-task-run.tool.js';
 import { makeUpdatePlanTool, type UpdatePlanTaskFile } from './tools/update-plan.tool.js';
 import { makeDisableRecurrenceTool } from './tools/disable-recurrence.tool.js';
@@ -807,6 +811,10 @@ export interface TaskAgentHooks {
   // hand-off-task.tool.ts's nudge-once rule) — task-execution.ts's single
   // source of truth for "this run handed off".
   onHandOff?: (call: HandOffTaskCall) => void;
+  // Fired by block_on_user_action for an accepted call (no nudge-once gate
+  // — see block-on-user-action.tool.ts) — task-execution.ts's single source
+  // of truth for "this run is externally blocked". See ADR-0059.
+  onBlockOnUserAction?: (call: BlockOnUserActionCall) => void;
 }
 
 // The queue entry (run) this agent is being built for. read_task_run is
@@ -867,6 +875,9 @@ export async function buildTaskAgent(
       makeHandOffTaskTool(task.id, {
         hadHitlInterrupt: run?.hadHitlInterrupt,
         onAccepted: hooks?.onHandOff,
+      }),
+      makeBlockOnUserActionTool(task.id, {
+        onAccepted: hooks?.onBlockOnUserAction,
       }),
       makeUpdatePlanTool(task.id, undefined, taskFile),
       ...(run?.hasPreviousRun ? [makeReadTaskRunTool(task.id, run.runId)] : []),

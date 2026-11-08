@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useProviderModelPicker } from '@/components/provider-model-picker';
+import { CardBadge } from '@/components/card-badge';
 import { providers as providersSignal, fetchProviders } from '@/hooks/use-providers';
 import { cn } from '@/lib/utils';
 import {
@@ -1001,7 +1002,14 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
               data-testid="hand-off-guidance"
             >
               <div class="flex flex-col gap-1">
-                <span class="text-xs font-medium text-muted-foreground">Why this got stuck</span>
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-medium text-muted-foreground">Why this got stuck</span>
+                  {runs.value[0]?.handoffReason === 'awaiting_user_action' && (
+                    <CardBadge variant="amber" className="-ml-0.5">
+                      Externally blocked
+                    </CardBadge>
+                  )}
+                </div>
                 <p class="text-sm">{runs.value[0]?.summary ?? 'No note was recorded.'}</p>
               </div>
               <label

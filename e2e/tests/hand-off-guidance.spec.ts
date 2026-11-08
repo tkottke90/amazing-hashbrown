@@ -44,7 +44,12 @@ async function createTask(request: APIRequestContext, title: string): Promise<st
   return id;
 }
 
-async function mockHandedOffRun(page: Page, taskId: string, summary: string) {
+async function mockHandedOffRun(
+  page: Page,
+  taskId: string,
+  summary: string,
+  handoffReason: 'exhaustion_cap' | 'agent_requested' | 'awaiting_user_action' = 'exhaustion_cap',
+) {
   await page.route(`**/api/v1/tasks/${taskId}/runs**`, async (route: Route) => {
     await route.fulfill({
       json: [
@@ -61,7 +66,7 @@ async function mockHandedOffRun(page: Page, taskId: string, summary: string) {
           summary,
           triggerSource: 'manual',
           scheduledFor: null,
-          handoffReason: 'exhaustion_cap',
+          handoffReason,
           runNumber: 1,
         },
       ],
@@ -95,6 +100,38 @@ test.describe(
         await expect(block).toBeVisible();
         await expect(block).toContainText('Ran out of steps twice with unchanged scope.');
         await expect(page.getByTestId('hand-off-guidance-input')).toBeVisible();
+      } finally {
+        await request.delete(`/api/v1/tasks/${taskId}`);
+      }
+    });
+
+    test('labels an Externally-Blocked Hand-Off distinctly (issue #367, ADR-0059)', async ({
+      page,
+      request,
+    }, testInfo) => {
+      const taskId = await createTask(request, 'e2e-externally-blocked-task');
+
+      try {
+        await mockHandedOffRun(
+          page,
+          taskId,
+          'Complete the OAuth consent flow and drop credentials.json in config/.',
+          'awaiting_user_action',
+        );
+
+        await page.goto('/inbox');
+        const row = page
+          .locator('[data-testid="inbox-task-row"]')
+          .filter({ hasText: 'e2e-externally-blocked-task' });
+        await pauseBeforeAction(page, testInfo);
+        await row.click();
+
+        const block = page.getByTestId('hand-off-guidance');
+        await expect(block).toBeVisible();
+        await expect(block).toContainText('Externally blocked');
+        await expect(block).toContainText(
+          'Complete the OAuth consent flow and drop credentials.json in config/.',
+        );
       } finally {
         await request.delete(`/api/v1/tasks/${taskId}`);
       }

@@ -116,6 +116,27 @@ describe('BoardCallout', () => {
     expect(options).toEqual(['', 'scheduled', 'queue', 'done']);
   });
 
+  it(
+    'shows an externally-blocked message with no one-click unblock action, ' +
+      'unlike a plain pause (issue #367, ADR-0059) [unit]',
+    () => {
+      const task = boardTask(
+        { status: 'blocked' },
+        {
+          lane: 'attention',
+          moves: [{ to: 'backlog', needs: 'none' }],
+          reason: { kind: 'awaiting_user_action' },
+        },
+      );
+      render(<BoardCallout task={task} />);
+
+      expect(screen.getByTestId('board-callout-awaiting-user-action')).toHaveTextContent(
+        'Externally blocked',
+      );
+      expect(screen.queryByTestId('board-action-unblock')).not.toBeInTheDocument();
+    },
+  );
+
   it('sends the chosen Move to destination [unit]', async () => {
     const task = boardTask({}, { lane: 'backlog', moves: [{ to: 'done', needs: 'none' }] });
     tasks.value = [task];

@@ -20,7 +20,7 @@ export const WAKEUP_MAX_CHAIN = 12;
 
 export type WakeupStatus = 'pending' | 'fired' | 'cancelled';
 export type WakeupFireSource = 'timer' | 'trigger_now' | 'catch_up';
-export type WakeupCancelSource = 'user_cancel' | 'agent_cancel';
+export type WakeupCancelSource = 'user_cancel' | 'agent_cancel' | 'externally_blocked_handoff';
 export type WakeupSettledBy = WakeupFireSource | WakeupCancelSource;
 
 export interface Wakeup {
