@@ -147,7 +147,7 @@ function ThreadToolsBody() {
   }
 
   return (
-    <div class="flex h-full flex-col overflow-hidden px-6">
+    <div class="flex flex-1 min-h-0 flex-col overflow-hidden px-6">
       <p>
         Edit the tools the Agent has access to in this thread. Add/Remove tools by clicking the
         button next to the tool itself.

@@ -483,302 +483,308 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
   }
 
   return (
-    <form data-testid="widget-drawer-form" className="flex flex-col gap-4" onSubmit={handleSubmit}>
-      {mode === 'edit' && widgetType.value !== 'system' && (
-        <div className="flex gap-1">
-          <Button
-            type="button"
-            size="sm"
-            variant={tab.value === 'form' ? 'default' : 'outline'}
-            data-testid="widget-drawer-tab-form"
-            onClick={() => void handleFormTabClick()}
-          >
-            Form
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={tab.value === 'raw' ? 'default' : 'outline'}
-            data-testid="widget-drawer-tab-raw"
-            onClick={enterRaw}
-          >
-            Raw
-          </Button>
-        </div>
-      )}
-
-      {tab.value === 'form' ? (
-        <>
-          {mode === 'add' && (
-            <div className="flex flex-col gap-2">
-              <Label htmlFor={`${instanceKey}-type`}>Type</Label>
-              <Select
-                value={widgetType.value}
-                onValueChange={(v) => (widgetType.value = v as DashboardWidget['type'])}
-              >
-                <SelectTrigger id={`${instanceKey}-type`} data-testid="widget-type-picker">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="markdown" data-testid="widget-type-option-markdown">
-                    Markdown
-                  </SelectItem>
-                  <SelectItem value="big-number" data-testid="widget-type-option-big-number">
-                    Big Number
-                  </SelectItem>
-                  <SelectItem value="line-graph" data-testid="widget-type-option-line-graph">
-                    Line Graph
-                  </SelectItem>
-                  <SelectItem value="pie-graph" data-testid="widget-type-option-pie-graph">
-                    Pie Graph
-                  </SelectItem>
-                  <SelectItem value="system" data-testid="widget-type-option-system">
-                    System
-                  </SelectItem>
-                  <SelectItem value="spacer" data-testid="widget-type-option-spacer">
-                    Spacer
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {widgetType.value !== 'spacer' && (
-            <>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor={`${instanceKey}-title`}>Title</Label>
-                <Input
-                  id={`${instanceKey}-title`}
-                  value={title.value}
-                  onInput={(e) => (title.value = (e.target as HTMLInputElement).value)}
-                  required
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor={`${instanceKey}-subtitle`}>Subtitle</Label>
-                <Input
-                  id={`${instanceKey}-subtitle`}
-                  value={subtitle.value}
-                  onInput={(e) => (subtitle.value = (e.target as HTMLInputElement).value)}
-                />
-              </div>
-            </>
-          )}
-
-          {widgetType.value === 'markdown' && (
-            <div className="flex flex-col gap-2">
-              <Label htmlFor={`${instanceKey}-content`}>Content (Markdown)</Label>
-              <Textarea
-                id={`${instanceKey}-content`}
-                rows={10}
-                value={content.value}
-                onInput={(e) => (content.value = (e.target as HTMLTextAreaElement).value)}
-              />
-            </div>
-          )}
-
-          {widgetType.value === 'big-number' && (
-            <>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor={`${instanceKey}-value`}>Value</Label>
-                <Input
-                  id={`${instanceKey}-value`}
-                  type="number"
-                  value={value.value}
-                  onInput={(e) => (value.value = (e.target as HTMLInputElement).value)}
-                  placeholder="Leave blank for N/A"
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor={`${instanceKey}-unit`}>Unit</Label>
-                <Input
-                  id={`${instanceKey}-unit`}
-                  value={unit.value}
-                  onInput={(e) => (unit.value = (e.target as HTMLInputElement).value)}
-                />
-              </div>
-            </>
-          )}
-
-          {widgetType.value === 'line-graph' && (
-            <div className="flex flex-col gap-2">
-              <Label htmlFor={`${instanceKey}-color`}>Color override (hex, optional)</Label>
-              <Input
-                id={`${instanceKey}-color`}
-                data-testid="widget-drawer-color-input"
-                value={color.value}
-                onInput={(e) => (color.value = (e.target as HTMLInputElement).value)}
-                placeholder="#3366ff"
-              />
-            </div>
-          )}
-
-          {widgetType.value === 'pie-graph' && (
-            <div className="flex flex-col gap-2">
-              <Label htmlFor={`${instanceKey}-colors`}>
-                Color overrides (comma-separated hex, optional)
-              </Label>
-              <Input
-                id={`${instanceKey}-colors`}
-                data-testid="widget-drawer-color-input"
-                value={colorsText.value}
-                onInput={(e) => (colorsText.value = (e.target as HTMLInputElement).value)}
-                placeholder="#3366ff,#ff6633"
-              />
-            </div>
-          )}
-
-          {widgetType.value === 'system' && (
-            <div className="flex flex-col gap-2">
-              <Label htmlFor={`${instanceKey}-metric`}>Metric</Label>
-              <Select value={metricId.value} onValueChange={(v) => (metricId.value = v)}>
-                <SelectTrigger id={`${instanceKey}-metric`} data-testid="widget-metric-picker">
-                  <SelectValue placeholder="Select a metric" />
-                </SelectTrigger>
-                <SelectContent>
-                  {metricCatalog.value.map((metric) => (
-                    <SelectItem
-                      key={metric.id}
-                      value={metric.id}
-                      data-testid={`widget-metric-option-${metric.id}`}
-                    >
-                      {metric.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <div
-                data-testid="widget-metric-preview"
-                className="rounded-md border border-dashed border-border p-3"
-              >
-                {metricPreviewLoading.value && (
-                  <span className="text-sm text-muted-foreground">Loading preview…</span>
-                )}
-                {!metricPreviewLoading.value && metricPreviewError.value && (
-                  <span className="text-sm text-destructive">{metricPreviewError.value}</span>
-                )}
-                {!metricPreviewLoading.value &&
-                  !metricPreviewError.value &&
-                  metricPreview.value === undefined && (
-                    <span className="text-sm text-muted-foreground">
-                      Pick a metric to preview its current value.
-                    </span>
-                  )}
-                {!metricPreviewLoading.value &&
-                  !metricPreviewError.value &&
-                  metricPreview.value?.displayType === 'big-number' && (
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-2xl font-semibold text-foreground">
-                        {metricPreview.value.value === undefined
-                          ? 'N/A'
-                          : metricPreview.value.value.toLocaleString()}
-                      </span>
-                      {metricPreview.value.unit && (
-                        <span className="text-sm text-muted-foreground">
-                          {metricPreview.value.unit}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                {!metricPreviewLoading.value &&
-                  !metricPreviewError.value &&
-                  metricPreview.value?.displayType === 'markdown' && (
-                    <Markdown>{metricPreview.value.content}</Markdown>
-                  )}
-                {!metricPreviewLoading.value &&
-                  !metricPreviewError.value &&
-                  metricPreview.value?.displayType === 'pie-graph' && (
-                    <PieChart
-                      labels={metricPreview.value.labels}
-                      values={metricPreview.value.values}
-                      valueFormat={metricPreview.value.valueFormat}
-                    />
-                  )}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                This widget is provided by the application itself and isn't editable beyond its
-                title, subtitle, and which metric it shows.
-              </p>
-            </div>
-          )}
-
-          {(widgetType.value === 'line-graph' || widgetType.value === 'pie-graph') && (
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <Label>CSV data (label,value)</Label>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  data-testid="widget-drawer-validate"
-                  disabled={isValidating.value}
-                  onClick={() => void handleValidateClick()}
-                >
-                  {isValidating.value ? 'Validating…' : 'Validate'}
-                </Button>
-              </div>
-              <div
-                data-testid="widget-drawer-csv-editor"
-                className="h-40 overflow-hidden rounded-md border border-border"
-              >
-                <CodeEditor
-                  key={csvGeneration.value}
-                  path={`${instanceKey}.csv`}
-                  initialContent={csvData.value}
-                  dirty={csvDirty}
-                  onReady={(view) => {
-                    csvViewRef.current = view;
-                  }}
-                />
-              </div>
-              {lastChecked.value && !lastChecked.value.result.ok && (
-                <p data-testid="widget-drawer-raw-error" className="text-sm text-destructive">
-                  {lastChecked.value.result.error}
-                </p>
-              )}
-            </div>
-          )}
-        </>
-      ) : (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <Label>Raw file content</Label>
+    <form
+      data-testid="widget-drawer-form"
+      className="flex flex-1 min-h-0 flex-col gap-4"
+      onSubmit={handleSubmit}
+    >
+      <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-y-auto">
+        {mode === 'edit' && widgetType.value !== 'system' && (
+          <div className="flex gap-1">
             <Button
               type="button"
               size="sm"
-              variant="outline"
-              data-testid="widget-drawer-validate"
-              disabled={isValidating.value}
-              onClick={() => void handleValidateClick()}
+              variant={tab.value === 'form' ? 'default' : 'outline'}
+              data-testid="widget-drawer-tab-form"
+              onClick={() => void handleFormTabClick()}
             >
-              {isValidating.value ? 'Validating…' : 'Validate'}
+              Form
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={tab.value === 'raw' ? 'default' : 'outline'}
+              data-testid="widget-drawer-tab-raw"
+              onClick={enterRaw}
+            >
+              Raw
             </Button>
           </div>
-          <div
-            data-testid="widget-drawer-raw-editor"
-            className="h-80 overflow-hidden rounded-md border border-border"
-          >
-            <CodeEditor
-              key={rawGeneration.value}
-              path={`${widgetId as string}.md`}
-              initialContent={rawText.value}
-              dirty={rawDirty}
-              onReady={(view) => {
-                rawViewRef.current = view;
-              }}
-            />
+        )}
+
+        {tab.value === 'form' ? (
+          <>
+            {mode === 'add' && (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor={`${instanceKey}-type`}>Type</Label>
+                <Select
+                  value={widgetType.value}
+                  onValueChange={(v) => (widgetType.value = v as DashboardWidget['type'])}
+                >
+                  <SelectTrigger id={`${instanceKey}-type`} data-testid="widget-type-picker">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="markdown" data-testid="widget-type-option-markdown">
+                      Markdown
+                    </SelectItem>
+                    <SelectItem value="big-number" data-testid="widget-type-option-big-number">
+                      Big Number
+                    </SelectItem>
+                    <SelectItem value="line-graph" data-testid="widget-type-option-line-graph">
+                      Line Graph
+                    </SelectItem>
+                    <SelectItem value="pie-graph" data-testid="widget-type-option-pie-graph">
+                      Pie Graph
+                    </SelectItem>
+                    <SelectItem value="system" data-testid="widget-type-option-system">
+                      System
+                    </SelectItem>
+                    <SelectItem value="spacer" data-testid="widget-type-option-spacer">
+                      Spacer
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {widgetType.value !== 'spacer' && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor={`${instanceKey}-title`}>Title</Label>
+                  <Input
+                    id={`${instanceKey}-title`}
+                    value={title.value}
+                    onInput={(e) => (title.value = (e.target as HTMLInputElement).value)}
+                    required
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor={`${instanceKey}-subtitle`}>Subtitle</Label>
+                  <Input
+                    id={`${instanceKey}-subtitle`}
+                    value={subtitle.value}
+                    onInput={(e) => (subtitle.value = (e.target as HTMLInputElement).value)}
+                  />
+                </div>
+              </>
+            )}
+
+            {widgetType.value === 'markdown' && (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor={`${instanceKey}-content`}>Content (Markdown)</Label>
+                <Textarea
+                  id={`${instanceKey}-content`}
+                  rows={10}
+                  value={content.value}
+                  onInput={(e) => (content.value = (e.target as HTMLTextAreaElement).value)}
+                />
+              </div>
+            )}
+
+            {widgetType.value === 'big-number' && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor={`${instanceKey}-value`}>Value</Label>
+                  <Input
+                    id={`${instanceKey}-value`}
+                    type="number"
+                    value={value.value}
+                    onInput={(e) => (value.value = (e.target as HTMLInputElement).value)}
+                    placeholder="Leave blank for N/A"
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor={`${instanceKey}-unit`}>Unit</Label>
+                  <Input
+                    id={`${instanceKey}-unit`}
+                    value={unit.value}
+                    onInput={(e) => (unit.value = (e.target as HTMLInputElement).value)}
+                  />
+                </div>
+              </>
+            )}
+
+            {widgetType.value === 'line-graph' && (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor={`${instanceKey}-color`}>Color override (hex, optional)</Label>
+                <Input
+                  id={`${instanceKey}-color`}
+                  data-testid="widget-drawer-color-input"
+                  value={color.value}
+                  onInput={(e) => (color.value = (e.target as HTMLInputElement).value)}
+                  placeholder="#3366ff"
+                />
+              </div>
+            )}
+
+            {widgetType.value === 'pie-graph' && (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor={`${instanceKey}-colors`}>
+                  Color overrides (comma-separated hex, optional)
+                </Label>
+                <Input
+                  id={`${instanceKey}-colors`}
+                  data-testid="widget-drawer-color-input"
+                  value={colorsText.value}
+                  onInput={(e) => (colorsText.value = (e.target as HTMLInputElement).value)}
+                  placeholder="#3366ff,#ff6633"
+                />
+              </div>
+            )}
+
+            {widgetType.value === 'system' && (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor={`${instanceKey}-metric`}>Metric</Label>
+                <Select value={metricId.value} onValueChange={(v) => (metricId.value = v)}>
+                  <SelectTrigger id={`${instanceKey}-metric`} data-testid="widget-metric-picker">
+                    <SelectValue placeholder="Select a metric" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {metricCatalog.value.map((metric) => (
+                      <SelectItem
+                        key={metric.id}
+                        value={metric.id}
+                        data-testid={`widget-metric-option-${metric.id}`}
+                      >
+                        {metric.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div
+                  data-testid="widget-metric-preview"
+                  className="rounded-md border border-dashed border-border p-3"
+                >
+                  {metricPreviewLoading.value && (
+                    <span className="text-sm text-muted-foreground">Loading preview…</span>
+                  )}
+                  {!metricPreviewLoading.value && metricPreviewError.value && (
+                    <span className="text-sm text-destructive">{metricPreviewError.value}</span>
+                  )}
+                  {!metricPreviewLoading.value &&
+                    !metricPreviewError.value &&
+                    metricPreview.value === undefined && (
+                      <span className="text-sm text-muted-foreground">
+                        Pick a metric to preview its current value.
+                      </span>
+                    )}
+                  {!metricPreviewLoading.value &&
+                    !metricPreviewError.value &&
+                    metricPreview.value?.displayType === 'big-number' && (
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-2xl font-semibold text-foreground">
+                          {metricPreview.value.value === undefined
+                            ? 'N/A'
+                            : metricPreview.value.value.toLocaleString()}
+                        </span>
+                        {metricPreview.value.unit && (
+                          <span className="text-sm text-muted-foreground">
+                            {metricPreview.value.unit}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  {!metricPreviewLoading.value &&
+                    !metricPreviewError.value &&
+                    metricPreview.value?.displayType === 'markdown' && (
+                      <Markdown>{metricPreview.value.content}</Markdown>
+                    )}
+                  {!metricPreviewLoading.value &&
+                    !metricPreviewError.value &&
+                    metricPreview.value?.displayType === 'pie-graph' && (
+                      <PieChart
+                        labels={metricPreview.value.labels}
+                        values={metricPreview.value.values}
+                        valueFormat={metricPreview.value.valueFormat}
+                      />
+                    )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  This widget is provided by the application itself and isn't editable beyond its
+                  title, subtitle, and which metric it shows.
+                </p>
+              </div>
+            )}
+
+            {(widgetType.value === 'line-graph' || widgetType.value === 'pie-graph') && (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <Label>CSV data (label,value)</Label>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    data-testid="widget-drawer-validate"
+                    disabled={isValidating.value}
+                    onClick={() => void handleValidateClick()}
+                  >
+                    {isValidating.value ? 'Validating…' : 'Validate'}
+                  </Button>
+                </div>
+                <div
+                  data-testid="widget-drawer-csv-editor"
+                  className="h-40 overflow-hidden rounded-md border border-border"
+                >
+                  <CodeEditor
+                    key={csvGeneration.value}
+                    path={`${instanceKey}.csv`}
+                    initialContent={csvData.value}
+                    dirty={csvDirty}
+                    onReady={(view) => {
+                      csvViewRef.current = view;
+                    }}
+                  />
+                </div>
+                {lastChecked.value && !lastChecked.value.result.ok && (
+                  <p data-testid="widget-drawer-raw-error" className="text-sm text-destructive">
+                    {lastChecked.value.result.error}
+                  </p>
+                )}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <Label>Raw file content</Label>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                data-testid="widget-drawer-validate"
+                disabled={isValidating.value}
+                onClick={() => void handleValidateClick()}
+              >
+                {isValidating.value ? 'Validating…' : 'Validate'}
+              </Button>
+            </div>
+            <div
+              data-testid="widget-drawer-raw-editor"
+              className="h-80 overflow-hidden rounded-md border border-border"
+            >
+              <CodeEditor
+                key={rawGeneration.value}
+                path={`${widgetId as string}.md`}
+                initialContent={rawText.value}
+                dirty={rawDirty}
+                onReady={(view) => {
+                  rawViewRef.current = view;
+                }}
+              />
+            </div>
+            {lastChecked.value && !lastChecked.value.result.ok && (
+              <p data-testid="widget-drawer-raw-error" className="text-sm text-destructive">
+                {lastChecked.value.result.error}
+              </p>
+            )}
           </div>
-          {lastChecked.value && !lastChecked.value.result.ok && (
-            <p data-testid="widget-drawer-raw-error" className="text-sm text-destructive">
-              {lastChecked.value.result.error}
-            </p>
-          )}
-        </div>
-      )}
+        )}
 
-      {saveError.value && <p className="text-sm text-destructive">{saveError.value}</p>}
+        {saveError.value && <p className="text-sm text-destructive">{saveError.value}</p>}
+      </div>
 
-      <div className="flex justify-end gap-2">
+      <div className="flex shrink-0 justify-end gap-2 border-t border-border pt-4">
         <Button type="button" variant="outline" onClick={() => close()}>
           Cancel
         </Button>
