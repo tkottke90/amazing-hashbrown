@@ -333,16 +333,20 @@ One execution of a Task from dequeue to a terminal or paused stopping point, per
 _Avoid_: Execution, attempt, task execution
 
 **Handed-Off Run**:
-A Run that ends in the `handed_off` status without reaching `done` or trailing into a Stalled Run, settling the owning Task to `blocked` rather than `failed` (see ADR-0054). Produced by one of two Hand-Off Causes: the agent itself calling `hand_off_task` after an `ask_user` HITL interrupt has already occurred earlier in the same Run, or the system settling an Exhausted Run this way once its Exhaustion Cap is reached (see ADR-0056). Counts as finished for `read_task_run`, and is excluded from a Task's failed-run streak while still surfacing as its own distinct retrospective signal.
+A Run that ends in the `handed_off` status without reaching `done` or trailing into a Stalled Run, settling the owning Task to `blocked` rather than `failed` (see ADR-0054). Produced by one of three Hand-Off Causes: the agent itself calling `hand_off_task` after an `ask_user` HITL interrupt has already occurred earlier in the same Run, the system settling an Exhausted Run this way once its Exhaustion Cap is reached (see ADR-0056), or the agent declaring an Externally-Blocked Hand-Off (see ADR-0059). Counts as finished for `read_task_run`, and is excluded from a Task's failed-run streak while still surfacing as its own distinct retrospective signal.
 _Avoid_: Stopped run, HITL stop, abandoned run
 
 **Hand-Off Cause**:
-A Handed-Off Run's own record of which of the two things produced it: `agent_requested` (the agent cooperatively called `hand_off_task` itself — the only cause before ADR-0056) or `exhaustion_cap` (the system settled it this way once an Exhaustion Cap was reached, see ADR-0056). Only an `exhaustion_cap` hand-off is ever rejected on an unchanged-scope drag back to `queue`; an `agent_requested` one was never about repeated identical scope.
+A Handed-Off Run's own record of which of three things produced it: `agent_requested` (the agent cooperatively called `hand_off_task` itself — the only cause before ADR-0056), `exhaustion_cap` (the system settled it this way once an Exhaustion Cap was reached, see ADR-0056), or `awaiting_user_action` (the agent declared an Externally-Blocked Hand-Off, see ADR-0059). An `exhaustion_cap` hand-off is rejected on an unchanged-scope drag back to `queue`; an `awaiting_user_action` one is rejected unconditionally; an `agent_requested` one was never about repeated identical scope and isn't rejected either way.
 _Avoid_: Handoff reason, handoff type
 
 **Hand-Off Note**:
-A Handed-Off Run's own summary (`task_queue.summary`) — the agent's own note for an `agent_requested` Hand-Off Cause, or the condensed summary for an `exhaustion_cap` one — surfaced in the Task Drawer as its own labeled section next to Hand-Off Guidance, rather than left to appear unlabeled in run history like any other Run's summary.
+A Handed-Off Run's own summary (`task_queue.summary`) — the agent's own note for an `agent_requested` or `awaiting_user_action` Hand-Off Cause, or the condensed summary for an `exhaustion_cap` one — surfaced in the Task Drawer as its own labeled section next to Hand-Off Guidance, rather than left to appear unlabeled in run history like any other Run's summary.
 _Avoid_: Handoff summary, handoff reason (see Hand-Off Cause, a different thing with a similar name)
+
+**Externally-Blocked Hand-Off**:
+A Handed-Off Run with Hand-Off Cause `awaiting_user_action`, produced by a dedicated tool (a sibling to `hand_off_task`) the agent calls when it judges that no further in-Run action — including an `ask_user` interrupt — could clear the blocker. Declaring one also cancels any wake-up pending on the owning Workspace's chat thread, so the Workspace stops producing fresh Tasks against the same unclearable blocker on every later check-in; this is what distinguishes it from the other two causes, neither of which touches a Workspace's wake-ups (see ADR-0059).
+_Avoid_: Externally blocked task, blocked-on-user task, stuck task
 
 **Exhausted Run**:
 A Run that ends because it hit a hard resource limit — the step/recursion limit (`GraphRecursionError`, `failure_reason: 'out_of_steps'`) or, once even full Turn Overflow truncation still doesn't fit, the trim budget (`ContextBudgetExceededError`, `failure_reason: 'turn_overflow'`) — rather than stopping cooperatively or failing for an undiagnosed reason. Persisted as `task_queue.status: 'failed'`, the same as a Stalled Run, but distinguished from it by that structured `failure_reason` (see ADR-0056).
