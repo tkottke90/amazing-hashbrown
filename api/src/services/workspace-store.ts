@@ -365,7 +365,7 @@ export type FailureReason = 'out_of_steps' | 'turn_overflow' | 'other';
 
 // Which of the two things produced a 'handed_off' Run. See ADR-0056,
 // GLOSSARY.md § Hand-Off Cause.
-export type HandoffReason = 'agent_requested' | 'exhaustion_cap';
+export type HandoffReason = 'agent_requested' | 'exhaustion_cap' | 'awaiting_user_action';
 
 export interface TaskQueueEntry {
   id: string;

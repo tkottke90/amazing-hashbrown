@@ -189,6 +189,16 @@ const SOURCES = {
       },
     }),
   }),
+  blockedHandoffAwaitingUserAction: () => ({
+    t: task({ status: 'blocked', title: 'Sync the gmail-labeler inbox' }),
+    c: ctx({
+      handoff: {
+        reason: 'awaiting_user_action',
+        scopeTitle: 'Sync the gmail-labeler inbox',
+        scopeDescription: null,
+      },
+    }),
+  }),
   blockedDependencyFailed: () => ({
     t: task({ status: 'blocked', blockedReason: 'dependency_failed' }),
     c: ctx({ dependencies: [edge('failed', false)] }),
@@ -260,6 +270,7 @@ describe('services/board-rules', () => {
       ['failed', 'attention', 'failed'],
       ['blockedDependencyFailed', 'attention', 'dependency_failed'],
       ['blockedPaused', 'attention', 'paused'],
+      ['blockedHandoffAwaitingUserAction', 'attention', 'awaiting_user_action'],
       ['schedulePaused', 'attention', 'schedule_paused'],
       ['blockedAwaitingChildren', 'scheduled', 'awaiting_children'],
       ['readyQueued', 'queue', undefined],
@@ -523,6 +534,24 @@ describe('services/board-rules', () => {
           `identical scope ${TestTypes.UNIT}`,
         () => expectAllowed('blockedHandoffAgentRequested', 'queue', [{ kind: 'resume' }]),
       );
+    });
+
+    describe('from Needs attention (handed off, awaiting_user_action — ADR-0059)', () => {
+      it(
+        `rejects Queue unconditionally — no scope check, this cause was never about repeated ` +
+          `attempts ${TestTypes.UNIT}`,
+        () => expectRejected('blockedHandoffAwaitingUserAction', 'queue', /only you can do/),
+      );
+      it(`closes out the hand-off then returns to pending on Backlog ${TestTypes.UNIT}`, () =>
+        expectAllowed('blockedHandoffAwaitingUserAction', 'backlog', [
+          { kind: 'detach_paused' },
+          { kind: 'patch_status', status: 'pending' },
+        ]));
+      it(`closes out the hand-off then marks done ${TestTypes.UNIT}`, () =>
+        expectAllowed('blockedHandoffAwaitingUserAction', 'done', [
+          { kind: 'detach_paused' },
+          ...DONE,
+        ]));
     });
 
     describe('from Needs attention (dependency failed)', () => {

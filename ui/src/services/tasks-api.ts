@@ -103,7 +103,8 @@ export type BoardReason =
   | { kind: 'schedule_paused'; failures: number }
   | { kind: 'waiting_on_dependency'; dependencies: TaskRef[] }
   | { kind: 'assigned_to_user' }
-  | { kind: 'awaiting_children'; settled: number; total: number };
+  | { kind: 'awaiting_children'; settled: number; total: number }
+  | { kind: 'awaiting_user_action' };
 
 export interface Board {
   lane: Lane;
@@ -160,7 +161,7 @@ export interface Task {
   // Cause, ADR-0057.
   latestRun?: {
     status: TaskQueueEntry['status'];
-    handoffReason: 'agent_requested' | 'exhaustion_cap' | null;
+    handoffReason: 'agent_requested' | 'exhaustion_cap' | 'awaiting_user_action' | null;
     summary: string | null;
   } | null;
 }
@@ -189,11 +190,12 @@ export interface TaskQueueEntry {
   summary: string | null;
   triggerSource: TriggerSource;
   scheduledFor: string | null;
-  // Set only on a 'handed_off' run: which of the two things produced it —
-  // the agent itself ('agent_requested') or the system, after a Narrowed
-  // Retry also hit a hard limit with unchanged scope ('exhaustion_cap').
-  // See GLOSSARY.md § Hand-Off Cause.
-  handoffReason: 'agent_requested' | 'exhaustion_cap' | null;
+  // Set only on a 'handed_off' run: which of three things produced it — the
+  // agent itself ('agent_requested'), the system, after a Narrowed Retry
+  // also hit a hard limit with unchanged scope ('exhaustion_cap'), or the
+  // agent declaring an Externally-Blocked Hand-Off ('awaiting_user_action').
+  // See GLOSSARY.md § Hand-Off Cause, ADR-0059.
+  handoffReason: 'agent_requested' | 'exhaustion_cap' | 'awaiting_user_action' | null;
 }
 
 // One run of a task, as the drawer's run history lists it.

@@ -59,13 +59,15 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('</ask_user_routing>');
       expect(result).to.include('<hand_off_task_routing>');
       expect(result).to.include('</hand_off_task_routing>');
+      expect(result).to.include('<block_on_user_action_routing>');
+      expect(result).to.include('</block_on_user_action_routing>');
       const opens = (result.match(/<[a-z_]+>/g) ?? []).length;
       const closes = (result.match(/<\/[a-z_]+>/g) ?? []).length;
-      expect(opens).to.equal(17);
-      expect(closes).to.equal(17);
+      expect(opens).to.equal(18);
+      expect(closes).to.equal(18);
     });
 
-    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, notation, search_conversation, wiki navigation, web fetch, attachment, wiki ingest, rlm, shell execution, waiting, image, search_skills, create_tasks, spawn_sub_agent, ask_user routing, hand_off_task routing', () => {
+    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, notation, search_conversation, wiki navigation, web fetch, attachment, wiki ingest, rlm, shell execution, waiting, image, search_skills, create_tasks, spawn_sub_agent, ask_user routing, hand_off_task routing, block_on_user_action routing', () => {
       const result = buildSystemPrompt();
       const identityTagIndex = result.indexOf('<identity>');
       const memoryTagIndex = result.indexOf('<memory>');
@@ -84,6 +86,7 @@ describe('agents/system-prompt', () => {
       const spawnSubAgentTagIndex = result.indexOf('<spawn_sub_agent>');
       const askUserTagIndex = result.indexOf('<ask_user_routing>');
       const handOffTaskTagIndex = result.indexOf('<hand_off_task_routing>');
+      const blockOnUserActionTagIndex = result.indexOf('<block_on_user_action_routing>');
       expect(identityTagIndex).to.be.greaterThan(-1);
       expect(memoryTagIndex).to.be.greaterThan(-1);
       expect(notationTagIndex).to.be.greaterThan(-1);
@@ -101,6 +104,7 @@ describe('agents/system-prompt', () => {
       expect(spawnSubAgentTagIndex).to.be.greaterThan(-1);
       expect(askUserTagIndex).to.be.greaterThan(-1);
       expect(handOffTaskTagIndex).to.be.greaterThan(-1);
+      expect(blockOnUserActionTagIndex).to.be.greaterThan(-1);
       expect(identityTagIndex).to.be.lessThan(memoryTagIndex);
       expect(memoryTagIndex).to.be.lessThan(notationTagIndex);
       expect(notationTagIndex).to.be.lessThan(searchConversationTagIndex);
@@ -117,6 +121,7 @@ describe('agents/system-prompt', () => {
       expect(createTasksTagIndex).to.be.lessThan(spawnSubAgentTagIndex);
       expect(spawnSubAgentTagIndex).to.be.lessThan(askUserTagIndex);
       expect(askUserTagIndex).to.be.lessThan(handOffTaskTagIndex);
+      expect(handOffTaskTagIndex).to.be.lessThan(blockOnUserActionTagIndex);
     });
 
     it('includes notation guidance explaining / for skills and # for required tools', () => {

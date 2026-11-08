@@ -1441,6 +1441,22 @@ instead. If the user's answer raises something new you need to ask about, call a
 than handing off. And if the user's answer is itself an instruction to continue, or to do something
 else instead, that's the decision already made — act on it, don't hand off.`;
 
+// block_on_user_action is for a different case than hand_off_task: the
+// blocker is outside this conversation entirely, so there's nothing left to
+// ask about and no cooperative stop to react to. See ADR-0059,
+// GLOSSARY.md's Externally-Blocked Hand-Off.
+const BLOCK_ON_USER_ACTION_SECTION = `If the only thing standing between this task and further progress
+is something only the user can do outside this conversation — completing an external flow such as an
+OAuth consent screen, providing a credential or file that doesn't exist yet, or anything else you have
+no tool to do yourself — call block_on_user_action with a note describing exactly what the user needs
+to do, instead of retrying the same blocked step, asking a question that won't change the outcome, or
+ending your turn with no further tool call.
+
+Don't confuse it with hand_off_task or ask_user. hand_off_task is for when the user asked you to stop
+or step away mid-conversation — not this. ask_user is for something answerable in this conversation —
+if asking would actually unblock you, ask instead of calling block_on_user_action. Only call
+block_on_user_action when no further action in this run, including a question, would help.`;
+
 // Motivated by suites/wiki-navigation.yaml's wnav-005/wnav-007/wnav-008: on
 // cold-start turns (no wiki tool calls yet in the conversation), the model
 // treats itself as having ordinary background knowledge of "the user" and
@@ -2107,6 +2123,11 @@ const HARNESS_SECTIONS: HarnessSection[] = [
     tag: 'hand_off_task_routing',
     content: HAND_OFF_TASK_SECTION,
     requiresAnyOf: ['hand_off_task'],
+  },
+  {
+    tag: 'block_on_user_action_routing',
+    content: BLOCK_ON_USER_ACTION_SECTION,
+    requiresAnyOf: ['block_on_user_action'],
   },
   // future: uncertainty, formatting, ...
 ];

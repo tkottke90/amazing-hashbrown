@@ -55,7 +55,8 @@ export type BoardReason =
   | { kind: 'schedule_paused'; failures: number }
   | { kind: 'waiting_on_dependency'; dependencies: TaskRef[] }
   | { kind: 'assigned_to_user' }
-  | { kind: 'awaiting_children'; settled: number; total: number };
+  | { kind: 'awaiting_children'; settled: number; total: number }
+  | { kind: 'awaiting_user_action' };
 
 export interface Board {
   lane: Lane;
@@ -126,6 +127,7 @@ type Source =
   | 'blocked_paused'
   | 'blocked_dependency_failed'
   | 'blocked_awaiting_children'
+  | 'blocked_awaiting_user_action'
   | 'failed'
   | 'schedule_paused'
   | 'done';
@@ -163,6 +165,11 @@ function sourceOf(task: Task, ctx: BoardContext): Source {
     case 'failed':
       return 'failed';
     case 'blocked':
+      // Checked ahead of blockedReason: an awaiting_user_action hand-off
+      // never sets blockedReason (see ADR-0054, ADR-0059) and needs its own
+      // Source/BoardReason so the board can show it distinctly, the same
+      // way blocked_dependency_failed/blocked_awaiting_children already do.
+      if (ctx.handoff?.reason === 'awaiting_user_action') return 'blocked_awaiting_user_action';
       if (task.blockedReason === 'dependency_failed') return 'blocked_dependency_failed';
       if (task.blockedReason === 'awaiting_children') return 'blocked_awaiting_children';
       return 'blocked_paused';
@@ -189,6 +196,7 @@ const LANE_OF: Record<Source, Lane> = {
   failed: 'attention',
   blocked_dependency_failed: 'attention',
   blocked_paused: 'attention',
+  blocked_awaiting_user_action: 'attention',
   schedule_paused: 'attention',
   blocked_awaiting_children: 'scheduled',
   ready: 'queue',
@@ -217,6 +225,8 @@ function reasonFor(task: Task, ctx: BoardContext, source: Source): BoardReason |
       };
     case 'blocked_paused':
       return { kind: 'paused' };
+    case 'blocked_awaiting_user_action':
+      return { kind: 'awaiting_user_action' };
     case 'blocked_dependency_failed': {
       const broken = ctx.dependencies.find(
         (edge) =>
@@ -283,6 +293,13 @@ const ATTENTION_IS_AUTOMATIC =
 const EXHAUSTION_CAP_UNCHANGED_SCOPE =
   'This task hit its retry limit twice with the same scope — edit the title or description ' +
   '(or use Hand-Off Guidance) before retrying.';
+// awaiting_user_action is rejected unconditionally, with no scope check —
+// unlike exhaustion_cap, this cause was never about repeated identical
+// attempts; it's about whether the user has actually done anything about
+// it. See ADR-0059.
+const AWAITING_USER_ACTION_BLOCKED =
+  'This task is blocked on something only you can do — use Hand-Off Guidance to say what ' +
+  'changed before retrying.';
 
 // The move table (spec §1.3): which steps turn a task from `source` into a
 // task in lane `to`, or why it can't go there.
@@ -365,6 +382,19 @@ function planFrom(task: Task, ctx: BoardContext, source: Source, to: Lane): Move
         }
         return plan([{ kind: 'resume' }]);
       }
+      if (to === 'backlog') {
+        return plan([{ kind: 'detach_paused' }, { kind: 'patch_status', status: 'pending' }]);
+      }
+      if (to === 'scheduled') {
+        return scheduleOnce(task, [
+          { kind: 'detach_paused' },
+          { kind: 'patch_status', status: 'pending' },
+        ]);
+      }
+      return plan([{ kind: 'detach_paused' }, ...MARK_DONE]);
+
+    case 'blocked_awaiting_user_action':
+      if (to === 'queue') return reject(AWAITING_USER_ACTION_BLOCKED);
       if (to === 'backlog') {
         return plan([{ kind: 'detach_paused' }, { kind: 'patch_status', status: 'pending' }]);
       }

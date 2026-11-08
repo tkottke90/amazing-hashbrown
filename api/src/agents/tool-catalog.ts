@@ -26,10 +26,10 @@ export interface CatalogEntry {
   category: ToolCategory;
   // Always available to every thread regardless of global/thread settings —
   // wiki tools per the design's "cannot disable wiki tools" requirement,
-  // plus complete_task, which a task run needs to be able to call to
-  // terminate at all, and update_plan, which keeps the task's plan checklist
-  // honest (neither is a user-facing choice the way the rest of this
-  // catalog is).
+  // plus the task-run-terminating tools a run needs to be able to call to
+  // end at all (complete_task, hand_off_task, block_on_user_action) and
+  // update_plan, which keeps the task's plan checklist honest (none of
+  // these is a user-facing choice the way the rest of this catalog is).
   alwaysOn: boolean;
   // Set only for skill-gated entries — cross-references
   // GATED_SKILL_REGISTRATIONS's skillCommand, so the read-only UI row can
@@ -107,6 +107,23 @@ export const TOOL_CATALOG: CatalogEntry[] = [
     toolId: 'complete_task',
     name: 'Complete Task',
     description: 'Mark an automated task run as finished. Required for task runs to terminate.',
+    category: 'built-in',
+    alwaysOn: true,
+  },
+  {
+    toolId: 'hand_off_task',
+    name: 'Hand Off Task',
+    description:
+      'End an automated task run cooperatively after the user asked to stop or step away. Task runs only.',
+    category: 'built-in',
+    alwaysOn: true,
+  },
+  {
+    toolId: 'block_on_user_action',
+    name: 'Block On User Action',
+    description:
+      "End an automated task run because the task's only remaining blocker is something only " +
+      'the user can do. Task runs only. See ADR-0059.',
     category: 'built-in',
     alwaysOn: true,
   },

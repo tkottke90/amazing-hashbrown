@@ -297,6 +297,43 @@ describe('TaskDrawer — Hand-Off Guidance (ADR-0057)', () => {
     expect(screen.getByText('Paused task controls')).toBeInTheDocument();
   });
 
+  it(
+    'labels an Externally-Blocked Hand-Off distinctly from an ordinary hand-off ' +
+      '(issue #367, ADR-0059) [unit]',
+    async () => {
+      mockFetchTaskRuns.mockResolvedValueOnce([
+        {
+          ...runFixture,
+          status: 'handed_off',
+          handoffReason: 'awaiting_user_action',
+          summary: 'Complete the OAuth consent flow and drop credentials.json in config/.',
+        },
+      ]);
+      renderDrawer({ ...baseTask, status: 'blocked' });
+
+      const block = within(await screen.findByTestId('hand-off-guidance'));
+      expect(block.getByText('Externally blocked')).toBeInTheDocument();
+      expect(
+        block.getByText('Complete the OAuth consent flow and drop credentials.json in config/.'),
+      ).toBeInTheDocument();
+    },
+  );
+
+  it('does not label an exhaustion_cap hand-off as externally blocked [unit]', async () => {
+    mockFetchTaskRuns.mockResolvedValueOnce([
+      {
+        ...runFixture,
+        status: 'handed_off',
+        handoffReason: 'exhaustion_cap',
+        summary: 'Ran out of steps twice with unchanged scope.',
+      },
+    ]);
+    renderDrawer({ ...baseTask, status: 'blocked' });
+
+    await screen.findByTestId('hand-off-guidance');
+    expect(screen.queryByText('Externally blocked')).not.toBeInTheDocument();
+  });
+
   it('saves guidance, updates the title/description fields in place, and keeps the drawer open [unit]', async () => {
     mockFetchTaskRuns.mockResolvedValueOnce([
       {

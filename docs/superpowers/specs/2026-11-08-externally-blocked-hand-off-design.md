@@ -65,10 +65,16 @@ regardless of `handoff_reason`'s value.
 ### 3. Cancel the Workspace's pending wake-up
 
 Also in the tool's write path (`task-execution.ts`, same call site as step
-2): resolve the Task's `workspaceId` → `getWorkspace(workspaceId).threadId`
-→ `WakeupStore.listPending()` filtered to that `threadId` → `cancel()` for
-any match. No-op when the Task is workspace-less or nothing is pending.
-Extend `WakeupCancelSource` (`wakeup-store.ts`) with a new value (e.g.
+2): resolve the Task's `workspaceId` → `workspaceScope.workspace.threadId`
+(already resolved earlier in `executeTask()`, no extra store call needed)
+→ `WakeupStore.getPending(threadId)` (a thread holds at most one pending
+wake-up at a time — a DB unique index — so this is the exact lookup, not a
+filtered list) → `WakeupRegistry.cancel(wakeupId, source)` for any match.
+Route through the registry, not the store, so the in-process timer is
+cleared too (`WakeupStore.cancel()` alone would leave a stale timer armed)
+— the same pattern the existing `cancel_wakeup` tool already uses. No-op
+when the Task is workspace-less or nothing is pending. Extend
+`WakeupCancelSource` (`wakeup-store.ts`) with a new value (e.g.
 `'externally_blocked_handoff'`) so a cancelled wake-up's record shows why,
 consistent with the existing cancel-source tracking.
 

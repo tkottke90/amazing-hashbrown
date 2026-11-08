@@ -43,8 +43,11 @@ import type {
 } from './chat-agent.js';
 import { makeCompleteTaskTool } from './tools/complete-task.tool.js';
 import { makeHandOffTaskTool } from './tools/hand-off-task.tool.js';
+import { makeBlockOnUserActionTool } from './tools/block-on-user-action.tool.js';
 import { registerBroadcastClient, unregisterBroadcastClient } from '../services/broadcast.js';
 import type { AppBroadcastEvent } from '@tkottke90/llm-common-types/chat';
+import { bootWakeupStore, getWakeupStore } from '../services/wakeup-store.js';
+import { bootWakeupRegistry } from '../services/wakeup-registry.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type RawEvent = Record<string, any>;
@@ -303,6 +306,12 @@ function fakeBuildTaskAgent(agent: any): typeof buildTaskAgent {
       hadHitlInterrupt: run?.hadHitlInterrupt,
       onAccepted: hooks?.onHandOff,
     });
+    // Same real-tool wiring, for block_on_user_action — see
+    // block-on-user-action.tool.ts and ADR-0059. No nudge-once rule to
+    // exercise here; the real tool just has none.
+    const blockOnUserAction = makeBlockOnUserActionTool(task.id, {
+      onAccepted: hooks?.onBlockOnUserAction,
+    });
     return {
       agent: {
         ...agent,
@@ -316,6 +325,9 @@ function fakeBuildTaskAgent(agent: any): typeof buildTaskAgent {
               }
               if (e.event === 'on_tool_start' && e.name === 'hand_off_task') {
                 await handOffTask.invoke(e.data.input);
+              }
+              if (e.event === 'on_tool_start' && e.name === 'block_on_user_action') {
+                await blockOnUserAction.invoke(e.data.input);
               }
               yield e;
             }
@@ -383,6 +395,16 @@ const HAND_OFF_TASK_EVENTS: RawEvent[] = [
     data: { input: { summary: 'Stopped at the user’s request before finishing.' } },
   },
   { event: 'on_tool_end', name: 'hand_off_task', run_id: 'ho-1', data: { output: 'ok' } },
+];
+
+const BLOCK_ON_USER_ACTION_EVENTS: RawEvent[] = [
+  {
+    event: 'on_tool_start',
+    name: 'block_on_user_action',
+    run_id: 'bo-1',
+    data: { input: { note: 'Complete the OAuth consent flow and drop credentials.json in config/.' } },
+  },
+  { event: 'on_tool_end', name: 'block_on_user_action', run_id: 'bo-1', data: { output: 'ok' } },
 ];
 
 const COMPLETE_TASK_FAILED_EVENTS: RawEvent[] = [
@@ -1907,6 +1929,96 @@ describe('agents/task-execution', () => {
       });
 
       expect(store.getQueueEntry(entry.id)!.handoffReason).to.equal('agent_requested');
+    });
+
+    it(
+      "settles a run to handed_off (not failed) with Hand-Off Cause 'awaiting_user_action' " +
+        'when block_on_user_action is accepted (issue #367) [orchestration]',
+      async () => {
+        const entry = makeGlobalEntry();
+
+        await executeTask(entry, {
+          buildTaskAgent: fakeBuildTaskAgent(fakeAgent(BLOCK_ON_USER_ACTION_EVENTS)),
+        });
+
+        expect(store.getQueueEntry(entry.id)!.status).to.equal('handed_off');
+        expect(store.getQueueEntry(entry.id)!.handoffReason).to.equal('awaiting_user_action');
+        expect(store.getQueueEntry(entry.id)!.summary).to.equal(
+          'Complete the OAuth consent flow and drop credentials.json in config/.',
+        );
+        expect(
+          store.getTask(entry.task.id)!.status,
+          'settles to blocked, same bucket every Hand-Off Cause settles to',
+        ).to.equal('blocked');
+      },
+    );
+
+    describe('cancelling the owning Workspace\'s pending wake-up (ADR-0059)', () => {
+      let wakeups: ReturnType<typeof getWakeupStore>;
+
+      beforeEach(() => {
+        bootWakeupStore(db);
+        bootWakeupRegistry({
+          // No real timers in this suite — these tests only ever call
+          // schedule()/getPending() directly and assert on cancel(), never
+          // let a wake-up actually fire.
+          setTimer: () => 0,
+          clearTimer: () => {},
+          deliver: async () => {
+            throw new Error('a wake-up should never fire in this suite');
+          },
+        });
+        wakeups = getWakeupStore();
+      });
+
+      it('cancels a wake-up pending on the owning Workspace chat thread [orchestration]', async () => {
+        const { entry, workspaceId } = makeWorkspaceEntry();
+        // Give the Workspace a chat thread with a wake-up already pending on
+        // it, as if an earlier chat turn had scheduled one — ensureWorkspaceChatThread()
+        // only mints a fresh thread when none exists yet, so this one is
+        // reused rather than overwritten.
+        const workspaceThreadId = 'ws-thread-1';
+        store.patchWorkspace(workspaceId, { threadId: workspaceThreadId });
+        threadStore.upsertThreadOnFirstMessage(workspaceThreadId, 'W', 'workspace-chat');
+        const pending = wakeups.schedule({
+          threadId: workspaceThreadId,
+          note: 'Check back on the gmail-labeler goal.',
+          fireAt: new Date(Date.now() + 60_000),
+          chainDepth: 1,
+        });
+
+        await executeTask(entry, {
+          buildTaskAgent: fakeBuildTaskAgent(fakeAgent(BLOCK_ON_USER_ACTION_EVENTS)),
+        });
+
+        expect(
+          wakeups.getPending(workspaceThreadId),
+          'the wake-up is no longer pending',
+        ).to.equal(null);
+        const settled = wakeups.get(pending.id)!;
+        expect(settled.status).to.equal('cancelled');
+        expect(settled.settledBy).to.equal('externally_blocked_handoff');
+      });
+
+      it('no-ops cleanly when the Task is workspace-less [orchestration]', async () => {
+        const entry = makeGlobalEntry();
+
+        await executeTask(entry, {
+          buildTaskAgent: fakeBuildTaskAgent(fakeAgent(BLOCK_ON_USER_ACTION_EVENTS)),
+        });
+
+        expect(store.getQueueEntry(entry.id)!.status).to.equal('handed_off');
+      });
+
+      it('no-ops cleanly when nothing is pending on the Workspace thread [orchestration]', async () => {
+        const { entry } = makeWorkspaceEntry();
+
+        await executeTask(entry, {
+          buildTaskAgent: fakeBuildTaskAgent(fakeAgent(BLOCK_ON_USER_ACTION_EVENTS)),
+        });
+
+        expect(store.getQueueEntry(entry.id)!.status).to.equal('handed_off');
+      });
     });
   });
 

@@ -68,6 +68,9 @@ import {
 } from './turn-observability.js';
 import type { CompleteTaskCall } from './tools/complete-task.tool.js';
 import type { HandOffTaskCall } from './tools/hand-off-task.tool.js';
+import type { BlockOnUserActionCall } from './tools/block-on-user-action.tool.js';
+import { getWakeupStore } from '../services/wakeup-store.js';
+import { getWakeupRegistry } from '../services/wakeup-registry.js';
 import { endThreadTurn, runOnceThreadFree } from './pending-thread-turns.js';
 import { broadcast } from '../services/broadcast.js';
 
@@ -507,6 +510,9 @@ export async function executeTask(
       // Same boxed-value pattern as completeTaskBox, for an accepted
       // hand_off_task call — see hand-off-task.tool.ts.
       const handOffBox: { current: HandOffTaskCall | null } = { current: null };
+      // Same boxed-value pattern, for an accepted block_on_user_action call
+      // — see block-on-user-action.tool.ts and ADR-0059.
+      const blockBox: { current: BlockOnUserActionCall | null } = { current: null };
 
       // A task normally runs on the default provider, resolved to a
       // concrete model up front so the agent that runs, the trace, and the
@@ -632,6 +638,9 @@ export async function executeTask(
         },
         onHandOff: (call: HandOffTaskCall) => {
           handOffBox.current = call;
+        },
+        onBlockOnUserAction: (call: BlockOnUserActionCall) => {
+          blockBox.current = call;
         },
       };
       // buildSubAgentAgent's result isn't typed as ChatAgent (it carries a
@@ -868,6 +877,55 @@ export async function executeTask(
             taskFileScope.filePath,
             taskFileScope.state,
             handOffBox.current.summary,
+            provider,
+            model,
+          );
+        }
+      } else if (blockBox.current) {
+        // The agent called block_on_user_action — the task's only remaining
+        // blocker is something only the user can do, and no further in-run
+        // action (including ask_user) would help. Distinct Hand-Off Cause
+        // from hand_off_task's 'agent_requested': see ADR-0059,
+        // GLOSSARY.md's Externally-Blocked Hand-Off.
+        finalOutcome = 'handed_off';
+        store.setQueueEntrySummary(entry.id, blockBox.current.note);
+        store.setQueueEntryHandoffReason(entry.id, 'awaiting_user_action');
+        store.completeQueueEntry(entry.id, 'handed_off');
+        // Cancel any wake-up pending on the owning Workspace's chat thread —
+        // this is what actually stops the workspace from spawning fresh
+        // tasks against the same dead end on every later check-in, rather
+        // than trusting a future turn to notice and hold back on its own.
+        // A thread holds at most one pending wake-up at a time (DB unique
+        // index), so getPending() is the exact lookup, not a filtered list.
+        // Route through the registry, not the store, so the in-process
+        // timer is cleared too — see cancel-wakeup.tool.ts's own call for
+        // the same pattern.
+        const blockedThreadId = workspaceScope?.workspace.threadId ?? null;
+        if (blockedThreadId) {
+          const pendingWakeup = getWakeupStore().getPending(blockedThreadId);
+          if (pendingWakeup) {
+            getWakeupRegistry().cancel(pendingWakeup.id, 'externally_blocked_handoff');
+          }
+        }
+        if (workspaceScope) {
+          await recordTaskProgress({
+            task,
+            workspace: workspaceScope.workspace,
+            outcome: 'handed_off',
+            summary: blockBox.current.note,
+            startSha,
+          });
+        }
+        if (task.origin === 'agent') {
+          await deliverSubAgentCompletion(task, 'handed_off', blockBox.current.note, threadId);
+        }
+        if (taskFileScope) {
+          await finishFile(
+            task,
+            { agent, config },
+            taskFileScope.filePath,
+            taskFileScope.state,
+            blockBox.current.note,
             provider,
             model,
           );

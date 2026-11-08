@@ -10,6 +10,12 @@ suite:
     as an undifferentiated 'failed' stall because nothing distinguished a
     cooperative stop from a crash. See
     docs/superpowers/specs/2026-11-01-handed-off-run-outcome-design.md.
+
+    Also verifies the related but distinct block_on_user_action tool (issue
+    #367, ADR-0059): a run must reach for it, not hand_off_task or ask_user,
+    specifically when the only remaining blocker is something only the user
+    can do outside the conversation entirely — and must not reach for it on
+    an ordinary in-chat ambiguity ask_user can resolve.
   passingThreshold: 1.0
   # Rendered through the real buildTaskContextBlock() — the prompt snapshot a
   # task run sees at start. The blocker that triggers ask_user is conveyed by
@@ -74,3 +80,50 @@ scenarios:
         result: { text: 'User answered: Use "us-east-1" as the default region and continue.' }
       - user: 'Use "us-east-1" as the default region and continue.'
     tool: '!hand_off_task'
+
+  - id: bug-367-blocks-on-missing-credential
+    name: Agent calls block_on_user_action when the only blocker is a missing credential file
+    purpose: >
+      Issue #367 (gmail-labeler retrospective, 2026-10-26): a run that
+      discovers its only remaining blocker is something only the user can do
+      outside the conversation — here, a credential file that doesn't exist
+      on disk and nothing in this run can create — must call
+      block_on_user_action, not retry the same read, not hand_off_task (the
+      user never asked it to stop), and not ask_user (no question asked in
+      this conversation would make the file appear).
+    type: tool-sequence
+    turns:
+      - user: 'Begin work on this task now: Migrate config.json to the new schema.'
+      - tool: shell_exec
+        args: { command: 'cat config/oauth-credentials.json' }
+        result:
+          {
+            text: 'cat: config/oauth-credentials.json: No such file or directory',
+          }
+      - user: >
+          That file won't exist until I finish the OAuth consent flow in the
+          provider's dashboard myself — I haven't done that yet.
+    tool: block_on_user_action
+    argChecks:
+      - path: note
+        match: exists
+
+  - id: bug-367-does-not-block-on-an-answerable-question
+    name: Agent does not call block_on_user_action for an ordinary in-chat ambiguity
+    purpose: >
+      block_on_user_action is only for a blocker outside the conversation
+      entirely. An ordinary ambiguity answerable via ask_user — the same
+      "which region" case bug-364's scenarios use — must not reach for the
+      new tool just because a question came up.
+    type: tool-sequence
+    turns:
+      - user: 'Begin work on this task now: Migrate config.json to the new schema.'
+      - tool: ask_user
+        args:
+          {
+            question: 'The v2 schema requires a "region" field with no default and no equivalent in the old config. What value should I use?',
+            kind: 'free_text',
+          }
+        result: { text: 'User answered: Use "us-east-1" as the default region and continue.' }
+      - user: 'Use "us-east-1" as the default region and continue.'
+    tool: '!block_on_user_action'
