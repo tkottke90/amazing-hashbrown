@@ -99,7 +99,9 @@ export function TaskRunView({ threadId }: { threadId: string }) {
               onClick={() => {
                 isDescriptionOpen.value = !isDescriptionOpen.value;
               }}
-              aria-label={isDescriptionOpen.value ? 'Hide full instruction' : 'Show full instruction'}
+              aria-label={
+                isDescriptionOpen.value ? 'Hide full instruction' : 'Show full instruction'
+              }
               class="flex shrink-0 items-center opacity-70 transition-opacity hover:opacity-100"
             >
               {isDescriptionOpen.value ? (

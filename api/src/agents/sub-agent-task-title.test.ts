@@ -13,7 +13,10 @@ import {
   getWorkspaceStore,
   TASK_TITLE_MAX_LENGTH,
 } from '../services/workspace-store.js';
-import { generateSubAgentTaskTitle, triggerSubAgentTitleGeneration } from './sub-agent-task-title.js';
+import {
+  generateSubAgentTaskTitle,
+  triggerSubAgentTitleGeneration,
+} from './sub-agent-task-title.js';
 
 class ThrowingChatModel extends BaseChatModel {
   _llmType() {
@@ -30,10 +33,25 @@ describe('agents/sub-agent-task-title — generateSubAgentTaskTitle', () => {
   before(() => {
     dir = mkdtempSync(join(tmpdir(), 'sub-agent-task-title-test-'));
     bootObservability(openDatabase(join(dir, 'observability.db')));
+    // generateSubAgentTaskTitle resolves provider/model for the observability
+    // trace via resolveTurnModel() even though `model` here is always a
+    // directly-injected fake — a real caller always has a real provider
+    // configured already (matches hand-off-guidance.test.ts's setup).
+    configManager.set('providers', [
+      {
+        name: 'local',
+        type: 'ollama',
+        baseUrl: 'http://localhost:11434',
+        defaultModel: 'test-model',
+      },
+    ]);
+    configManager.set('defaultProvider', 'local');
   });
 
   after(() => {
     rmSync(dir, { recursive: true, force: true });
+    configManager.set('providers', []);
+    configManager.set('defaultProvider', '');
   });
 
   const goal =
@@ -112,7 +130,23 @@ describe('agents/sub-agent-task-title — triggerSubAgentTitleGeneration [orches
     rmSync(dir, { recursive: true, force: true });
   });
 
+  // generateSubAgentTaskTitle resolves provider/model for the observability
+  // trace via resolveTurnModel() even when a modelOverride is passed in —
+  // only the test asserting the real no-provider fallback (below) omits this.
+  function configureFakeProvider(): void {
+    configManager.set('providers', [
+      {
+        name: 'local',
+        type: 'ollama',
+        baseUrl: 'http://localhost:11434',
+        defaultModel: 'test-model',
+      },
+    ]);
+    configManager.set('defaultProvider', 'local');
+  }
+
   it('applies the generated title to the task on success', async () => {
+    configureFakeProvider();
     const task = getWorkspaceStore().createTask({ title: 'placeholder', description: 'goal' });
     const model = new FakeListChatModel({ responses: ['Gate node decision logic'] });
 
@@ -122,6 +156,7 @@ describe('agents/sub-agent-task-title — triggerSubAgentTitleGeneration [orches
   });
 
   it('keeps the placeholder title and does not throw when the model fails', async () => {
+    configureFakeProvider();
     const task = getWorkspaceStore().createTask({ title: 'placeholder', description: 'goal' });
 
     await triggerSubAgentTitleGeneration(task.id, 'the full goal text', new ThrowingChatModel({}));
@@ -141,6 +176,7 @@ describe('agents/sub-agent-task-title — triggerSubAgentTitleGeneration [orches
   });
 
   it('is a silent no-op when the task no longer exists', async () => {
+    configureFakeProvider();
     const model = new FakeListChatModel({ responses: ['Gate node decision logic'] });
 
     let caught: unknown;

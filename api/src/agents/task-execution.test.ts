@@ -1418,7 +1418,10 @@ describe('agents/task-execution', () => {
 
     const start = threadStore
       .getThreadMessages(runThreadOf(entry))
-      .find((m) => m.kind === 'task_run_marker' && (m.payload as Record<string, unknown>).phase === 'start');
+      .find(
+        (m) =>
+          m.kind === 'task_run_marker' && (m.payload as Record<string, unknown>).phase === 'start',
+      );
     expect((start!.payload as Record<string, unknown>).taskDescription).to.equal(
       'The full instruction this run is working from.',
     );

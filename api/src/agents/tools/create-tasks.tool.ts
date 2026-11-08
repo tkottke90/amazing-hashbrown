@@ -86,9 +86,7 @@ const CreateTasksSchema = z.object({
   tasks: z
     .array(
       z.object({
-        title: z
-          .string()
-          .describe(`Short task title (max ${TASK_TITLE_MAX_LENGTH} characters).`),
+        title: z.string().describe(`Short task title (max ${TASK_TITLE_MAX_LENGTH} characters).`),
         description: z.string().optional().describe('What this task should accomplish.'),
         outcome: z.string().optional().describe('What "done" looks like for this task.'),
         plan: z
