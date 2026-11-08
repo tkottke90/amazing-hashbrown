@@ -446,6 +446,14 @@ _Avoid_: Sub-agent thread, delegated task, background task, any origin: 'agent' 
 One call to `spawn_sub_agent` — creates one or more Sub-Agent Tasks (several when the calling model's single turn issues several parallel calls, correlated by a shared `dispatchGroupId`) and returns immediately, without awaiting any of their Runs.
 _Avoid_: Spawn, invocation
 
+**Sub-Agent Goal**:
+The full instruction text a Dispatch's `goal` argument supplies for a Sub-Agent Task — stored verbatim in the Task's `description`, read from there by the Run's own system prompt, and never itself shortened or rewritten. Distinct from Task Goal, a Task File's own regenerated restatement of a task's intent — a Sub-Agent Task never gets a Task File, so the two can never refer to the same text even though both get called "the goal" in casual conversation.
+_Avoid_: Goal, task goal (see Task Goal — a different, already-defined concept)
+
+**Generated Title**:
+The short, LLM-produced label stored as a Sub-Agent Task's `title`, derived asynchronously from its Sub-Agent Goal after Dispatch has already returned. Falls back to a mechanical truncation of the Sub-Agent Goal if generation fails, times out, or simply hasn't finished yet by the time something reads the title — and is never regenerated again once set.
+_Avoid_: Short title, auto title, summary title
+
 # Live SSE Events
 
 How a running turn's live events reach a client and, for some event types, also become durable history — the one registered writer every live turn's events flow through, and the two event kinds that must leave a record behind.
