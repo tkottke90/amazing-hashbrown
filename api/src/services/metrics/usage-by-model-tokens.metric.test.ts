@@ -41,6 +41,7 @@ describe('services/metrics/usage-by-model-tokens.metric', () => {
       displayType: 'pie-graph',
       labels: ['claude-sonnet (anthropic)'],
       values: [175],
+      valueFormat: 'compact',
     });
   });
 
@@ -52,6 +53,7 @@ describe('services/metrics/usage-by-model-tokens.metric', () => {
       displayType: 'pie-graph',
       labels: ['gpt-4o (openai)'],
       values: [20],
+      valueFormat: 'compact',
     });
   });
 
@@ -65,6 +67,7 @@ describe('services/metrics/usage-by-model-tokens.metric', () => {
       displayType: 'pie-graph',
       labels: ['llama3 (ollama)', 'llama3 (openrouter)'],
       values: [100, 10],
+      valueFormat: 'compact',
     });
   });
 
@@ -78,11 +81,17 @@ describe('services/metrics/usage-by-model-tokens.metric', () => {
       displayType: 'pie-graph',
       labels: ['big (p)', 'small (p)'],
       values: [1000, 2],
+      valueFormat: 'compact',
     });
   });
 
   it('returns empty labels/values when usageStore has no rows [unit]', async () => {
     const result = await usageByModelTokensMetric.resolve(makeDeps([]));
-    expect(result).to.deep.equal({ displayType: 'pie-graph', labels: [], values: [] });
+    expect(result).to.deep.equal({
+      displayType: 'pie-graph',
+      labels: [],
+      values: [],
+      valueFormat: 'compact',
+    });
   });
 });

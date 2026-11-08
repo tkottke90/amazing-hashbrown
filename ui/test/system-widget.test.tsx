@@ -101,6 +101,25 @@ describe('SystemWidget', () => {
     expect(screen.queryByText('—')).not.toBeInTheDocument();
   });
 
+  it('shows a compact-formatted value when the resolved pie-graph metric opts in [unit]', () => {
+    renderWidget(
+      <SystemWidget
+        dashboardId="default"
+        density="compact"
+        widget={widget({
+          resolved: {
+            displayType: 'pie-graph',
+            labels: ['anthropic', 'openai'],
+            values: [178693706, 12590],
+            valueFormat: 'compact',
+          },
+        })}
+        onChanged={jest.fn()}
+      />,
+    );
+    expect(screen.getByTestId('system-widget-value')).toHaveTextContent('178.7M');
+  });
+
   it('renders a dash placeholder for a resolved line-graph metric (out of scope, #328) [unit]', () => {
     renderWidget(
       <SystemWidget

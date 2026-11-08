@@ -691,6 +691,7 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
                     <PieChart
                       labels={metricPreview.value.labels}
                       values={metricPreview.value.values}
+                      valueFormat={metricPreview.value.valueFormat}
                     />
                   )}
               </div>

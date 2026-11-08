@@ -55,7 +55,11 @@ function SystemWidgetValue({ widget }: { widget: SystemWidgetData }) {
     case 'pie-graph':
       return (
         <div data-testid="system-widget-value">
-          <PieChart labels={widget.resolved.labels} values={widget.resolved.values} />
+          <PieChart
+            labels={widget.resolved.labels}
+            values={widget.resolved.values}
+            valueFormat={widget.resolved.valueFormat}
+          />
         </div>
       );
     // Line Graph Metrics don't exist yet (follow-up issue #328) — no
