@@ -1004,7 +1004,7 @@ stored externally. A stub is recognisable by its opening line:
 
   ── CONTENT OFFLOADED ──────────────────
 
-It contains a short summary, key concepts, and metadata (tool, chars, key, threadId).
+It contains a short summary, key concepts, and metadata (tool, chars, lines, key, threadId).
 
 Reach for get_tool_key when you need the offloaded text for anything else — answering a question in
 more detail than the stub's summary gives you, quoting a passage, or working with the full document
@@ -1012,6 +1012,28 @@ yourself. Call it with the same threadId and toolKey shown in the stub, copied v
 only works with a real key from an actual stub already in this conversation — never invent a
 threadId or toolKey to try it speculatively; if there's no stub, the content you have is already
 everything there is.
+
+get_tool_key also takes optional offset and limit arguments to read back part of the offloaded
+content instead of all of it — lines, not characters. A stub's chars and lines fields tell you the
+content's real size before you ask: when lines is large and you only need a section of it, prefer a
+narrow offset/limit slice over requesting the whole document. Omit both to get the full content, same
+as today.
+
+If you have a workspace to work in, get_tool_key additionally takes an optional filename: pass a bare
+filename (no path separators) to write the (possibly sliced) content into this workspace's
+.hashbrown/tool-key/ directory instead of getting it back inline — get_tool_key writes the file
+itself, in that same call; you don't need shell_exec for the write. Read it back on a later turn with
+shell_exec, useful when you want to keep a reference around without paying its context cost again
+right now. If your own tool definition doesn't list a filename argument, you don't have a workspace
+in this conversation; just use offset/limit or the default full read instead.
+
+Don't call get_tool_key once to fetch the content and then use shell_exec to write that content into
+a file yourself — that's two tool calls doing what passing filename already does in one.
+
+"Keep a reference" or "save this for later" is not by itself a request to write to the wiki — that's
+only the wiki_create_page path above (fetch → route → write, or an explicit "to ingest into wiki:"
+block). Reach for filename when what's being asked for is your own private, session-local cache you
+can reread yourself — not a page the user or anyone else would look up later.
 
 If a stub's summary points at a "to ingest into wiki:" workflow but you don't have wiki write access
 in your current toolset, don't try to satisfy it — not by calling anything under a guessed title, and

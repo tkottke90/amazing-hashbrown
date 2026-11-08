@@ -13,7 +13,7 @@ import { makeWikiAddCrossLinkTool } from '../api/src/agents/tools/wiki-add-cross
 import { makeWikiRebaselineSourceTool } from '../api/src/agents/tools/wiki-rebaseline-source.tool.js';
 import { wikiRegisterDomainTool } from '../api/src/agents/tools/wiki-register-domain.tool.js';
 import { webFetchTool } from '../api/src/agents/tools/web-fetch.tool.js';
-import { getToolKeyTool } from '../api/src/agents/tools/get-tool-key.tool.js';
+import { makeGetToolKeyTool } from '../api/src/agents/tools/get-tool-key.tool.js';
 import { searchSkillsTool } from '../api/src/agents/tools/search-skills.tool.js';
 import { makeCreateWorkspaceTool } from '../api/src/agents/tools/create-workspace.tool.js';
 import { makeCreateProjectTool } from '../api/src/agents/tools/create-project.tool.js';
@@ -96,7 +96,15 @@ export const evalTools = [
   // call and filesystem scaffolding never run.
   wikiCreateDomainTool,
   webFetchTool,
-  getToolKeyTool,
+  // Bound with a (never-written-to) placeholder location rather than
+  // undefined, unlike shell_exec above: get_tool_key decides its schema
+  // (whether filename is offered at all) at bind time, not per-call from
+  // runtime.configurable the way create_tasks/other workspace-scoped tools
+  // in this flat list do — there's no per-scenario way to vary that here,
+  // so suites/get-tool-key.yaml's filename scenarios need it exposed
+  // unconditionally. Same "flat superset, never executed for real"
+  // reasoning as create_tasks above.
+  makeGetToolKeyTool('eval-harness-workspace'),
   // Part of STATIC_CHAT_TOOLS in production (chat-agent.ts) but was missing
   // here — auto-eval round 1 of suites/tool-calling.yaml (2026-09-22)
   // against local/Lemonade/Ornith/Digital Ocean found all four models never

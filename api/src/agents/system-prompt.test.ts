@@ -602,6 +602,41 @@ describe('agents/system-prompt', () => {
     // sentence. This test now covers the fallback that stays in web_fetch
     // (requiring only web_fetch), which doesn't know whether wiki_ingest is
     // present and so never names wiki_create_page or the ingest workflow.
+    it('tells the model to prefer an offset/limit slice over the whole document for a large stub', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'prefer a\nnarrow offset/limit slice over requesting the whole document',
+      );
+    });
+
+    it('describes the workspace-only filename argument in a way that tolerates not being bound', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        "right now. If your own tool definition doesn't list a filename argument, you don't have a workspace\nin this conversation",
+      );
+    });
+
+    it('disambiguates "keep a reference for later" from an actual request to save to the wiki', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        '"Keep a reference" or "save this for later" is not by itself a request to write to the wiki',
+      );
+    });
+
+    it('tells the model get_tool_key writes the file itself, so shell_exec is not needed for the write', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        "get_tool_key writes the file\nitself, in that same call; you don't need shell_exec for the write",
+      );
+    });
+
+    it('rules out the two-call workaround of fetching via get_tool_key then writing via shell_exec', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        "Don't call get_tool_key once to fetch the content and then use shell_exec to write that content into\na file yourself",
+      );
+    });
+
     it('gives web_fetch a wiki-write-agnostic fallback for a stub pointing at an ingest workflow', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(

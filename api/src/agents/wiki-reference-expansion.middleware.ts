@@ -99,11 +99,11 @@ async function resolveOneReference(
   ];
 
   return toolStub(
+    full,
     {
       kind: 'wiki',
       wikiId: ref.wikiId,
       path: ref.path,
-      chars: full.length,
       threadId,
       toolKey,
     },

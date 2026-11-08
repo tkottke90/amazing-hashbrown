@@ -85,9 +85,9 @@ export const webFetchTool = tool(
       sections.push({ name: 'to ingest into wiki:', content: wikiInstruction });
 
       return toolStub(
+        fullContent,
         {
           tool: 'web_fetch',
-          chars: result.text.length,
           key: toolKey,
           threadId,
           type: result.contentType,

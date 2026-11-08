@@ -161,11 +161,11 @@ async function resolveOneAttachment(
     injection: {
       kind: 'text',
       notation: toolStub(
+        extractedText,
         {
           kind: 'attachment',
           filename: meta.displayFilename,
           mimeType: meta.mimeType,
-          chars: extractedText.length,
           threadId,
           toolKey,
         },

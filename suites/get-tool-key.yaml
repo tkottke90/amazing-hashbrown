@@ -253,3 +253,123 @@ scenarios:
         result:
           text: 'No matching pages found for "server rack maintenance".'
     tool: '!get_tool_key'
+
+  - id: GTK-007-offset-limit-preferred-over-whole-document
+    name: Agent narrows with offset/limit instead of requesting the entire offloaded document
+    purpose: >
+      Seeds a large offloaded stub reporting a high lines count and asks a question answerable
+      from a known, named section of it. Checks the agent calls get_tool_key with offset/limit
+      narrowed toward that section rather than omitting both and pulling the whole document back —
+      the whole point of exposing line-range reads is wasted if the model never reaches for them.
+    type: tool-sequence
+    turns:
+      - user: 'Can you look up a guide on distributed systems for me — something covering CAP theorem and consensus protocols?'
+      - tool: web_fetch
+        args:
+          url: 'https://example.com/distributed-systems'
+        result:
+          content: |
+            ── CONTENT OFFLOADED ──────────────────
+            tool:     web_fetch
+            key:      kv_7f3a9b2c
+            threadId: f50450ee-582d-49b3-9bb2
+            type:     technical reference
+            chars:    18432
+            lines:    420
+            ─ summary ─────────────────────────────
+            Comprehensive guide covering CAP theorem fundamentals (lines 1-80), consensus
+            protocol comparisons (lines 81-200), and migration case studies (lines 340-420).
+            ─ key concepts ────────────────────────
+            consistency, availability, partition tolerance, leader election
+      - user: 'I just need the migration case studies section — can you pull that part?'
+    tool: get_tool_key
+    argChecks:
+      - path: threadId
+        match: equals
+        value: 'f50450ee-582d-49b3-9bb2'
+      - path: toolKey
+        match: equals
+        value: 'kv_7f3a9b2c'
+      - path: offset
+        match: gte
+        value: 300
+      - path: limit
+        match: exists
+
+  - id: GTK-008-filename-write-in-workspace
+    name: Agent writes the resolved reference to a file instead of pulling it back inline
+    purpose: >
+      In a workspace context, asks the agent to keep an offloaded reference around for later
+      without spending more context on it right now. Checks the agent passes filename rather than
+      omitting it, which is the whole value of the write path over a plain get_tool_key call.
+    type: tool-sequence
+    turns:
+      - user: 'Can you look up a guide on distributed systems for me — something covering CAP theorem and consensus protocols?'
+      - tool: web_fetch
+        args:
+          url: 'https://example.com/distributed-systems'
+        result:
+          content: |
+            ── CONTENT OFFLOADED ──────────────────
+            tool:     web_fetch
+            key:      kv_7f3a9b2c
+            threadId: f50450ee-582d-49b3-9bb2
+            type:     technical reference
+            chars:    18432
+            lines:    420
+            ─ summary ─────────────────────────────
+            Comprehensive guide covering CAP theorem fundamentals, consensus protocol
+            comparisons, and migration case studies.
+            ─ key concepts ────────────────────────
+            consistency, availability, partition tolerance, leader election
+      - user: >-
+          I don't need this saved to the wiki or anywhere permanent — just keep a quick working
+          copy around in this workspace so I don't have to re-explain it if I ask about it again
+          later this session.
+    tool: get_tool_key
+    argChecks:
+      - path: threadId
+        match: equals
+        value: 'f50450ee-582d-49b3-9bb2'
+      - path: toolKey
+        match: equals
+        value: 'kv_7f3a9b2c'
+      - path: filename
+        match: exists
+
+  - id: GTK-009-default-whole-document-unchanged
+    name: Agent still requests the whole document plainly when it just wants everything
+    purpose: >
+      Guards against GTK-007/GTK-008 regressing the original GTK-001-style whole-document read:
+      when the user's ask is a plain "get me the full text" with no partial or keep-for-later
+      framing, the agent should still call get_tool_key the same way it did before offset/limit/
+      filename existed — asserted the same way GTK-001 is, since there is no match kind in this
+      suite's schema for asserting an argument's absence.
+    type: tool-sequence
+    turns:
+      - user: 'I need the exact wording from that migration case study section — can you get me the full text?'
+      - tool: web_fetch
+        args:
+          url: 'https://example.com/distributed-systems'
+        result:
+          content: |
+            ── CONTENT OFFLOADED ──────────────────
+            tool:     web_fetch
+            key:      kv_7f3a9b2c
+            threadId: f50450ee-582d-49b3-9bb2
+            type:     technical reference
+            chars:    18432
+            lines:    420
+            ─ summary ─────────────────────────────
+            Comprehensive guide covering CAP theorem fundamentals, consensus protocol
+            comparisons, and migration case studies.
+            ─ key concepts ────────────────────────
+            consistency, availability, partition tolerance, leader election
+    tool: get_tool_key
+    argChecks:
+      - path: threadId
+        match: equals
+        value: 'f50450ee-582d-49b3-9bb2'
+      - path: toolKey
+        match: equals
+        value: 'kv_7f3a9b2c'
