@@ -1026,6 +1026,11 @@ useful when you want to keep a reference around without paying its context cost 
 your own tool definition doesn't list a filename argument, you don't have a workspace in this
 conversation; just use offset/limit or the default full read instead.
 
+"Keep a reference" or "save this for later" is not by itself a request to write to the wiki — that's
+only the wiki_create_page path above (fetch → route → write, or an explicit "to ingest into wiki:"
+block). Reach for filename when what's being asked for is your own private, session-local cache you
+can reread yourself — not a page the user or anyone else would look up later.
+
 If a stub's summary points at a "to ingest into wiki:" workflow but you don't have wiki write access
 in your current toolset, don't try to satisfy it — not by calling anything under a guessed title, and
 not by asking the user for missing details like a title. Present the stub's summary and key concepts

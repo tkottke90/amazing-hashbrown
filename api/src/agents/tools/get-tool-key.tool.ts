@@ -31,7 +31,9 @@ const BASE_SCHEMA_SHAPE = {
     .min(1)
     .optional()
     .describe(
-      'Maximum number of lines to return starting at offset. Omit to return every remaining line.',
+      'Maximum number of lines to return starting at offset. Omit to return every remaining line. ' +
+        'When you want a bounded slice (not "from here to the end"), pass this alongside offset in ' +
+        'the same call — both describe one range together.',
     ),
 };
 

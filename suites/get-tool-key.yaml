@@ -323,8 +323,9 @@ scenarios:
             ─ key concepts ────────────────────────
             consistency, availability, partition tolerance, leader election
       - user: >-
-          Keep a reference to the full guide for later without spending more of our context on it
-          right now — I'll ask you to look at it again in a future message.
+          I don't need this saved to the wiki or anywhere permanent — just keep a quick working
+          copy around in this workspace so I don't have to re-explain it if I ask about it again
+          later this session.
     tool: get_tool_key
     argChecks:
       - path: threadId

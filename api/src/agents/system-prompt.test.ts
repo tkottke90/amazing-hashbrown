@@ -611,6 +611,13 @@ describe('agents/system-prompt', () => {
       );
     });
 
+    it('disambiguates "keep a reference for later" from an actual request to save to the wiki', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        '"Keep a reference" or "save this for later" is not by itself a request to write to the wiki',
+      );
+    });
+
     it('gives web_fetch a wiki-write-agnostic fallback for a stub pointing at an ingest workflow', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(
