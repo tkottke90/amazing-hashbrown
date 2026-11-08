@@ -200,6 +200,7 @@ describe('resolveAttachmentsForTurn [unit]', () => {
     expect(notation).to.include('report.md');
     expect(notation).to.include('get_tool_key({');
     expect(notation).to.include(threadId);
+    expect(notation).to.include('lines:');
 
     // The toolKey embedded in the stub must actually resolve back to the
     // full text — this is the whole point of offloading instead of inlining.

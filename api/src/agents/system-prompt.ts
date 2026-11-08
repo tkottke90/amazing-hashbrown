@@ -1004,7 +1004,7 @@ stored externally. A stub is recognisable by its opening line:
 
   ── CONTENT OFFLOADED ──────────────────
 
-It contains a short summary, key concepts, and metadata (tool, chars, key, threadId).
+It contains a short summary, key concepts, and metadata (tool, chars, lines, key, threadId).
 
 Reach for get_tool_key when you need the offloaded text for anything else — answering a question in
 more detail than the stub's summary gives you, quoting a passage, or working with the full document
@@ -1012,6 +1012,19 @@ yourself. Call it with the same threadId and toolKey shown in the stub, copied v
 only works with a real key from an actual stub already in this conversation — never invent a
 threadId or toolKey to try it speculatively; if there's no stub, the content you have is already
 everything there is.
+
+get_tool_key also takes optional offset and limit arguments to read back part of the offloaded
+content instead of all of it — lines, not characters. A stub's chars and lines fields tell you the
+content's real size before you ask: when lines is large and you only need a section of it, prefer a
+narrow offset/limit slice over requesting the whole document. Omit both to get the full content, same
+as today.
+
+If you have a workspace to work in, get_tool_key additionally takes an optional filename: pass a bare
+filename (no path separators) to write the (possibly sliced) content into this workspace's
+.hashbrown/tool-key/ directory instead of getting it back inline, then read it later with shell_exec —
+useful when you want to keep a reference around without paying its context cost again right now. If
+your own tool definition doesn't list a filename argument, you don't have a workspace in this
+conversation; just use offset/limit or the default full read instead.
 
 If a stub's summary points at a "to ingest into wiki:" workflow but you don't have wiki write access
 in your current toolset, don't try to satisfy it — not by calling anything under a guessed title, and

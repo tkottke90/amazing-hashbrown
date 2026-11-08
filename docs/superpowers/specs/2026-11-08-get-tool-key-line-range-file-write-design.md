@@ -63,7 +63,7 @@ Each one hand-computes a `chars` field for the frontmatter from whatever content
 export function toolStub(
   frontmatter: Record<string, string | number | boolean>,
   sections: StubSection[],
-): string
+): string;
 ```
 
 to:
@@ -152,13 +152,13 @@ Both branches delegate to the same internal resolver (§4) — the restricted sc
 
 Every current binder of `getToolKeyTool` switches to calling the factory with the right value:
 
-| Builder | File | `workspaceLocation` passed |
-|---|---|---|
-| `STATIC_CHAT_TOOLS` entry removed entirely | `chat-agent.ts:329-344` | — (see below) |
-| `buildChatAgent` | `chat-agent.ts:515` area | `makeGetToolKeyTool()` — always restricted, plain chat has no workspace |
-| `buildWorkspaceChatAgent` | `chat-agent.ts:667` area | `makeGetToolKeyTool(workspaceContext.location)` — always full |
-| `buildTaskAgent` | `task-execution.ts:825` area | `makeGetToolKeyTool(workspaceScope?.workspaceContext.location)` — full when the task has a workspace, restricted otherwise |
-| `buildWikiIngestionAgent` | `wiki-ingestion-agent.ts:37` area | `makeGetToolKeyTool()` — always restricted, never has a workspace |
+| Builder                                    | File                              | `workspaceLocation` passed                                                                                                 |
+| ------------------------------------------ | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `STATIC_CHAT_TOOLS` entry removed entirely | `chat-agent.ts:329-344`           | — (see below)                                                                                                              |
+| `buildChatAgent`                           | `chat-agent.ts:515` area          | `makeGetToolKeyTool()` — always restricted, plain chat has no workspace                                                    |
+| `buildWorkspaceChatAgent`                  | `chat-agent.ts:667` area          | `makeGetToolKeyTool(workspaceContext.location)` — always full                                                              |
+| `buildTaskAgent`                           | `task-execution.ts:825` area      | `makeGetToolKeyTool(workspaceScope?.workspaceContext.location)` — full when the task has a workspace, restricted otherwise |
+| `buildWikiIngestionAgent`                  | `wiki-ingestion-agent.ts:37` area | `makeGetToolKeyTool()` — always restricted, never has a workspace                                                          |
 
 This is the same shape `shell_exec` already has (`makeShellExecTool(workingDirectory?, options)`, built per-builder, never in `STATIC_CHAT_TOOLS`) — `get_tool_key` makes the identical move for the same reason: its correct shape depends on something only known at agent-build time, which a module-level constant array can't express.
 

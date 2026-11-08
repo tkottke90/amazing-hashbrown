@@ -12,6 +12,7 @@ import {
   createContextWindowMiddleware,
   STATIC_CHAT_TOOLS,
   WAKEUP_TOOLS,
+  buildSubAgentToolCandidates,
   buildWorkspaceScopedTools,
   buildTaskVisibilityTools,
   buildFileConflictTools,
@@ -96,6 +97,18 @@ describe('agents/chat-agent', () => {
       expect(shared).to.not.include('schedule_wakeup');
       expect(shared).to.not.include('cancel_wakeup');
       expect(WAKEUP_TOOLS.map((t) => t.name)).to.deep.equal(['schedule_wakeup', 'cancel_wakeup']);
+    });
+  });
+
+  describe('get_tool_key binding (workspace-gated schema) [unit]', () => {
+    it('STATIC_CHAT_TOOLS no longer includes get_tool_key — it is bound per-agent via makeGetToolKeyTool() instead', () => {
+      expect(STATIC_CHAT_TOOLS.map((t) => t.name)).to.not.include('get_tool_key');
+    });
+
+    it('buildSubAgentToolCandidates() still includes get_tool_key, so sub-agents do not silently lose it', () => {
+      const task = { id: 'task-1', workspaceId: undefined } as Task;
+      const candidates = buildSubAgentToolCandidates(task, undefined, []);
+      expect(candidates.map((t) => t.name)).to.include('get_tool_key');
     });
   });
 

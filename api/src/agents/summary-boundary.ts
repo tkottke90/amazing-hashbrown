@@ -73,9 +73,9 @@ function truncateToolMessage(original: ToolMessage, threadId: string | undefined
     const toolKey = `kv_${randomBytes(4).toString('hex')}`;
     storeToolContent(threadId, toolKey, originalContent);
     newContent = toolStub(
+      originalContent,
       {
         tool: original.name ?? 'unknown_tool',
-        chars: originalContent.length,
         key: toolKey,
         threadId,
       },

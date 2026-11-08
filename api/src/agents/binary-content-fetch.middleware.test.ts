@@ -12,7 +12,7 @@ import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { bootObservability, getObservabilityStore } from '../services/observability.js';
 import { bootArtifactStore, storeArtifact, getArtifactMeta } from '../artifacts/artifact-store.js';
 import { storeToolContent, storeBinaryToolContent } from '../services/tool-content-store.js';
-import { getToolKeyTool } from './tools/get-tool-key.tool.js';
+import { makeGetToolKeyTool } from './tools/get-tool-key.tool.js';
 import { createBinaryContentFetchMiddleware } from './binary-content-fetch.middleware.js';
 
 function fakeRuntime(opts: { provider?: string; model?: string; traceId?: string } = {}) {
@@ -300,7 +300,7 @@ describe('agents/binary-content-fetch.middleware', () => {
 
       const agent = createAgent({
         model: new ScriptedChatModel({ threadId, toolKey }),
-        tools: [getToolKeyTool],
+        tools: [makeGetToolKeyTool()],
         middleware: [createBinaryContentFetchMiddleware(async () => true)] as const,
       });
 
@@ -354,7 +354,7 @@ describe('agents/binary-content-fetch.middleware', () => {
 
       const agent = createAgent({
         model: new ScriptedChatModel({ threadId, toolKey }),
-        tools: [getToolKeyTool],
+        tools: [makeGetToolKeyTool()],
         middleware: [createBinaryContentFetchMiddleware(async () => false)] as const,
       });
 

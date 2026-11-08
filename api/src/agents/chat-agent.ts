@@ -35,7 +35,7 @@ import { rlmQueryTool } from './tools/rlm-query.tool.js';
 import { makeSearchSkillsTool } from './tools/search-skills.tool.js';
 import { searchConversationTool } from './tools/search-conversation.tool.js';
 import { webFetchTool } from './tools/web-fetch.tool.js';
-import { getToolKeyTool } from './tools/get-tool-key.tool.js';
+import { makeGetToolKeyTool } from './tools/get-tool-key.tool.js';
 import { toolStub, STUB_THRESHOLD_CHARS } from './tools/tool-stub.js';
 import { makeUpdateWidgetContentTool } from './tools/update-widget-content.tool.js';
 import { getAfterAgentContextSchema, runAfterAgentPipeline } from './after-agent.js';
@@ -295,7 +295,7 @@ export function mcpToolToLangChain(t: RegisteredTool) {
       ) {
         const toolKey = `kv_${randomBytes(4).toString('hex')}`;
         storeToolContent(threadId, toolKey, text);
-        return toolStub({ tool: t.boundName, chars: text.length, key: toolKey, threadId }, [
+        return toolStub(text, { tool: t.boundName, key: toolKey, threadId }, [
           { name: 'preview', content: text.slice(0, 1000) },
         ]);
       }
@@ -336,7 +336,6 @@ export const STATIC_CHAT_TOOLS = [
   wikiLintTool,
   wikiRegisterDomainTool,
   webFetchTool,
-  getToolKeyTool,
   rlmQueryTool,
   searchConversationTool,
   spawnSubAgentTool,
@@ -521,6 +520,7 @@ async function buildChatAgent(provider?: string, model?: string) {
     model: llm,
     tools: [
       makeShellExecTool(undefined, { wakeupAvailable: true }),
+      makeGetToolKeyTool(),
       ...STATIC_CHAT_TOOLS,
       ...WAKEUP_TOOLS,
       ...buildSkillTools(globalSkills),
@@ -685,6 +685,7 @@ async function buildWorkspaceChatAgent(
         wakeupAvailable: true,
         autoApprove: workspaceContext.autoApproveShell,
       }),
+      makeGetToolKeyTool(workspaceContext.location),
       ...STATIC_CHAT_TOOLS,
       ...WAKEUP_TOOLS,
       ...buildSkillTools(skills),
@@ -852,6 +853,7 @@ export async function buildTaskAgent(
       makeShellExecTool(workspaceScope?.workspaceContext.location, {
         autoApprove: workspaceScope?.workspaceContext.autoApproveShell,
       }),
+      makeGetToolKeyTool(workspaceScope?.workspaceContext.location),
       ...STATIC_CHAT_TOOLS,
       ...buildSkillTools(skills),
       ...buildWorkspaceScopedTools(task.id),
@@ -961,6 +963,32 @@ export async function buildTaskAgent(
 // See docs/superpowers/specs/2026-09-09-sub-agent-tooling-design.md §3 and
 // docs/superpowers/specs/2026-09-13-tool-settings-redesign-design.md §6.
 // ---------------------------------------------------------------------------
+// Extracted out of buildSubAgentAgent so the candidate pool is directly
+// unit-testable (e.g. "get_tool_key is in here") without a live provider —
+// buildSubAgentAgent itself has no injectable-provider seam the way
+// buildTaskAgent does via task-execution.ts's deps.buildTaskAgent.
+export function buildSubAgentToolCandidates(
+  task: Task,
+  workspaceScope: TaskWorkspaceScope | undefined,
+  // Deliberately the real inferred return type of loadMcpTools(), not the
+  // wider (ServerTool | ClientTool)[] — that union's ServerTool member is
+  // Record<string, unknown>, which collapses every element's .name to
+  // unknown once mixed into this array, breaking the name-based filter in
+  // buildSubAgentAgent below.
+  mcpTools: Awaited<ReturnType<typeof loadMcpTools>>,
+) {
+  return [
+    ...STATIC_CHAT_TOOLS,
+    makeGetToolKeyTool(workspaceScope?.workspaceContext.location),
+    ...buildSkillTools(workspaceSkills(task.workspaceId)),
+    ...buildWikiWriteTools(),
+    makeShellExecTool(workspaceScope?.workspaceContext.location, {
+      autoApprove: workspaceScope?.workspaceContext.autoApproveShell,
+    }),
+    ...mcpTools,
+  ];
+}
+
 // Return type deliberately not annotated as ChatAgent — that alias is
 // pinned to buildChatAgent's exact 5-entry middleware tuple, and this
 // builder's middleware array is a different (shorter) tuple, so
@@ -993,15 +1021,7 @@ export async function buildSubAgentAgent(
   // toBoundMatchKeys()) since MCP tools bind under that form, not their
   // display id.
   const mcpTools = await loadMcpTools();
-  const candidatePool = [
-    ...STATIC_CHAT_TOOLS,
-    ...buildSkillTools(workspaceSkills(task.workspaceId)),
-    ...buildWikiWriteTools(),
-    makeShellExecTool(workspaceScope?.workspaceContext.location, {
-      autoApprove: workspaceScope?.workspaceContext.autoApproveShell,
-    }),
-    ...mcpTools,
-  ];
+  const candidatePool = buildSubAgentToolCandidates(task, workspaceScope, mcpTools);
   const allowedBoundNames = toBoundMatchKeys(getSubAgentToolIds());
   const tools = candidatePool.filter((t) => allowedBoundNames.has(t.name));
 

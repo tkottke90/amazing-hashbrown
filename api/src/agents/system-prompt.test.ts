@@ -597,6 +597,20 @@ describe('agents/system-prompt', () => {
     // sentence. This test now covers the fallback that stays in web_fetch
     // (requiring only web_fetch), which doesn't know whether wiki_ingest is
     // present and so never names wiki_create_page or the ingest workflow.
+    it('tells the model to prefer an offset/limit slice over the whole document for a large stub', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        'prefer a\nnarrow offset/limit slice over requesting the whole document',
+      );
+    });
+
+    it('describes the workspace-only filename argument in a way that tolerates not being bound', () => {
+      const result = buildSystemPrompt();
+      expect(result).to.include(
+        "right now. If\nyour own tool definition doesn't list a filename argument, you don't have a workspace",
+      );
+    });
+
     it('gives web_fetch a wiki-write-agnostic fallback for a stub pointing at an ingest workflow', () => {
       const result = buildSystemPrompt();
       expect(result).to.include(

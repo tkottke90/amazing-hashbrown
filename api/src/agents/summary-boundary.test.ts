@@ -186,6 +186,7 @@ describe('agents/summary-boundary', () => {
       ) as ToolMessage;
       expect(truncated.content).to.not.equal(hugeResult.content);
       expect(String(truncated.content)).to.include('CONTENT OFFLOADED');
+      expect(String(truncated.content)).to.include('lines:');
       // The small result was never touched — only the oversized one needed it.
       const untouched = trimmed.find(
         (m) => (m as ToolMessage).tool_call_id === 'call_small',

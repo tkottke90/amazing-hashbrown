@@ -142,6 +142,7 @@ describe('agents/wiki-reference-expansion.middleware [unit]', () => {
     expect(content).to.not.include(hugeContent);
     expect(content).to.include('CONTENT OFFLOADED');
     expect(content).to.include('get_tool_key');
+    expect(content).to.include('lines:');
 
     const toolKeyMatch = content.match(/toolKey:\s*"([^"]+)"/);
     expect(toolKeyMatch, 'expected a toolKey to be present in the stub').to.not.equal(null);
