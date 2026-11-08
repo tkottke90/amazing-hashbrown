@@ -40,6 +40,10 @@ export const TraceSourceSchema = z.enum([
   // Task's title/description (api/src/agents/hand-off-guidance.ts). See
   // ADR-0057, GLOSSARY.md § Hand-Off Guidance.
   'hand-off-guidance',
+  // The Generated Title one-shot call for a Sub-Agent Task
+  // (api/src/agents/sub-agent-task-title.ts). See ADR-0059,
+  // GLOSSARY.md § Generated Title.
+  'sub-agent-task-title',
 ]);
 
 export const SpanRecordSchema = z.object({

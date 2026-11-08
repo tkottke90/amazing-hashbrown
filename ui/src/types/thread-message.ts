@@ -150,6 +150,11 @@ export type ThreadMessage =
       id: string;
       taskId: string;
       taskTitle: string;
+      // The task's full description (for a Sub-Agent Task, its Sub-Agent
+      // Goal) as of when this marker was written — absent on markers
+      // written before this field existed, and never updated afterward
+      // even if the task's description changes later.
+      taskDescription?: string;
       phase: 'start' | 'end';
       outcome?: 'done' | 'failed' | 'waiting_on_user' | 'cancelled' | 'blocked' | 'handed_off';
       // Which run this marker brackets — absent on markers written before

@@ -122,6 +122,13 @@ export interface PlanStep {
   done: boolean;
 }
 
+// Shared cap on Task.title — enforced on a caller-supplied create_tasks
+// title (agents/tools/create-tasks.tool.ts) and used to derive the
+// mechanical-truncation placeholder a Sub-Agent Task's title starts as
+// before its Generated Title arrives (agents/sub-agent-task-title.ts). See
+// ADR-0059, GLOSSARY.md § Generated Title.
+export const TASK_TITLE_MAX_LENGTH = 60;
+
 export interface Task {
   id: string;
   workspaceId: string | null;
@@ -2569,7 +2576,14 @@ export class WorkspaceStore extends BaseStore {
     return this.db.transaction(() => {
       const task = this.createTask({
         workspaceId: input.workspaceId ?? null,
-        title: input.goal,
+        // title starts as a mechanical-truncation placeholder; the Sub-Agent
+        // Goal itself lives in description, verbatim, where buildTaskContextBlock
+        // already surfaces it to the agent. spawnSubAgentTool fires an
+        // unawaited Generated Title call right after this returns, which
+        // overwrites title via patchTask once it resolves. See ADR-0059,
+        // GLOSSARY.md § Sub-Agent Goal / Generated Title.
+        title: input.goal.slice(0, TASK_TITLE_MAX_LENGTH),
+        description: input.goal,
         origin: 'agent',
         parentThreadId: input.parentThreadId,
         dispatchGroupId: input.dispatchGroupId,

@@ -5,7 +5,7 @@ import { describe, it, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { configManager } from '../config/env.js';
-import { WorkspaceStore } from './workspace-store.js';
+import { TASK_TITLE_MAX_LENGTH, WorkspaceStore } from './workspace-store.js';
 
 describe('services/workspace-store', () => {
   describe('recoverRunningQueueEntries() (crash recovery, runs in the constructor)', () => {
@@ -890,6 +890,7 @@ describe('services/workspace-store', () => {
 
       expect(task.origin).to.equal('agent');
       expect(task.title).to.equal('Find the answer');
+      expect(task.description).to.equal('Find the answer');
       expect(task.parentThreadId).to.equal('parent-thread-1');
       expect(task.dispatchGroupId).to.equal('group-1');
       expect(task.role).to.equal('researcher');
@@ -899,6 +900,23 @@ describe('services/workspace-store', () => {
       const entry = store.listQueue().find((e) => e.taskId === task.id);
       expect(entry).to.not.equal(undefined);
       expect(entry!.status).to.equal('pending');
+    });
+
+    it('createSubAgentTask() truncates an over-length goal into title but keeps it verbatim in description [unit]', () => {
+      const goal =
+        'Answer this question about an n8n workflow: how does the Gate node use the output of the Get Decisions node? Trace the connections graph and quote the relevant code.';
+      expect(goal.length).to.be.greaterThan(TASK_TITLE_MAX_LENGTH);
+
+      const task = store.createSubAgentTask({
+        role: 'researcher',
+        goal,
+        parentThreadId: 'parent-thread-1',
+        dispatchGroupId: 'group-1',
+      });
+
+      expect(task.title).to.equal(goal.slice(0, TASK_TITLE_MAX_LENGTH));
+      expect(task.title.length).to.equal(TASK_TITLE_MAX_LENGTH);
+      expect(task.description).to.equal(goal);
     });
 
     it("dequeueNext() dispatches an origin='agent' row even while its own scope has a running entry", () => {

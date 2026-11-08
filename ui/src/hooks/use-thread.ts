@@ -108,6 +108,7 @@ export type ThreadType = 'chat' | 'wiki' | 'workspace-chat' | 'task';
 export interface TaskRunInfo {
   taskId: string;
   taskTitle: string;
+  taskDescription: string | null;
   workspaceId: string | null;
   runId: string;
   runNumber: number;

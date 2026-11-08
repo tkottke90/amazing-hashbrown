@@ -1,0 +1,192 @@
+suite:
+  id: sub-agent-task-titles
+  name: Sub-Agent Task Generated Title
+  purpose: >
+    Verify that the Generated Title call in api/src/agents/sub-agent-task-title.ts
+    (generateSubAgentTaskTitle) produces a short, non-empty, topically accurate
+    title from a Sub-Agent Task's full Sub-Agent Goal text — the full instruction
+    a spawn_sub_agent Dispatch supplies, which previously was copied verbatim
+    into Task.title, causing the oversized chat-bubble/thread-header text fixed
+    by docs/superpowers/specs/2026-11-08-sub-agent-task-title-design.md (see
+    also ADR-0059, GLOSSARY.md § Generated Title / Sub-Agent Goal). The `input`
+    field on every scenario below is the exact prompt
+    api/src/agents/sub-agent-task-title.ts's buildPrompt() sends to the model —
+    keep them in sync if the prompt template changes.
+  passingThreshold: 0.75
+  # generateSubAgentTaskTitle calls model.invoke(prompt) directly — no system
+  # message at all, same as generateTitleHandler (suites/thread-titles.yaml).
+  # Attaching the chat agent's harness system prompt on top would test a
+  # combination that never happens in production.
+  appliesHarnessSystemPrompt: false
+
+scenarios:
+  - id: satt-001-non-empty
+    name: Title is non-empty
+    purpose: >
+      A blank or whitespace-only title would render as an empty chat-bubble/
+      thread-header label — the most basic acceptance bar before anything
+      else matters.
+    type: deterministic
+    input: >
+      Summarize the following task instruction as a short, specific title (no
+      more than 60 characters). Do not use quotation marks or end with
+      punctuation. Respond with only the title, nothing else.
+
+
+      Instruction:
+      Answer this question about an n8n workflow: how does the Gate node use
+      the output of the Get Decisions node? Trace the connections graph to
+      confirm whether Get Decisions feeds Gate directly or via intermediate
+      nodes, and read the Gate node's code to report which exact properties
+      it reads and what it computes from them.
+    match: regex
+    expected: '\S'
+
+  - id: satt-002-reasonable-length
+    name: Title stays within TASK_TITLE_MAX_LENGTH
+    purpose: >
+      The Generated Title replaces a Task's title specifically because the
+      full instruction was too long to display — a response that ignores the
+      length instruction defeats the whole point of this call. 60 matches
+      TASK_TITLE_MAX_LENGTH in api/src/services/workspace-store.ts; update
+      both together if that constant ever changes.
+    type: deterministic
+    input: >
+      Summarize the following task instruction as a short, specific title (no
+      more than 60 characters). Do not use quotation marks or end with
+      punctuation. Respond with only the title, nothing else.
+
+
+      Instruction:
+      Answer this question about an n8n workflow: how does the Gate node use
+      the output of the Get Decisions node? Trace the connections graph to
+      confirm whether Get Decisions feeds Gate directly or via intermediate
+      nodes, and read the Gate node's code to report which exact properties
+      it reads and what it computes from them.
+    match: regex
+    expected: '^[\s\S]{1,60}$'
+
+  - id: satt-003-topical-accuracy
+    name: Title reflects a technical, multi-step investigation goal
+    purpose: >
+      A generic title ("Sub-agent task", "Investigation") defeats the point —
+      the chat bubble and thread header need to let a user tell dispatched
+      sub-agent runs apart at a glance, the same way thread-titles.yaml's
+      tt-003 does for ordinary chat threads.
+    type: llm-judge
+    input: >
+      Summarize the following task instruction as a short, specific title (no
+      more than 60 characters). Do not use quotation marks or end with
+      punctuation. Respond with only the title, nothing else.
+
+
+      Instruction:
+      Answer this question about an n8n workflow: how does the Gate node use
+      the output of the Get Decisions node? Trace the connections graph to
+      confirm whether Get Decisions feeds Gate directly or via intermediate
+      nodes, and read the Gate node's code to report which exact properties
+      it reads and what it computes from them.
+    rubric: >
+      Hard requirement: the title must specifically reference the n8n Gate
+      node, the Get Decisions node, or how they connect — not a vague
+      generic phrase ("Sub-agent task", "Workflow investigation"). Score no
+      higher than 3/10 if the title is generic or fails to mention any of
+      those elements.
+
+      Given that's met, it must also not invent details absent from the
+      instruction (no specific NocoDB table, field name, or code line was
+      given). A title that's specific and doesn't fabricate has done its
+      job: score it 8 or higher.
+    minScore: 7
+
+  - id: satt-004-non-technical-goal
+    name: Title is specific for a non-technical goal
+    purpose: >
+      Every scenario above is a technical, code-tracing goal — this guards
+      against the model implicitly relying on technical vocabulary to sound
+      specific. A recipe-research goal has no jargon to lean on, so a lazy
+      or generic title has nowhere to hide. Mirrors thread-titles.yaml's
+      tt-005 rationale.
+    type: llm-judge
+    input: >
+      Summarize the following task instruction as a short, specific title (no
+      more than 60 characters). Do not use quotation marks or end with
+      punctuation. Respond with only the title, nothing else.
+
+
+      Instruction:
+      Find a vegetarian recipe that uses lentils and serves 4 people, then
+      summarize its ingredient list and total cook time.
+    rubric: >
+      Hard requirement: the title must specifically reference lentils, a
+      vegetarian recipe, or a similar food-related detail — not a vague
+      generic phrase like "Research task" or "Find information". Score no
+      higher than 3/10 if the title is generic or fails to mention the
+      actual subject.
+
+      Given that's met, it must not invent details absent from the
+      instruction (no specific dish name, cuisine, or website was
+      mentioned). A title that's specific, grounded, and title-length has
+      done its job: score it 8 or higher.
+    minScore: 7
+
+  - id: satt-005-directive-multi-step
+    name: Title reflects a long, multi-step directive without fixating on only the first step
+    purpose: >
+      A real Sub-Agent Goal is typically a numbered, multi-step directive,
+      not a single question — this checks the model distills the overall
+      goal rather than echoing only its first instruction or trailing off
+      mid-sentence once it hits the 60-character budget.
+    type: llm-judge
+    input: >
+      Summarize the following task instruction as a short, specific title (no
+      more than 60 characters). Do not use quotation marks or end with
+      punctuation. Respond with only the title, nothing else.
+
+
+      Instruction:
+      1. List every open GitHub issue in this repository labeled "bug".
+      2. For each one, read the linked PR if it has one and note whether CI
+      is passing. 3. Report back a table of issue number, title, and CI
+      status, sorted by issue number.
+    rubric: >
+      Hard requirement: the title must reference reviewing/listing GitHub
+      issues (bugs, PRs, or CI status) — not a vague generic phrase like
+      "Task" or "Multi-step job". Score no higher than 3/10 if the title is
+      generic or reflects only one isolated step in a way that
+      misrepresents the overall goal (e.g. "Check CI status" alone, with no
+      mention of issues at all).
+
+      Given that's met, it must not invent details absent from the
+      instruction (no specific issue number or repository name was given).
+      A title that captures the overall goal, is grounded, and is
+      title-length has done its job: score it 8 or higher.
+    minScore: 7
+
+  - id: satt-006-minimal-content
+    name: Title stays grounded for a short, single-sentence goal
+    purpose: >
+      A short goal gives the model the least material to work with, and the
+      most temptation to pad the title with invented context rather than
+      admit there isn't much to summarize. Mirrors thread-titles.yaml's
+      tt-007 rationale.
+    type: llm-judge
+    input: >
+      Summarize the following task instruction as a short, specific title (no
+      more than 60 characters). Do not use quotation marks or end with
+      punctuation. Respond with only the title, nothing else.
+
+
+      Instruction:
+      Check whether the ollama service on localhost is currently reachable.
+    rubric: >
+      Hard requirement: the title must reference checking whether the Ollama
+      service is reachable/running — not a vague generic phrase that could
+      apply to any task. Score no higher than 3/10 if the title is so vague
+      it could apply to any check, or if it invents an unstated scenario
+      (e.g. naming a specific error or port never mentioned).
+
+      Given that's met, it should also read as a short title, not a
+      sentence. A title that stays grounded in the single instruction given
+      and doesn't embellish has done its job: score it 8 or higher.
+    minScore: 7

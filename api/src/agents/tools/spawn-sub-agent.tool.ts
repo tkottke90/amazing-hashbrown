@@ -7,6 +7,7 @@ import { getWorkspaceStore } from '../../services/workspace-store.js';
 import { getTaskScheduler } from '../../services/task-scheduler.js';
 import { getThreadStore } from '../../services/thread-store.js';
 import { recordSubAgentMarker } from '../thread-message-writer.js';
+import { triggerSubAgentTitleGeneration } from '../sub-agent-task-title.js';
 
 const SpawnSubAgentSchema = z.object({
   role: z
@@ -141,6 +142,20 @@ export const spawnSubAgentTool = tool(
       taskId: task.id,
       role: roleName,
       phase: 'dispatch',
+    });
+
+    // Fire-and-forget: must not be awaited, or this tool call would block
+    // the calling agent's turn until the Generated Title call finishes —
+    // Dispatch returns immediately regardless, per GLOSSARY.md § Dispatch
+    // and ADR-0059. triggerSubAgentTitleGeneration never throws on its own,
+    // but mirrors the codebase's standing fire-and-forget convention
+    // (chat-agent.ts's afterAgent hook firing runAfterAgentPipeline the
+    // same way) by still carrying a defensive .catch().
+    void triggerSubAgentTitleGeneration(task.id, goal).catch((err: unknown) => {
+      logger.warn('spawn_sub_agent: title generation failed, keeping truncated placeholder', {
+        taskId: task.id,
+        err: serializeError(err),
+      });
     });
 
     const payload: Record<string, unknown> = { dispatched: { id: task.id, role: roleName } };
