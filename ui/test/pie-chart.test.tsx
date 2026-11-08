@@ -106,9 +106,7 @@ describe('PieChart', () => {
 
   describe('valueFormat="compact"', () => {
     it('shows the abbreviated value in the legend, with the exact comma-grouped value as its title [unit]', () => {
-      render(
-        <PieChart labels={['A', 'B']} values={[178693706, 12590]} valueFormat="compact" />,
-      );
+      render(<PieChart labels={['A', 'B']} values={[178693706, 12590]} valueFormat="compact" />);
       const rows = screen.getAllByTestId('pie-chart-legend-row');
       expect(within(rows[0]!).getByText('178.7M')).toBeTruthy();
       expect(rows[0]).toHaveAttribute('title', '178,693,706');
