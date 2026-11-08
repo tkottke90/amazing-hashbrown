@@ -458,7 +458,15 @@ test.describe(
                 updatedAt: '2026-11-08T00:00:00.000Z',
                 board: {
                   lane: 'attention',
+                  // Simulates a stale board (same framing as the "rejected
+                  // move" test above): the client's cached board still
+                  // shows the move as legal, so the drag actually fires
+                  // requestMove() and hits the mocked 409 below — exercising
+                  // board-rules.ts's real unconditional rejection, not just
+                  // a mock that laneAccepts() would otherwise short-circuit
+                  // before any request is ever sent.
                   moves: [
+                    { to: 'queue', needs: 'none' },
                     { to: 'backlog', needs: 'none' },
                     { to: 'done', needs: 'none' },
                   ],
