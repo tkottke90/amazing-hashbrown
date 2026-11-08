@@ -42,7 +42,7 @@ export function makeBlockOnUserActionTool(taskId: string, opts: BlockOnUserActio
         "Call this when the task's only remaining blocker is something only the user can do " +
         '— completing an external flow (e.g. an OAuth consent screen), providing a file or ' +
         'credential that does not exist yet, or any other action outside this conversation — ' +
-        "and no further action in this run, including ask_user, would help. Not for when the " +
+        'and no further action in this run, including ask_user, would help. Not for when the ' +
         'user asked you to stop or step away (use hand_off_task for that), and not for ' +
         'something you could resolve by asking a question in chat (use ask_user for that).',
       schema: BlockOnUserActionSchema,

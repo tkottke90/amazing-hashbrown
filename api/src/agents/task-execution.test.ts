@@ -402,7 +402,9 @@ const BLOCK_ON_USER_ACTION_EVENTS: RawEvent[] = [
     event: 'on_tool_start',
     name: 'block_on_user_action',
     run_id: 'bo-1',
-    data: { input: { note: 'Complete the OAuth consent flow and drop credentials.json in config/.' } },
+    data: {
+      input: { note: 'Complete the OAuth consent flow and drop credentials.json in config/.' },
+    },
   },
   { event: 'on_tool_end', name: 'block_on_user_action', run_id: 'bo-1', data: { output: 'ok' } },
 ];
@@ -1953,7 +1955,7 @@ describe('agents/task-execution', () => {
       },
     );
 
-    describe('cancelling the owning Workspace\'s pending wake-up (ADR-0059)', () => {
+    describe("cancelling the owning Workspace's pending wake-up (ADR-0059)", () => {
       let wakeups: ReturnType<typeof getWakeupStore>;
 
       beforeEach(() => {
@@ -1991,10 +1993,9 @@ describe('agents/task-execution', () => {
           buildTaskAgent: fakeBuildTaskAgent(fakeAgent(BLOCK_ON_USER_ACTION_EVENTS)),
         });
 
-        expect(
-          wakeups.getPending(workspaceThreadId),
-          'the wake-up is no longer pending',
-        ).to.equal(null);
+        expect(wakeups.getPending(workspaceThreadId), 'the wake-up is no longer pending').to.equal(
+          null,
+        );
         const settled = wakeups.get(pending.id)!;
         expect(settled.status).to.equal('cancelled');
         expect(settled.settledBy).to.equal('externally_blocked_handoff');

@@ -458,7 +458,10 @@ test.describe(
                 updatedAt: '2026-11-08T00:00:00.000Z',
                 board: {
                   lane: 'attention',
-                  moves: [{ to: 'backlog', needs: 'none' }, { to: 'done', needs: 'none' }],
+                  moves: [
+                    { to: 'backlog', needs: 'none' },
+                    { to: 'done', needs: 'none' },
+                  ],
                   reason: { kind: 'awaiting_user_action' },
                 },
               },
