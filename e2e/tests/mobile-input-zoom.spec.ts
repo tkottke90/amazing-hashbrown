@@ -115,6 +115,9 @@ async function mockWikiDomain(page: Page) {
   await page.route('**/api/v1/wiki/domains', async (route: Route) => {
     await route.fulfill({ json: [DOMAIN] });
   });
+  await page.route('**/api/v1/wiki/graph', async (route: Route) => {
+    await route.fulfill({ json: { nodes: [], edges: [] } });
+  });
   await page.route('**/api/v1/wiki/domains/*/pages', async (route: Route) => {
     await route.fulfill({ json: [] });
   });

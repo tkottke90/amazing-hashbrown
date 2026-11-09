@@ -83,7 +83,7 @@ test.describe(
       await mockWikiChatTurn(page);
       await page.goto('/wiki');
 
-      await page.locator('[data-slot="textarea"]').fill('What is the weather like?');
+      await page.getByPlaceholder('Add to the wiki...').fill('What is the weather like?');
       await pauseBeforeAction(page, testInfo);
       await page.getByRole('button', { name: 'Send message' }).click();
 

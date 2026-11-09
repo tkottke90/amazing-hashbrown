@@ -116,7 +116,7 @@ test.describe(
 
       await expect(page.getByTestId('auto-approve-chip')).toBeVisible();
       await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0);
-      await expect(page.locator('[data-slot="textarea"]')).toBeEnabled();
+      await expect(page.getByPlaceholder('Message...')).toBeEnabled();
     });
 
     test('clicking the chip turns Auto off, and a pending shell_approval prompt renders normally', async ({
