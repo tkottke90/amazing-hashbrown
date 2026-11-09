@@ -56,6 +56,18 @@ function rowFor(name: string): HTMLElement {
   return screen.getByText(name).closest('[data-testid="file-tree-row"]') as HTMLElement;
 }
 
+// @testing-library/preact's fireEvent.change never reaches this
+// <input type="file">'s Preact-bound listener (the same quirk
+// chat-input.test.tsx documents and works around for its own file input) —
+// handleFileInputChange never runs, so the mocked uploadFiles call this test
+// waits for never happens and the wait just times out. A plain
+// dispatchEvent bypasses the wrapper and reaches the listener correctly,
+// same as a real browser firing this event on file selection.
+function fireFileInputChange(input: HTMLInputElement, file: File) {
+  Object.defineProperty(input, 'files', { value: [file], configurable: true });
+  input.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+}
+
 describe('FileTree', () => {
   afterEach(() => {
     fileTree.value = null;
@@ -203,15 +215,9 @@ describe('FileTree', () => {
       expect(clickSpy).toHaveBeenCalled();
 
       const file = new File(['hello'], 'a.txt', { type: 'text/plain' });
-      Object.defineProperty(input, 'files', { value: [file], configurable: true });
-      fireEvent.change(input);
+      fireFileInputChange(input, file);
 
-      // Generous timeout: this intermittently exceeded the default 1000ms in
-      // CI (jest --coverage instrumentation overhead across the full 1275-test
-      // suite), not because the mocked promise is actually slow to resolve.
-      await waitFor(() => expect(uploadFilesMock).toHaveBeenCalledWith('ws-1', 'src', [file]), {
-        timeout: 5000,
-      });
+      await waitFor(() => expect(uploadFilesMock).toHaveBeenCalledWith('ws-1', 'src', [file]));
     });
 
     it('shows an inline error when an upload is rejected', async () => {
@@ -225,13 +231,9 @@ describe('FileTree', () => {
 
       const input = screen.getByTestId('file-upload-input') as HTMLInputElement;
       const file = new File(['hello'], 'a.txt', { type: 'text/plain' });
-      Object.defineProperty(input, 'files', { value: [file], configurable: true });
-      fireEvent.change(input);
+      fireFileInputChange(input, file);
 
-      // Same generous timeout as above, for the same CI-only reason.
-      await waitFor(() => expect(screen.getByTestId('upload-error')).toBeInTheDocument(), {
-        timeout: 5000,
-      });
+      await waitFor(() => expect(screen.getByTestId('upload-error')).toBeInTheDocument());
       expect(screen.getByTestId('upload-error')).toHaveTextContent('Upload rejected');
       expect(screen.getByTestId('upload-error')).toHaveTextContent('a.txt');
       // The tree itself must stay visible/interactable alongside the error.
