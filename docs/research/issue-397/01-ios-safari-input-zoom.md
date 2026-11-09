@@ -21,7 +21,7 @@ The long-standing, widely corroborated rule (Stack Overflow's canonical
 thread, Rick Strahl's West Wind write-up, and the `specification.website`
 accessibility reference all state this independently): **iOS Safari
 zooms the viewport in when a focused `<input>`, `<select>`, or `<textarea>`
-has a *rendered* font-size under 16px**, on the theory that the user needs
+has a _rendered_ font-size under 16px**, on the theory that the user needs
 help reading/editing small text. Key details:
 
 - It's the **rendered/computed** size that matters, not the declared one.
@@ -64,7 +64,7 @@ focus event itself.
 **Approach A — Font-size floor (the standard, accessibility-safe fix; most sources treat this as "the" answer).**
 Ensure every focusable form control renders at ≥16px on touch devices,
 unconditionally — not just under `:focus`. One Stack Overflow report
-specifically noted that setting 16px *only* on the `:focus` state still let
+specifically noted that setting 16px _only_ on the `:focus` state still let
 the zoom fire, because the browser evaluates the focus-time computed style
 each time, and by then the zoom decision already fired, or the base state
 was still small. The fix needs to apply at rest, typically via a
@@ -80,6 +80,7 @@ iOS handles a full element replace more reliably than an attribute
 mutation); on blur, restore the original content after a short delay
 (~100ms in the reports that worked around race conditions). Caveats found
 across multiple independent sources:
+
 - Timing/race conditions are commonly reported — a simple focus/blur toggle
   "didn't work" for at least one Stack Overflow poster, who had to add the
   ~100ms delay.
@@ -104,7 +105,7 @@ current `ui/index.html` correctly has no such directive today.
 **A related-but-distinct problem, for context:** WebKit bug
 [254861](https://bugs.webkit.org/show_bug.cgi?id=254861) (fetched directly,
 status NEW/unresolved as of last update 2025-03-24) describes iPadOS
-installed-web-app viewport *offset* not restoring correctly after the
+installed-web-app viewport _offset_ not restoring correctly after the
 on-screen keyboard is dismissed — a layout/hit-testing bug, not the
 zoom-on-focus behavior this issue describes, and iPhone is explicitly
 reported as unaffected. It's not the same bug, but the workaround pattern
@@ -129,7 +130,7 @@ per §2.2, cannot be reset by script at all).
   the obvious font-size cause doesn't explain the chat input specifically.
 - However, a long tail of **raw, native `<input>`/`<select>`/`<textarea>`
   elements bypass those shared primitives** and hardcode `text-sm` (14px) or
-  `text-xs` (12px) unconditionally, with no mobile-safe floor — these *will*
+  `text-xs` (12px) unconditionally, with no mobile-safe floor — these _will_
   trigger the same zoom-on-focus behavior on mobile and are the concrete
   match for the issue's "or any other input" wording:
   - `ui/src/components/task-drawer.tsx` — multiple `text-sm` textareas,
@@ -150,7 +151,7 @@ per §2.2, cannot be reset by script at all).
 - Still unexplained by any of the above: if the chat textarea itself
   computes to 16px, why does the issue report it zooming? That specifically
   needs the on-device check the issue already calls for — inspect the
-  *actual rendered* font-size in Safari's remote Web Inspector while the
+  _actual rendered_ font-size in Safari's remote Web Inspector while the
   field is focused, and rule out an ancestor `transform`/`zoom`, an iOS
   "Larger Text" accessibility setting changing the effective computed size,
   or `field-sizing: content` (used in `textarea.tsx`) interacting with the

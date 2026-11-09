@@ -129,9 +129,7 @@ describe('DocumentView — mobile-safe font sizes (issue #397)', () => {
   it('renders the full-page markdown editor textarea at a mobile-safe size', () => {
     domains.value = [DOMAIN];
     activeDomainId.value = DOMAIN.id;
-    pageList.value = [
-      { filename: PAGE.filename, title: PAGE.title, type: PAGE.type, tags: [] },
-    ];
+    pageList.value = [{ filename: PAGE.filename, title: PAGE.title, type: PAGE.type, tags: [] }];
     activePage.value = PAGE;
     render(<DocumentView />);
 

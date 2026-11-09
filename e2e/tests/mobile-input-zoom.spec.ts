@@ -20,9 +20,9 @@ const suite: TestSuite = {
   purpose:
     "jsdom (this repo's Jest environment) does not execute real CSS/media-query layout, so " +
     'only a real-browser check can prove the fix actually renders at the mobile-safe size, ' +
-    "rather than just carrying the right className string. Scope deliberately excludes the " +
+    'rather than just carrying the right className string. Scope deliberately excludes the ' +
     "chat textarea's own still-unexplained zoom (design spec D5) — this suite only covers " +
-    "the controls this fix actually touches",
+    'the controls this fix actually touches',
   tags: ['@smoke'],
   steps: [
     {
@@ -33,7 +33,7 @@ const suite: TestSuite = {
     },
     {
       tags: ['@smoke'],
-      action: 'Open a handed-off task\'s Hand-Off Guidance field (a migrated Textarea) at 375px',
+      action: "Open a handed-off task's Hand-Off Guidance field (a migrated Textarea) at 375px",
       expectedOutcome: 'Its computed font-size is at least 16px',
       test: () => {},
     },
