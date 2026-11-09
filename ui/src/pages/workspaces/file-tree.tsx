@@ -108,7 +108,7 @@ function CreateEntryForm({
     <form onSubmit={handleSubmit} class="mt-4 flex flex-col gap-3">
       <Input
         type="text"
-        data-testid="create-entry-name-input"
+        data-testid={kind === 'file' ? 'create-file-name-input' : 'create-folder-name-input'}
         placeholder={kind === 'file' ? 'File name (e.g. notes.txt)' : 'Folder name'}
         value={name.value}
         onInput={(e) => (name.value = (e.target as HTMLInputElement).value)}

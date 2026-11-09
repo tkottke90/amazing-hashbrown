@@ -264,7 +264,7 @@ describe('FileTree', () => {
         renderTree();
 
         const header = screen.getByTestId('file-tree-header');
-        const input = within(header).getByTestId('create-entry-name-input');
+        const input = within(header).getByTestId('create-file-name-input');
         expect(input).toHaveClass('text-base', 'md:text-sm');
         expect(input.className).not.toMatch(/\btext-xs\b/);
       },
