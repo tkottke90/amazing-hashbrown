@@ -206,7 +206,12 @@ describe('FileTree', () => {
       Object.defineProperty(input, 'files', { value: [file], configurable: true });
       fireEvent.change(input);
 
-      await waitFor(() => expect(uploadFilesMock).toHaveBeenCalledWith('ws-1', 'src', [file]));
+      // Generous timeout: this intermittently exceeded the default 1000ms in
+      // CI (jest --coverage instrumentation overhead across the full 1275-test
+      // suite), not because the mocked promise is actually slow to resolve.
+      await waitFor(() => expect(uploadFilesMock).toHaveBeenCalledWith('ws-1', 'src', [file]), {
+        timeout: 5000,
+      });
     });
 
     it('shows an inline error when an upload is rejected', async () => {
@@ -223,7 +228,10 @@ describe('FileTree', () => {
       Object.defineProperty(input, 'files', { value: [file], configurable: true });
       fireEvent.change(input);
 
-      await waitFor(() => expect(screen.getByTestId('upload-error')).toBeInTheDocument());
+      // Same generous timeout as above, for the same CI-only reason.
+      await waitFor(() => expect(screen.getByTestId('upload-error')).toBeInTheDocument(), {
+        timeout: 5000,
+      });
       expect(screen.getByTestId('upload-error')).toHaveTextContent('Upload rejected');
       expect(screen.getByTestId('upload-error')).toHaveTextContent('a.txt');
       // The tree itself must stay visible/interactable alongside the error.
