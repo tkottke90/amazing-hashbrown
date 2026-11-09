@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, within, cleanup } from '@testing-library/preact';
+import { act, render, screen, fireEvent, waitFor, within, cleanup } from '@testing-library/preact';
 import { signal } from '@preact/signals';
 
 const mockCancelTask = jest.fn();
@@ -37,6 +37,12 @@ jest.mock('@/services/tasks-api', () => ({
   listTaskDependencies: (...args: unknown[]) => mockListTaskDependencies(...args),
   addTaskDependency: (...args: unknown[]) => mockAddTaskDependency(...args),
   removeTaskDependency: (...args: unknown[]) => mockRemoveTaskDependency(...args),
+}));
+
+const mockListTrackers = jest.fn().mockResolvedValue([]);
+jest.mock('@/services/trackers-api', () => ({
+  ...jest.requireActual('@/services/trackers-api'),
+  listTrackers: () => mockListTrackers(),
 }));
 
 // The drawer's Model field now fetches the provider list to power its
@@ -840,5 +846,64 @@ describe('TaskDrawer — model pin (migration 41 — task model switching)', () 
         screen.getByText('Cannot change the model while the task is running.'),
       ).toBeInTheDocument(),
     );
+  });
+});
+
+// Issue #397: iOS Safari zooms the page when a focused native control
+// renders under 16px. These controls previously hardcoded text-sm/text-xs;
+// confirm each now renders at the mobile-safe text-base (16px) size and
+// that the fixed-height textareas keep their layout (field-sizing-fixed
+// overriding the shared Textarea's default auto-grow behavior).
+describe('TaskDrawer — mobile-safe font sizes (issue #397)', () => {
+  function expectMobileSafe(el: Element) {
+    expect(el).toHaveClass('text-base', 'md:text-sm');
+    expect(el.className).not.toMatch(/\btext-xs\b/);
+    expect(el.className).not.toMatch(/(?<!md:)\btext-sm\b/);
+  }
+
+  it('renders the Description and Outcome textareas at a mobile-safe size, with their fixed height preserved', () => {
+    renderDrawer(baseTask);
+
+    const description = screen.getByPlaceholderText('What needs to be done?');
+    expectMobileSafe(description);
+    expect(description).toHaveClass('field-sizing-fixed', 'h-20', 'resize-none');
+
+    const outcome = screen.getByPlaceholderText('A clear definition of done');
+    expectMobileSafe(outcome);
+    expect(outcome).toHaveClass('field-sizing-fixed', 'h-20', 'resize-none');
+  });
+
+  it('renders the Assigned to, Status, Workspace, and Trigger pickers at a mobile-safe size', () => {
+    renderDrawer(baseTask);
+
+    // "Assigned to" and "Workspace" are plain <label>+<select> pairs with no
+    // data-testid or htmlFor association — select via the label's sibling,
+    // same as a caller would read the rendered DOM.
+    expectMobileSafe(screen.getByText('Assigned to').nextElementSibling as Element);
+    expectMobileSafe(screen.getByTestId('task-status-select'));
+    expectMobileSafe(screen.getByText('Workspace').nextElementSibling as Element);
+    expectMobileSafe(screen.getByTestId('task-trigger-type-select'));
+  });
+
+  it('renders the Tracker type picker, and the Create new issue body textarea, at a mobile-safe size', async () => {
+    mockListTrackers.mockResolvedValueOnce([
+      { type: 'github', displayName: 'GitHub', icon: 'github', canCreate: true, authSchema: [] },
+    ]);
+    renderDrawer(baseTask);
+
+    const trackerSelect = (await screen.findByTestId(
+      'task-tracker-type-select',
+    )) as HTMLSelectElement;
+    expectMobileSafe(trackerSelect);
+
+    trackerSelect.value = 'github';
+    act(() => {
+      trackerSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /Create new issue/ }));
+
+    const issueBody = await screen.findByPlaceholderText('Issue body (optional)');
+    expectMobileSafe(issueBody);
+    expect(issueBody).toHaveClass('field-sizing-fixed', 'h-16', 'resize-none');
   });
 });

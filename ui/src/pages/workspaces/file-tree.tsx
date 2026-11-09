@@ -17,6 +17,7 @@ import { Modal, useDialog } from '@tkottke90/preact-dialog';
 import type { JSX } from 'preact';
 
 import { cn } from '@/lib/utils';
+import { Input } from '@/components/ui/input';
 import type { FileNode } from '@/services/workspace-files-api';
 import {
   fileTree,
@@ -105,12 +106,13 @@ function CreateEntryForm({
 
   return (
     <form onSubmit={handleSubmit} class="mt-4 flex flex-col gap-3">
-      <input
+      <Input
         type="text"
+        data-testid="create-entry-name-input"
         placeholder={kind === 'file' ? 'File name (e.g. notes.txt)' : 'Folder name'}
         value={name.value}
         onInput={(e) => (name.value = (e.target as HTMLInputElement).value)}
-        class="rounded border border-input bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+        className="rounded border border-input bg-background px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-ring"
         required
       />
       {error.value && (

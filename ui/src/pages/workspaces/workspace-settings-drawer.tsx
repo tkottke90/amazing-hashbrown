@@ -3,6 +3,7 @@ import { useSignal } from '@preact/signals';
 import { Drawer, useDialog } from '@tkottke90/preact-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { patchWorkspace } from '@/hooks/use-workspaces';
 import type { Workspace } from '@/services/workspaces-api';
 import { truncateStart } from '@/lib/utils';
@@ -84,25 +85,25 @@ function WorkspaceSettingsForm({ workspace, onSaved }: WorkspaceSettingsFormProp
 
         <div class="flex flex-col gap-1">
           <label class="text-xs font-medium text-muted-foreground">Description</label>
-          <textarea
+          <Textarea
             placeholder="Describe this workspace"
             value={description.value}
             onInput={(e) => {
               description.value = (e.target as HTMLTextAreaElement).value;
             }}
-            class="border border-input rounded-lg px-3 py-2 text-sm resize-none h-20 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
+            className="field-sizing-fixed border border-input rounded-lg px-3 py-2 resize-none h-20 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
           />
         </div>
 
         <div class="flex flex-col gap-1">
           <label class="text-xs font-medium text-muted-foreground">Goal</label>
-          <textarea
+          <Textarea
             placeholder="What should be accomplished in this workspace?"
             value={goal.value}
             onInput={(e) => {
               goal.value = (e.target as HTMLTextAreaElement).value;
             }}
-            class="border border-input rounded-lg px-3 py-2 text-sm resize-none h-20 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
+            className="field-sizing-fixed border border-input rounded-lg px-3 py-2 resize-none h-20 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
           />
         </div>
 

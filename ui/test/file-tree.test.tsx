@@ -255,6 +255,20 @@ describe('FileTree', () => {
 
       await waitFor(() => expect(createDirectoryMock).toHaveBeenCalledWith('ws-1', 'src', 'child'));
     });
+
+    it(
+      'renders the New file/folder name input at a mobile-safe size, so iOS does not zoom ' +
+        'on focus (issue #397)',
+      () => {
+        fileTree.value = treeWithFolder;
+        renderTree();
+
+        const header = screen.getByTestId('file-tree-header');
+        const input = within(header).getByTestId('create-entry-name-input');
+        expect(input).toHaveClass('text-base', 'md:text-sm');
+        expect(input.className).not.toMatch(/\btext-xs\b/);
+      },
+    );
   });
 
   describe('delete action', () => {

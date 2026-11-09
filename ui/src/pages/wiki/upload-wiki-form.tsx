@@ -6,6 +6,7 @@ import { domains, refreshDomains } from '@/pages/wiki/use-wiki';
 import { fetchUploadCapabilities, startWikiUpload, fetchUploadStatus } from '@/services/wiki-api';
 import type { UploadJobState, UploadCapabilities, LintFinding } from '@/types/wiki-upload';
 import { CodeBlock } from '@/components/markdown';
+import { Input } from '@/components/ui/input';
 
 // ---------------------------------------------------------------------------
 // Failure display — groups lint findings by file, falls back to the plain
@@ -341,12 +342,12 @@ export function UploadWikiForm({ resetRef }: { resetRef: { current: () => void }
 
           {/* Wiki name */}
           <div class="flex flex-col gap-1">
-            <input
+            <Input
               type="text"
               placeholder="Wiki ID (e.g. homelab)"
               value={name.value}
               onInput={(e) => (name.value = (e.target as HTMLInputElement).value)}
-              class="rounded border border-input bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+              className="rounded border border-input bg-background px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-ring"
             />
             {nameError.value && <span class="text-destructive">{nameError.value}</span>}
           </div>
