@@ -5,7 +5,11 @@ import { useMediaQuery } from './use-media-query';
 // Deliberately a viewport-width check, not a touch/pointer-capability one
 // (e.g. `(pointer: coarse)`): the provider/model picker's mobile layout
 // exists because long content overflows a narrow viewport, which a wide
-// touchscreen doesn't suffer from and a narrow desktop window would.
+// touchscreen doesn't suffer from and a narrow desktop window would. For a
+// pointer-capability question instead (e.g. "can this user reliably hold
+// Shift?"), see useIsCoarsePointer (use-is-coarse-pointer.ts) and
+// ADR-0061 — the two hooks intentionally answer different questions and
+// are not interchangeable.
 const MOBILE_QUERY = '(max-width: 639px)';
 
 export function useIsMobileViewport(): boolean {

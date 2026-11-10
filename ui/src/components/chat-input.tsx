@@ -35,6 +35,7 @@ import {
   whenMouse,
 } from '@/components/provider-model-picker';
 import type { FavoriteModel, ProviderInfo } from '@/hooks/use-providers';
+import { useIsCoarsePointer } from '@/hooks/use-is-coarse-pointer';
 import { FavoriteModelItems } from '@/components/favorite-model-items';
 import { openThreadToolsDrawer } from '@/hooks/use-thread-tools';
 import { ThreadToolsDrawer } from '@/components/thread-tools-drawer';
@@ -248,6 +249,10 @@ export function ChatInput({
   const uploadsInFlight = useSignal<{ localId: string; filename: string }[]>([]);
   const canSend =
     !disabled && !isGenerating && value.trim().length > 0 && uploadsInFlight.value.length === 0;
+  // Read once on mount (D1-D3, ADR-0061) — gates only the bare-Enter-to-send
+  // branch in handleKeyDown below; the skill-menu/tool-menu Enter-confirm
+  // branches above it are unaffected regardless of pointer type (D5).
+  const isCoarsePointer = useIsCoarsePointer();
 
   const menuOpen = useSignal(false);
   const menuItems = useSignal<SkillInfo[]>([]);
@@ -676,6 +681,13 @@ export function ChatInput({
         return;
       }
     }
+
+    // D4: on a coarse-pointer device, a bare Enter is left alone once we
+    // get here (neither menu was open) — no preventDefault, no onSend. The
+    // textarea's native newline-insertion default does the rest; the send
+    // button remains the only way to send. Desktop behavior below is
+    // byte-for-byte unchanged (D7).
+    if (isCoarsePointer) return;
 
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
