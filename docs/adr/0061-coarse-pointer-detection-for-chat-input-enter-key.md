@@ -15,7 +15,7 @@ This looks inconsistent at first glance: the codebase already has an
 "is this mobile" hook, and a reasonable reader will ask why the chat input
 doesn't just use it. It doesn't, because the two hooks answer different
 questions. `useIsMobileViewport` is a viewport-width breakpoint, and its own
-code comment explicitly rejects pointer-capability detection — for *that*
+code comment explicitly rejects pointer-capability detection — for _that_
 hook's purpose (does content overflow a narrow layout), a wide touchscreen
 tablet doesn't have the problem a narrow desktop window does, so viewport
 width is the right signal. The chat input's question is unrelated to layout:
@@ -27,7 +27,7 @@ tablet in landscape keeps the broken Enter-always-sends behavior, and a
 narrow desktop browser window loses Enter-to-send it didn't need to lose.
 
 We also deliberately did not OR this check with `navigator.maxTouchPoints >
-0`: `(pointer: coarse)` reflects the device's *primary* input mechanism, so
+0`: `(pointer: coarse)` reflects the device's _primary_ input mechanism, so
 a hybrid touchscreen-plus-keyboard laptop (primary pointer: fine) correctly
 keeps desktop Enter-to-send, which is right — it has a working Shift key.
 OR-ing in `maxTouchPoints` would flag that same laptop as mobile just
@@ -50,6 +50,6 @@ avoiding.
 This codebase now has two distinct "is this mobile" mechanisms answering
 two distinct questions: `useIsMobileViewport` (viewport width, for layout)
 and this one (pointer capability, for keyboard-modifier reliability). A
-future mobile-specific *behavioral* decision (not layout) should default to
+future mobile-specific _behavioral_ decision (not layout) should default to
 pointer-capability detection, the same way this one does — not the viewport
 hook.
