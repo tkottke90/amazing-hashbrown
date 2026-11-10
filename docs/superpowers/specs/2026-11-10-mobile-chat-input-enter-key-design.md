@@ -1,0 +1,63 @@
+# Mobile Chat Input Enter Key (Issue #396) — Design
+
+**Date:** 2026-11-10
+**Status:** Draft
+**Related:** [Issue #396](https://github.com/tkottke90/amazing-hashbrown/issues/396), [ADR-0061](../adr/0061-coarse-pointer-detection-for-chat-input-enter-key.md)
+
+---
+
+## Goal
+
+On a device that can't reliably hold Shift while tapping an on-screen
+keyboard's return key, stop `ChatInput`'s `handleKeyDown`
+(`ui/src/components/chat-input.tsx`) from sending the message on a bare
+Enter — let the textarea's native newline insertion happen instead — while
+leaving desktop behavior and the skill-menu (`/`)/tool-menu (`#`)
+Tab/Enter-to-confirm behavior completely unchanged.
+
+---
+
+## Problem
+
+`handleKeyDown` currently sends on `event.key === 'Enter' && !event.shiftKey`
+unconditionally (`chat-input.tsx:680-683`). Most mobile on-screen keyboards
+give no practical way to hold Shift while tapping return, so that escape
+hatch doesn't exist there: a line break sends the in-progress message
+instead of being inserted, and pasting multi-line content either sends
+prematurely mid-paste or truncates, depending on how the paste is chunked.
+
+---
+
+## Decisions (and why)
+
+| #   | Decision                                                                                                                                                                                                                                                                                      | Rationale                                                                                                                                                                                                                                                      |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | Detection is `matchMedia('(pointer: coarse)').matches` alone — not a viewport-width breakpoint, not user-agent/platform sniffing, and not OR'd with `navigator.maxTouchPoints > 0`.                                                                                                          | See [ADR-0061](../adr/0061-coarse-pointer-detection-for-chat-input-enter-key.md). This answers "can this device reliably hold Shift," which is a different question from the existing `useIsMobileViewport`'s layout-overflow question, deliberately so.      |
+| D2  | The check is read once per component mount, not kept live via a `matchMedia` change listener.                                                                                                                                                                                                 | Avoids the Enter behavior flipping under the user's fingers mid-conversation — e.g. a Bluetooth keyboard connecting/disconnecting mid-session doesn't silently change what Enter does while they're mid-sentence.                                           |
+| D3  | A new, dedicated one-shot hook (e.g. `useIsCoarsePointer` in `src/hooks/`) implements D1/D2 directly — it is not built on top of the existing `useMediaQuery`/`useIsMobileViewport` machinery (`ui/src/hooks/use-media-query.ts`), which exists specifically to stay live across resizes.    | `useMediaQuery`'s contract is "stay live"; bolting a "read once and freeze" mode onto it would conflate two different contracts. A small dedicated hook keeps each one honest about what it does, and is reusable for any future mobile-behavioral decision (per root `AGENTS.md`'s "Composition over Customization"), not special-cased to `ChatInput`. |
+| D4  | On a coarse-pointer device, when neither the skill-menu nor the tool-menu is open, a bare Enter no longer calls `event.preventDefault()`/`onSend()` at all — the textarea's native newline-insertion default is simply left alone. The existing send button remains the only way to send.  | Matches the issue's expected behavior directly; simplest rule, and consistent with how mobile chat UIs (iMessage, Slack mobile) already behave.                                                                                                              |
+| D5  | The skill-menu/tool-menu Tab/Enter-to-confirm branches (`chat-input.tsx:632-678`) are untouched regardless of pointer coarseness — Enter still confirms the highlighted menu item on a coarse-pointer device exactly as it does on desktop. Only the final bare-Enter-to-send branch (lines 680-683) is gated by D4. | These menus are a keyboard-nav affordance for picking an item; confirming the highlighted item on Enter (rather than inserting a literal `\n`) matches desktop semantics and avoids a confusing half-state, and a user can already tap the item directly if they prefer. |
+| D6  | No dedicated `onPaste` handler is added. The "paste sends prematurely" symptom is treated as a side effect of some mobile input methods synthesizing per-character `keydown` events (including `Enter`) during paste — confirmed to have no existing paste-specific code to begin with (`Textarea` wires no `onPaste`; paste flows entirely through the native `input` event today). D4 is expected to resolve it as a side effect, verified by an E2E paste-simulation test (D8), not by paste-specific code for a failure mode not yet independently reproduced.                                                                                                                                                                    | No code for a problem we haven't confirmed exists; if the E2E paste test (D8) fails, that's the signal the theory is wrong and paste needs its own handling — not something to pre-emptively guard against now.                                             |
+| D7  | Desktop (non-coarse-pointer) behavior is byte-for-byte unchanged: same `preventDefault()`/`onSend()` branch, same menu handling. No new desktop-focused test is added — the existing desktop Enter-sends E2E coverage (`thread-persistence.spec.ts`, `thread-sidebar.spec.ts`) already proves this and continuing to pass it is the regression check.                                                                                                                                                                                                                                                                                | Avoids duplicating coverage that already exists for the unchanged path.                                                                                                                                                                                       |
+| D8  | New test coverage: (a) Jest unit tests added to the existing `ui/test/chat-input.test.tsx` for `handleKeyDown`'s Enter/newline/menu-confirm branches under both pointer types (mocking the new hook from D3); (b) a new Playwright file `e2e/tests/chat-input-mobile.spec.ts`, using this repo's established separate-`test.describe`-with-`test.use({ hasTouch: true, isMobile: true, viewport: ... })` pattern (already used by `chat-model-picker.spec.ts`, `settings-save-contracts.spec.ts`), covering: Enter inserts a newline and doesn't send; a multi-line paste doesn't send mid-paste; the skill-menu/tool-menu Enter-confirm still works on a coarse-pointer context (D5).                                              | Matches this repo's layering convention (Mocha/Jest for branch logic in isolation, Playwright for real-browser mobile-context scenarios) and the root `AGENTS.md` rule that all application code ships with tests. No prior Enter-key test of any kind existed for `handleKeyDown` before this work. |
+| D9  | [ADR-0061](../adr/0061-coarse-pointer-detection-for-chat-input-enter-key.md) records the D1/D3 detection-strategy decision. No `GLOSSARY.md` changes — `(pointer: coarse)` detection is a general web-platform/implementation concept, not project domain vocabulary, and `GLOSSARY-FORMAT.md`'s own inclusion rule excludes it even though the codebase uses it.                                                                                                                                                                                                                                                                    | Keeps the glossary's own stated bar honest rather than force-fitting an entry because this issue happened to go through the domain-modeling process.                                                                                                         |
+
+---
+
+## Non-goals
+
+- Reusing or modifying `useIsMobileViewport` — this fix is deliberately a separate mechanism (D1/D3, ADR-0061).
+- A dedicated `onPaste` handler (D6) — out of scope unless the E2E paste test (D8) disproves the working theory.
+- Live-reactive switching of the coarse-pointer check mid-session (D2) — a hardware-keyboard connect/disconnect mid-conversation is explicitly not handled.
+- Any user-agent/platform-string detection, or OR'ing `navigator.maxTouchPoints` into the check (D1, ADR-0061).
+- Any change to skill-menu/tool-menu Tab/Enter-to-confirm semantics (D5).
+- Any desktop-focused regression test beyond relying on existing coverage (D7).
+
+---
+
+## Open implementation notes (not design decisions — flagged for the implementer)
+
+- `ui/jest.config.js` runs `testEnvironment: 'jsdom'`, which does not implement `window.matchMedia` by default — check whether an existing stub already covers `useIsMobileViewport`'s own tests and reuse it for the new hook's tests (D8a), rather than adding a second ad hoc mock.
+- An environment where `matchMedia`/the `pointer` media feature can't be evaluated should default to "not coarse" (today's desktop behavior) — the safer, lower-risk default, and not itself a design decision requiring sign-off.
+- The Playwright paste scenario (D8b) needs a concrete technique for simulating a multi-line clipboard paste under `hasTouch: true` — check `e2e/lib/` for an existing clipboard-paste helper first; if none exists, a direct synthetic `paste`/`ClipboardEvent` dispatch via `page.evaluate` is the fallback.
+- The only code touched in `handleKeyDown` is the final `if (event.key === 'Enter' && !event.shiftKey) { ... }` block at `chat-input.tsx:680-683`; the `menuOpen`/`toolMenuOpen` blocks above it (lines 632-678) are read, not edited, per D5.
