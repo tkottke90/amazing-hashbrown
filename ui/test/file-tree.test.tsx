@@ -56,6 +56,18 @@ function rowFor(name: string): HTMLElement {
   return screen.getByText(name).closest('[data-testid="file-tree-row"]') as HTMLElement;
 }
 
+// @testing-library/preact's fireEvent.change never reaches this
+// <input type="file">'s Preact-bound listener (the same quirk
+// chat-input.test.tsx documents and works around for its own file input) —
+// handleFileInputChange never runs, so the mocked uploadFiles call this test
+// waits for never happens and the wait just times out. A plain
+// dispatchEvent bypasses the wrapper and reaches the listener correctly,
+// same as a real browser firing this event on file selection.
+function fireFileInputChange(input: HTMLInputElement, file: File) {
+  Object.defineProperty(input, 'files', { value: [file], configurable: true });
+  input.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+}
+
 describe('FileTree', () => {
   afterEach(() => {
     fileTree.value = null;
@@ -203,8 +215,7 @@ describe('FileTree', () => {
       expect(clickSpy).toHaveBeenCalled();
 
       const file = new File(['hello'], 'a.txt', { type: 'text/plain' });
-      Object.defineProperty(input, 'files', { value: [file], configurable: true });
-      fireEvent.change(input);
+      fireFileInputChange(input, file);
 
       await waitFor(() => expect(uploadFilesMock).toHaveBeenCalledWith('ws-1', 'src', [file]));
     });
@@ -220,8 +231,7 @@ describe('FileTree', () => {
 
       const input = screen.getByTestId('file-upload-input') as HTMLInputElement;
       const file = new File(['hello'], 'a.txt', { type: 'text/plain' });
-      Object.defineProperty(input, 'files', { value: [file], configurable: true });
-      fireEvent.change(input);
+      fireFileInputChange(input, file);
 
       await waitFor(() => expect(screen.getByTestId('upload-error')).toBeInTheDocument());
       expect(screen.getByTestId('upload-error')).toHaveTextContent('Upload rejected');
@@ -255,6 +265,20 @@ describe('FileTree', () => {
 
       await waitFor(() => expect(createDirectoryMock).toHaveBeenCalledWith('ws-1', 'src', 'child'));
     });
+
+    it(
+      'renders the New file/folder name input at a mobile-safe size, so iOS does not zoom ' +
+        'on focus (issue #397)',
+      () => {
+        fileTree.value = treeWithFolder;
+        renderTree();
+
+        const header = screen.getByTestId('file-tree-header');
+        const input = within(header).getByTestId('create-file-name-input');
+        expect(input).toHaveClass('text-base', 'md:text-sm');
+        expect(input.className).not.toMatch(/\btext-xs\b/);
+      },
+    );
   });
 
   describe('delete action', () => {

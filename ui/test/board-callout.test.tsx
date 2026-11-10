@@ -137,6 +137,15 @@ describe('BoardCallout', () => {
     },
   );
 
+  it('renders Move to at a mobile-safe font-size so iOS does not zoom on focus (issue #397) [unit]', () => {
+    const task = boardTask({}, { lane: 'backlog', moves: [{ to: 'done', needs: 'none' }] });
+    render(<BoardCallout task={task} />);
+
+    const select = screen.getByTestId('board-move-to');
+    expect(select).toHaveClass('text-base', 'md:text-sm');
+    expect(select.className).not.toMatch(/\btext-xs\b/);
+  });
+
   it('sends the chosen Move to destination [unit]', async () => {
     const task = boardTask({}, { lane: 'backlog', moves: [{ to: 'done', needs: 'none' }] });
     tasks.value = [task];

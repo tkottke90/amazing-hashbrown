@@ -6,6 +6,7 @@ import { useRef, useEffect } from 'preact/hooks';
 import { Drawer, useDialog } from '@tkottke90/preact-dialog';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -783,25 +784,25 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
 
         <div class="flex flex-col gap-1">
           <label class="text-xs font-medium text-muted-foreground">Description</label>
-          <textarea
+          <Textarea
             placeholder="What needs to be done?"
             value={description.value}
             onInput={(e) => {
               description.value = (e.target as HTMLTextAreaElement).value;
             }}
-            class="border border-input rounded-lg px-3 py-2 text-sm resize-none h-20 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
+            className="field-sizing-fixed border border-input rounded-lg px-3 py-2 resize-none h-20 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
           />
         </div>
 
         <div class="flex flex-col gap-1">
           <label class="text-xs font-medium text-muted-foreground">Outcome</label>
-          <textarea
+          <Textarea
             placeholder="A clear definition of done"
             value={outcome.value}
             onInput={(e) => {
               outcome.value = (e.target as HTMLTextAreaElement).value;
             }}
-            class="border border-input rounded-lg px-3 py-2 text-sm resize-none h-20 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
+            className="field-sizing-fixed border border-input rounded-lg px-3 py-2 resize-none h-20 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
           />
         </div>
 
@@ -883,7 +884,7 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
                     }}
                     placeholder="Step description"
                     class={cn(
-                      'flex-1 text-sm bg-transparent outline-none',
+                      'flex-1 text-base md:text-sm bg-transparent outline-none',
                       step.done && 'line-through text-muted-foreground',
                     )}
                     aria-label={`Plan step ${idx + 1}`}
@@ -1018,7 +1019,7 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
               >
                 Hand-Off Guidance
               </label>
-              <textarea
+              <Textarea
                 id="hand-off-guidance-input"
                 data-testid="hand-off-guidance-input"
                 placeholder="Tell the agent how to approach this differently…"
@@ -1026,7 +1027,7 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
                 onInput={(e) => {
                   guidanceText.value = (e.target as HTMLTextAreaElement).value;
                 }}
-                class="border border-input rounded-lg px-3 py-2 text-sm resize-none h-20 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
+                className="field-sizing-fixed border border-input rounded-lg px-3 py-2 resize-none h-20 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
               />
               <Button
                 size="xs"
@@ -1149,7 +1150,7 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
                 onChange={(e) => {
                   selectedDependsOnId.value = (e.target as HTMLSelectElement).value;
                 }}
-                class="flex-1 min-w-[10rem] border border-input rounded-lg px-2 py-1 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
+                class="flex-1 min-w-[10rem] border border-input rounded-lg px-2 py-1 text-base md:text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
               >
                 <option value="">Select a task…</option>
                 {dependencyCandidates.value.map((t) => (
@@ -1202,7 +1203,7 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
               const v = (e.target as HTMLSelectElement).value;
               assignedTo.value = v === 'user' ? 'user' : v === 'agent' ? 'agent' : null;
             }}
-            class="border border-input rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
+            class="border border-input rounded-lg px-3 py-2 text-base md:text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
           >
             <option value="">Unassigned</option>
             <option value="user">User</option>
@@ -1244,7 +1245,7 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
                 onChange={(e) => {
                   status.value = (e.target as HTMLSelectElement).value as TaskStatus;
                 }}
-                class="border border-input rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
+                class="border border-input rounded-lg px-3 py-2 text-base md:text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
               >
                 {/* 'scheduled' is set by the server from the task's schedule, so it
                     is only listed to display a task that already has it. */}
@@ -1296,7 +1297,7 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
               const v = (e.target as HTMLSelectElement).value;
               workspaceId.value = v || null;
             }}
-            class="border border-input rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
+            class="border border-input rounded-lg px-3 py-2 text-base md:text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
           >
             <option value="">None — inbox</option>
             {workspaces.value.map((ws) => (
@@ -1315,7 +1316,7 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
             onChange={(e) => {
               triggerType.value = (e.target as HTMLSelectElement).value as TriggerType;
             }}
-            class="border border-input rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
+            class="border border-input rounded-lg px-3 py-2 text-base md:text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
           >
             <option value="manual">Manual</option>
             <option value="webhook">Webhook</option>
@@ -1398,7 +1399,7 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
             data-testid="task-tracker-type-select"
             value={trackerType.value ?? ''}
             onChange={(e) => handleTrackerTypeChange((e.target as HTMLSelectElement).value)}
-            class="border border-input rounded-lg px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
+            class="border border-input rounded-lg px-3 py-2 text-base md:text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
           >
             <option value="">Not linked</option>
             {trackers.value.map((t) => (
@@ -1483,13 +1484,13 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
                           createTitle.value = (e.target as HTMLInputElement).value;
                         }}
                       />
-                      <textarea
+                      <Textarea
                         placeholder="Issue body (optional)"
                         value={createBody.value}
                         onInput={(e) => {
                           createBody.value = (e.target as HTMLTextAreaElement).value;
                         }}
-                        class="border border-input rounded-lg px-3 py-2 text-sm resize-none h-16 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
+                        className="field-sizing-fixed border border-input rounded-lg px-3 py-2 resize-none h-16 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
                       />
                       {createError.value && (
                         <p class="text-xs text-destructive">{createError.value}</p>

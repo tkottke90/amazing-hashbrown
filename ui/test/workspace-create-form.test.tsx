@@ -457,3 +457,32 @@ describe('CreateWorkspaceForm — Create new wiki option (#202)', () => {
     expect(mockCreateWorkspace).not.toHaveBeenCalled();
   });
 });
+
+// Issue #397: iOS Safari zooms the page when a focused native control
+// renders under 16px. These textareas previously hardcoded text-sm;
+// confirm each now renders at the mobile-safe text-base (16px) size, with
+// their fixed height preserved (field-sizing-fixed overrides the shared
+// Textarea's default auto-grow behavior).
+describe('CreateWorkspaceForm — mobile-safe font sizes (issue #397)', () => {
+  function expectMobileSafe(el: Element) {
+    expect(el).toHaveClass('text-base', 'md:text-sm');
+    expect(el.className).not.toMatch(/\btext-xs\b/);
+  }
+
+  it('renders the workspace Goal textarea at a mobile-safe size', () => {
+    render(<CreateWorkspaceForm />);
+
+    const goal = screen.getByPlaceholderText('What should be accomplished in this workspace?');
+    expectMobileSafe(goal);
+    expect(goal).toHaveClass('field-sizing-fixed', 'h-16', 'resize-none');
+  });
+
+  it('renders the project Win condition textarea at a mobile-safe size', () => {
+    render(<CreateWorkspaceForm />);
+    fireEvent.click(screen.getByRole('button', { name: 'Project' }));
+
+    const winCondition = screen.getByPlaceholderText('The project is done when...');
+    expectMobileSafe(winCondition);
+    expect(winCondition).toHaveClass('field-sizing-fixed', 'h-16', 'resize-none');
+  });
+});

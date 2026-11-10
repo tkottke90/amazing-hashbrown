@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import {
   workspaces,
   projects,
@@ -302,13 +303,13 @@ export function CreateWorkspaceForm() {
 
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium text-muted-foreground">Goal</label>
-            <textarea
+            <Textarea
               placeholder="What should be accomplished in this workspace?"
               value={goal.value}
               onInput={(e) => {
                 goal.value = (e.target as HTMLTextAreaElement).value;
               }}
-              class="border border-input rounded-lg px-3 py-2 text-sm resize-none h-16 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
+              className="field-sizing-fixed border border-input rounded-lg px-3 py-2 resize-none h-16 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
             />
           </div>
 
@@ -445,14 +446,14 @@ export function CreateWorkspaceForm() {
                 <label class="text-xs font-medium text-muted-foreground">
                   Win condition <span class="text-destructive">*</span>
                 </label>
-                <textarea
+                <Textarea
                   placeholder="The project is done when..."
                   value={winCondition.value}
                   onInput={(e) => {
                     winCondition.value = (e.target as HTMLTextAreaElement).value;
                   }}
                   required
-                  class="border border-input rounded-lg px-3 py-2 text-sm resize-none h-16 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
+                  className="field-sizing-fixed border border-input rounded-lg px-3 py-2 resize-none h-16 bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
                 />
               </div>
               <div class="flex flex-col gap-1">

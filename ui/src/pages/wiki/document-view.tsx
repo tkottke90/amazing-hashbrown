@@ -4,7 +4,9 @@ import { useLocation } from 'preact-iso';
 import { BookOpen, Compass, Plus, FileText, Loader2 } from 'lucide-preact';
 import type { RefObject } from 'preact';
 import { Markdown } from '@/components/markdown';
+import { Input } from '@/components/ui/input';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
+import { Textarea } from '@/components/ui/textarea';
 import { useGroupRef } from 'react-resizable-panels';
 import {
   domains,
@@ -64,18 +66,19 @@ function NewPageForm({ domainId, onClose }: NewPageFormProps) {
       class="flex flex-col gap-2 border-b border-border bg-card p-3 text-xs"
     >
       <span class="font-medium text-foreground">New Page</span>
-      <input
+      <Input
         type="text"
+        data-testid="new-page-title-input"
         placeholder="Title"
         value={title.value}
         onInput={(e) => (title.value = (e.target as HTMLInputElement).value)}
-        class="rounded border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+        className="rounded border border-input bg-background px-2 py-1 focus:outline-none focus:ring-1 focus:ring-ring"
         required
       />
       <select
         value={type.value}
         onChange={(e) => (type.value = (e.target as HTMLSelectElement).value)}
-        class="rounded border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+        class="rounded border border-input bg-background px-2 py-1 text-base md:text-sm focus:outline-none focus:ring-1 focus:ring-ring"
       >
         {CONTENT_PAGE_TYPES.map((t) => (
           <option key={t} value={t}>
@@ -83,12 +86,12 @@ function NewPageForm({ domainId, onClose }: NewPageFormProps) {
           </option>
         ))}
       </select>
-      <textarea
+      <Textarea
         placeholder="Initial content (optional)"
         value={content.value}
         onInput={(e) => (content.value = (e.target as HTMLTextAreaElement).value)}
         rows={3}
-        class="resize-none rounded border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+        className="resize-none rounded border border-input bg-background px-2 py-1 focus:outline-none focus:ring-1 focus:ring-ring"
       />
       <div class="flex justify-end gap-2">
         <button
@@ -231,7 +234,7 @@ export function DocumentView({ chatInputRef }: Props) {
           <select
             value={domainId ?? ''}
             onChange={handleDomainChange}
-            class="w-full rounded border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+            class="w-full rounded border border-input bg-background px-2 py-1 text-base md:text-sm focus:outline-none focus:ring-1 focus:ring-ring"
           >
             {allDomains.length === 0 && <option value="">No domains yet</option>}
             {allDomains.map((d) => (
@@ -440,7 +443,7 @@ export function DocumentView({ chatInputRef }: Props) {
                 <textarea
                   value={editContent.value}
                   onInput={(e) => (editContent.value = (e.target as HTMLTextAreaElement).value)}
-                  class="h-full w-full resize-none border-0 bg-background p-4 font-mono text-sm text-foreground focus:outline-none"
+                  class="h-full w-full resize-none border-0 bg-background p-4 font-mono text-base md:text-sm text-foreground focus:outline-none"
                   spellcheck={false}
                 />
               ) : (

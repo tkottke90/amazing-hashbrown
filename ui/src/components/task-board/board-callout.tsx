@@ -101,7 +101,7 @@ export function BoardCallout({ task }: { task: Task }) {
           Move to
           <select
             data-testid="board-move-to"
-            class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"
+            class="rounded-md border border-border bg-background px-2 py-1 text-base md:text-sm text-foreground"
             value=""
             onChange={(e) => {
               const to = (e.target as HTMLSelectElement).value as Lane;
