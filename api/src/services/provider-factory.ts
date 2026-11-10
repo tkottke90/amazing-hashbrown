@@ -5,7 +5,7 @@ import { ChatAnthropic } from '@langchain/anthropic';
 import { Ollama } from 'ollama';
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
-import { Agent } from 'undici';
+import { Agent, type Dispatcher } from 'undici';
 import { env, type AnyProviderConfig } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { getOidcTokenCache, type OidcTokenCache, type OidcAuthConfig } from './oidc-token-cache.js';
@@ -137,9 +137,9 @@ export interface CreateProviderDeps {
  */
 export function createHeadersTimeoutFetchOptions(
   timeoutMs: number | undefined,
-  createDispatcher: (headersTimeout: number) => unknown = (headersTimeout) =>
+  createDispatcher: (headersTimeout: number) => Dispatcher = (headersTimeout) =>
     new Agent({ headersTimeout }),
-): { dispatcher: unknown } | undefined {
+): { dispatcher: Dispatcher } | undefined {
   return timeoutMs === undefined ? undefined : { dispatcher: createDispatcher(timeoutMs) };
 }
 

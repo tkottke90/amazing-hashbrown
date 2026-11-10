@@ -267,7 +267,10 @@ describe('services/provider-factory', () => {
 
       describe('headersTimeout dispatcher', () => {
         it('attaches fetchOptions.dispatcher on ChatOpenAI when timeoutMs is set', () => {
-          const agent = createProviderFromConfig({ ...openaiConfig, timeoutMs: 5000 }) as ChatOpenAI;
+          const agent = createProviderFromConfig({
+            ...openaiConfig,
+            timeoutMs: 5000,
+          }) as ChatOpenAI;
           expect(agent.clientConfig?.fetchOptions).to.not.equal(undefined);
         });
 
