@@ -12,8 +12,10 @@ import {
 import { MODEL_SUBMENU_CLOSE_GRACE_MS } from '@/components/provider-model-picker';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { showToast } from '@/lib/toast';
+import { useIsCoarsePointer } from '@/hooks/use-is-coarse-pointer';
 
 jest.mock('@/lib/toast', () => ({ showToast: jest.fn() }));
+jest.mock('@/hooks/use-is-coarse-pointer', () => ({ useIsCoarsePointer: jest.fn(() => false) }));
 
 function ControlledChatInput(props: Partial<Parameters<typeof ChatInput>[0]> = {}) {
   const [value, setValue] = useState(props.value ?? '');
@@ -1123,5 +1125,104 @@ describe('ChatInput — workspace shell auto-approve', () => {
 
     fireEvent.click(chip);
     expect(onToggle).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Enter-key send/newline behavior for issue #396. jsdom does not run the
+// browser's native newline-insertion default on a synthetic keyDown, so
+// these tests assert only what jsdom can actually prove: whether onSend
+// was/wasn't called, and (for the menu-open cases) whether the menu's
+// Enter-confirm still fires. Proving a newline is actually inserted on
+// mobile is the Playwright spec's job (chat-input-mobile.spec.ts).
+describe('ChatInput — Enter key', () => {
+  afterEach(() => {
+    (useIsCoarsePointer as jest.Mock).mockReturnValue(false);
+  });
+
+  it('desktop: Enter with no shift and no menu open calls onSend [regression]', () => {
+    (useIsCoarsePointer as jest.Mock).mockReturnValue(false);
+    const onSend = jest.fn();
+    render(<ControlledChatInput value="hi" onSend={onSend} />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+    expect(onSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('desktop: Shift+Enter does not call onSend [regression]', () => {
+    (useIsCoarsePointer as jest.Mock).mockReturnValue(false);
+    const onSend = jest.fn();
+    render(<ControlledChatInput value="hi" onSend={onSend} />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true });
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('mobile (coarse pointer): Enter with no shift and no menu open does not call onSend', () => {
+    (useIsCoarsePointer as jest.Mock).mockReturnValue(true);
+    const onSend = jest.fn();
+    render(<ControlledChatInput value="hi" onSend={onSend} />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('mobile (coarse pointer): skill-menu (/) Enter still confirms the highlighted item', async () => {
+    (useIsCoarsePointer as jest.Mock).mockReturnValue(true);
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        skills: [{ name: 'deploy', slashCommand: '/deploy', description: 'Deploy it' }],
+      }),
+    }) as unknown as typeof fetch;
+
+    render(<ControlledChatInput />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    fireEvent.input(textarea, { target: { value: '/dep' } });
+    await waitFor(() => expect(screen.getByText('/deploy')).toBeInTheDocument());
+
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+
+    expect(textarea.value).toBe('/deploy ');
+    expect(screen.queryByText('/deploy')).not.toBeInTheDocument();
+    global.fetch = originalFetch;
+  });
+
+  it('mobile (coarse pointer): tool-menu (#) Enter still confirms the highlighted item', async () => {
+    (useIsCoarsePointer as jest.Mock).mockReturnValue(true);
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        customized: false,
+        tools: [
+          {
+            toolId: 'web_fetch',
+            name: 'Web Fetch',
+            description: 'Fetches a URL and returns its content.',
+            category: 'built-in',
+            alwaysOn: false,
+            mcpServer: null,
+            lastSeenAt: null,
+            lastStatus: null,
+            enabled: true,
+            defaultInclude: { chat: true, subAgent: true, autonomous: true },
+            instructions: '',
+            selected: true,
+          },
+        ],
+      }),
+    }) as unknown as typeof fetch;
+
+    render(<ControlledChatInput threadId="t1" />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    fireEvent.input(textarea, { target: { value: '#web' } });
+    await waitFor(() => expect(screen.getByText('#web_fetch')).toBeInTheDocument());
+
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+
+    expect(textarea.value).toBe('#web_fetch ');
+    expect(screen.queryByText('#web_fetch')).not.toBeInTheDocument();
+    global.fetch = originalFetch;
   });
 });
