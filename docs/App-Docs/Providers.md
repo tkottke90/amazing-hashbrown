@@ -55,22 +55,22 @@ providers:
 
 All providers share the same schema. Fields marked **required** must be present for that provider type.
 
-| Field            | Type   | Description                                                                                          |
-| ---------------- | ------ | ---------------------------------------------------------------------------------------------------- |
-| `name`           | string | **Required.** Unique identifier used to reference this provider.                                     |
-| `type`           | string | **Required.** Inference engine: `ollama`, `openai`, or `anthropic`.                                  |
-| `baseUrl`        | string | Base URL for the API. Required for `ollama`; ignored by `openai`/`anthropic`.                        |
-| `apiKey`         | string | API secret key. Required for `openai` and `anthropic`.                                               |
-| `defaultModel`   | string | Model to use when no override is specified. Required if no per-request model is passed.              |
-| `maxConcurrency` | number | Concurrent request slots this provider allows (`-1` = unlimited). Defaults to `1`.                   |
-| `timeoutMs`      | number | Bounds a single outbound LLM HTTP call. Not wired for `ollama`.                                      |
-| `temperature`    | number | Default sampling temperature for every model on this provider with no override of its own.           |
-| `topP`           | number | Default nucleus-sampling value, same fallback behavior as `temperature`.                             |
-| `seed`           | number | Default seed. Only forwarded for `ollama`/`openai`-type providers — Anthropic has no seed parameter. |
-| `numCtx`         | number | Default Ollama context window size, in tokens. **Ollama-only.**                                      |
-| `topK`           | number | Default Ollama top-k sampling value. **Ollama-only.**                                                |
-| `repeatPenalty`  | number | Default Ollama repeat penalty. **Ollama-only.**                                                      |
-| `models`         | array  | Per-model pricing and sampling overrides — see [`models[]`](#models) below.                          |
+| Field            | Type   | Description                                                                                                                                                                |
+| ---------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`           | string | **Required.** Unique identifier used to reference this provider.                                                                                                           |
+| `type`           | string | **Required.** Inference engine: `ollama`, `openai`, or `anthropic`.                                                                                                        |
+| `baseUrl`        | string | Base URL for the API. Required for `ollama`; ignored by `openai`/`anthropic`.                                                                                              |
+| `apiKey`         | string | API secret key. Required for `openai` and `anthropic`.                                                                                                                     |
+| `defaultModel`   | string | Model to use when no override is specified. Required if no per-request model is passed.                                                                                    |
+| `maxConcurrency` | number | Concurrent request slots this provider allows (`-1` = unlimited). Defaults to `1`.                                                                                         |
+| `timeoutMs`      | number | Bounds a single outbound LLM HTTP call; also bounds undici's `headersTimeout` so a slow-but-healthy response isn't killed by its own 300s default. Not wired for `ollama`. |
+| `temperature`    | number | Default sampling temperature for every model on this provider with no override of its own.                                                                                 |
+| `topP`           | number | Default nucleus-sampling value, same fallback behavior as `temperature`.                                                                                                   |
+| `seed`           | number | Default seed. Only forwarded for `ollama`/`openai`-type providers — Anthropic has no seed parameter.                                                                       |
+| `numCtx`         | number | Default Ollama context window size, in tokens. **Ollama-only.**                                                                                                            |
+| `topK`           | number | Default Ollama top-k sampling value. **Ollama-only.**                                                                                                                      |
+| `repeatPenalty`  | number | Default Ollama repeat penalty. **Ollama-only.**                                                                                                                            |
+| `models`         | array  | Per-model pricing and sampling overrides — see [`models[]`](#models) below.                                                                                                |
 
 ## `models[]`
 

@@ -11,6 +11,7 @@ import {
   createProvider,
   createProviderFromConfig,
   createOidcAuthenticatingFetch,
+  createHeadersTimeoutFetchOptions,
   resolveEffectiveSampling,
   hasOllamaVisionCapability,
   resolveVisionCapability,
@@ -158,6 +159,29 @@ function stubTokenCache(token = 'fake-token') {
 }
 
 describe('services/provider-factory', () => {
+  describe('createHeadersTimeoutFetchOptions()', () => {
+    it('calls createDispatcher with headersTimeout set to timeoutMs', () => {
+      const calls: number[] = [];
+      const fakeDispatcher = {};
+      const result = createHeadersTimeoutFetchOptions(5000, (headersTimeout) => {
+        calls.push(headersTimeout);
+        return fakeDispatcher;
+      });
+      expect(calls).to.deep.equal([5000]);
+      expect(result?.dispatcher).to.equal(fakeDispatcher);
+    });
+
+    it('returns undefined and never calls createDispatcher when timeoutMs is undefined', () => {
+      let called = false;
+      const result = createHeadersTimeoutFetchOptions(undefined, () => {
+        called = true;
+        return {};
+      });
+      expect(result).to.equal(undefined);
+      expect(called).to.equal(false);
+    });
+  });
+
   describe('createProviderFromConfig()', () => {
     it('returns ChatOllama for type ollama', () => {
       expect(createProviderFromConfig(ollamaConfig)).to.be.instanceOf(ChatOllama);
@@ -239,6 +263,78 @@ describe('services/provider-factory', () => {
 
       it('does not throw for ollama when timeoutMs is set (known gap — not wired for this provider type)', () => {
         expect(() => createProviderFromConfig({ ...ollamaConfig, timeoutMs: 5000 })).to.not.throw();
+      });
+
+      describe('headersTimeout dispatcher', () => {
+        it('attaches fetchOptions.dispatcher on ChatOpenAI when timeoutMs is set', () => {
+          const agent = createProviderFromConfig({ ...openaiConfig, timeoutMs: 5000 }) as ChatOpenAI;
+          expect(agent.clientConfig?.fetchOptions).to.not.equal(undefined);
+        });
+
+        it('leaves fetchOptions unset on ChatOpenAI when timeoutMs is not configured', () => {
+          const agent = createProviderFromConfig(openaiConfig) as ChatOpenAI;
+          expect(agent.clientConfig?.fetchOptions).to.equal(undefined);
+        });
+
+        it('attaches clientOptions.fetchOptions on ChatAnthropic when timeoutMs is set', () => {
+          const agent = createProviderFromConfig({
+            ...anthropicConfig,
+            timeoutMs: 5000,
+          }) as ChatAnthropic;
+          expect(agent.clientOptions.fetchOptions).to.not.equal(undefined);
+        });
+
+        it('leaves clientOptions.fetchOptions unset on ChatAnthropic when timeoutMs is not configured', () => {
+          const agent = createProviderFromConfig(anthropicConfig) as ChatAnthropic;
+          expect(agent.clientOptions.fetchOptions).to.equal(undefined);
+        });
+
+        it('attaches configuration.fetchOptions on AzureChatOpenAI when timeoutMs is set', () => {
+          const { cache } = stubTokenCache();
+          const agent = createProviderFromConfig({ ...azureConfig, timeoutMs: 5000 }, undefined, {
+            tokenCache: cache,
+          }) as AzureChatOpenAI;
+          expect(agent.clientConfig?.fetchOptions).to.not.equal(undefined);
+        });
+
+        it('leaves configuration.fetchOptions unset on AzureChatOpenAI when timeoutMs is not configured', () => {
+          const { cache } = stubTokenCache();
+          const agent = createProviderFromConfig(azureConfig, undefined, {
+            tokenCache: cache,
+          }) as AzureChatOpenAI;
+          expect(agent.clientConfig?.fetchOptions).to.equal(undefined);
+        });
+
+        it('attaches configuration.fetchOptions on ChatOpenAI for openai-compatible/apiKey when timeoutMs is set', () => {
+          const agent = createProviderFromConfig({
+            ...openaiCompatibleApiKeyConfig,
+            timeoutMs: 5000,
+          }) as ChatOpenAI;
+          expect(agent.clientConfig?.fetchOptions).to.not.equal(undefined);
+        });
+
+        it('leaves configuration.fetchOptions unset on ChatOpenAI for openai-compatible/apiKey when timeoutMs is not configured', () => {
+          const agent = createProviderFromConfig(openaiCompatibleApiKeyConfig) as ChatOpenAI;
+          expect(agent.clientConfig?.fetchOptions).to.equal(undefined);
+        });
+
+        it('attaches configuration.fetchOptions on ChatOpenAI for openai-compatible/oidc when timeoutMs is set', () => {
+          const { cache } = stubTokenCache();
+          const agent = createProviderFromConfig(
+            { ...openaiCompatibleOidcConfig, timeoutMs: 5000 },
+            undefined,
+            { tokenCache: cache },
+          ) as ChatOpenAI;
+          expect(agent.clientConfig?.fetchOptions).to.not.equal(undefined);
+        });
+
+        it('leaves configuration.fetchOptions unset on ChatOpenAI for openai-compatible/oidc when timeoutMs is not configured', () => {
+          const { cache } = stubTokenCache();
+          const agent = createProviderFromConfig(openaiCompatibleOidcConfig, undefined, {
+            tokenCache: cache,
+          }) as ChatOpenAI;
+          expect(agent.clientConfig?.fetchOptions).to.equal(undefined);
+        });
       });
     });
 
