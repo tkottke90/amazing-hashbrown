@@ -39,7 +39,9 @@ const suite: TestSuite = {
     },
     {
       tags: ['@smoke'],
-      action: 'Open the wiki "New Page" form\'s title field (a migrated Input) at 375px',
+      action:
+        'Open a workspace\'s Files tab and the "New file" form\'s name field (a migrated ' +
+        'Input) at 375px',
       expectedOutcome: 'Its computed font-size is at least 16px',
       test: () => {},
     },
@@ -106,23 +108,6 @@ async function mockHandedOffRun(page: Page, taskId: string) {
   });
 }
 
-// Mocks only enough of the wiki domains API to reach the Document view's
-// "New Page" form with a domain pre-selected (wiki-focus-button.spec.ts's
-// pattern) — no chat/graph mocking needed for this suite.
-const DOMAIN = { id: 'mobile-zoom-test', domain: 'infrastructure', tags: [] };
-
-async function mockWikiDomain(page: Page) {
-  await page.route('**/api/v1/wiki/domains', async (route: Route) => {
-    await route.fulfill({ json: [DOMAIN] });
-  });
-  await page.route('**/api/v1/wiki/graph', async (route: Route) => {
-    await route.fulfill({ json: { nodes: [], edges: [] } });
-  });
-  await page.route('**/api/v1/wiki/domains/*/pages', async (route: Route) => {
-    await route.fulfill({ json: [] });
-  });
-}
-
 test.describe(
   '@smoke',
   {
@@ -172,14 +157,22 @@ test.describe(
       expect(await computedFontSizePx(textarea)).toBeGreaterThanOrEqual(16);
     });
 
-    test('the wiki "New Page" title input renders at a mobile-safe font-size', async ({
+    test('the Files tab "New file" name input renders at a mobile-safe font-size', async ({
       page,
+      request,
     }, testInfo) => {
-      await mockWikiDomain(page);
-      await page.goto('/wiki?view=document');
+      const ws = await createWorkspace(request, 'mobile-zoom-input');
 
-      await page.getByRole('button', { name: 'New page' }).click();
-      const input = page.getByTestId('new-page-title-input');
+      await page.goto(`/workspaces/${ws.id}`);
+      await expect(page.getByTestId('workspace-mobile-header')).toBeVisible();
+      // WorkspaceSheet's mobile tabs are <a href="#tab"> (role=link), not
+      // buttons like the desktop tab row (workspace-mobile-detail.spec.ts's
+      // established pattern).
+      await page.getByRole('link', { name: /files/i }).click();
+      await expect(page.getByTestId('file-tree')).toBeVisible();
+
+      await page.getByTestId('folder-action-new-file').click();
+      const input = page.getByTestId('file-tree-header').getByTestId('create-file-name-input');
       await pauseBeforeAction(page, testInfo);
       await expect(input).toBeVisible();
       expect(await computedFontSizePx(input)).toBeGreaterThanOrEqual(16);

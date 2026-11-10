@@ -358,8 +358,13 @@ test.describe(
 
       // The row's error renders as a sibling paragraph below its
       // CredentialValueField (not an aria-invalid/aria-describedby pair on
-      // the input itself).
-      await expect(drawer.getByText(/E2E_UNSET_VAR_220/)).toBeVisible();
+      // the input itself). Scoped to its own id (tool-settings-drawer.tsx's
+      // `tool-settings-shell-env-error-${i}`) rather than matching the
+      // variable name's text, which also matches the row's own value
+      // display (<code>${E2E_UNSET_VAR_220}</code>).
+      await expect(drawer.locator('#tool-settings-shell-env-error-0')).toContainText(
+        'E2E_UNSET_VAR_220',
+      );
       await expect(drawer).toBeVisible();
     });
   },
