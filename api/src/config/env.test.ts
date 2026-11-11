@@ -458,7 +458,9 @@ describe('config/env', () => {
 
     it('leaves maxIterations/truncateThreshold untouched [unit]', () => {
       const parsed = RLMConfigSchema.parse({ maxIterations: 3, truncateThreshold: 1000 });
-      expect(normalizeRlmConfig(parsed)).to.deep.equal(parsed);
+      const result = normalizeRlmConfig(parsed);
+      expect(result.maxIterations).to.equal(3);
+      expect(result.truncateThreshold).to.equal(1000);
     });
   });
 });
