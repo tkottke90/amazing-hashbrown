@@ -1,0 +1,55 @@
+suite:
+  id: mcp-tool-discovery
+  name: MCP Tool Discovery (#408)
+  purpose: >
+    Verifies the model actually follows the new discovery-before-use
+    contract (issue #408, docs/superpowers/specs/2026-11-11-mcp-tool-
+    discovery-design.md, ADR-0067) rather than just that the plumbing
+    exists — mcp-tool-discovery.test.ts and mcp-tool-discovery.middleware.
+    test.ts already cover the mechanical "a Discovered id gets added to
+    request.tools" behavior at the unit level. These scenarios exercise
+    real model behavior: does it search then explicitly grant an MCP tool
+    before expecting to call it (mtd-001), and does an unrelated request
+    leave the discovery/grant path untouched rather than speculatively
+    pulling something in (mtd-002). No local MCP server is reachable from
+    the environment this suite was authored in, so neither scenario has
+    been run yet — see the design doc's §8/the implementing PR for the
+    exact command to run it.
+  passingThreshold: 0.85
+
+scenarios:
+  - id: mtd-001-search-then-grant-before-use
+    name: 'A request needing an undiscovered MCP tool searches, then explicitly grants it, before attempting to use it'
+    purpose: >
+      Per the new mcp_tool_discovery system-prompt section
+      (system-prompt.ts), an MCP tool outside the default bound set must be
+      granted via use_mcp_tools — found via a prior search_mcp_tools call —
+      before the model can call it at all; it is not bound yet at the start
+      of this turn. Seeds the search step (the keyword search itself isn't
+      what this scenario is testing) and asserts the very next call is
+      use_mcp_tools, not a direct attempt at the real tool (which isn't
+      bound yet and couldn't be called anyway) and not a refusal/"I don't
+      have that tool" response.
+    type: tool-sequence
+    turns:
+      - user: >
+          Use the n8n workflow-search tool to find workflows related to
+          "invoice processing".
+      - tool: search_mcp_tools
+        args: { keyword: 'workflow' }
+        result: >
+          [{"toolId":"n8n:workflow_search","name":"workflow_search","description":"Search n8n workflows by keyword"}]
+    tool: use_mcp_tools
+
+  - id: mtd-002-unrelated-request-does-not-speculatively-grant
+    name: 'An unrelated request does not speculatively grant an MCP tool'
+    purpose: >
+      A request with no connection to any MCP tool must not result in a
+      use_mcp_tools call — granting access "just in case" would quietly
+      defeat the point of discovery being opt-in per turn. search_mcp_tools
+      itself is read-only and ungated, so a model that searches out of
+      curiosity isn't the failure mode being tested here; only an actual
+      grant is.
+    type: tool-call
+    input: 'What is 17 times 24?'
+    tool: '!use_mcp_tools'
