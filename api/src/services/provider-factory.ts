@@ -5,6 +5,7 @@ import { ChatAnthropic } from '@langchain/anthropic';
 import { Ollama } from 'ollama';
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
+import { Agent, type Dispatcher } from 'undici';
 import { env, type AnyProviderConfig } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { getOidcTokenCache, type OidcTokenCache, type OidcAuthConfig } from './oidc-token-cache.js';
@@ -121,6 +122,28 @@ export interface CreateProviderDeps {
 }
 
 /**
+ * Builds the `fetchOptions` field attached to an OpenAI-family
+ * `configuration` object or Anthropic's `clientOptions` object, so undici's
+ * `Agent` (the dispatcher behind Node's global `fetch`) aborts a stalled
+ * response on the same horizon as the provider's own `timeoutMs`, instead of
+ * undici's much longer default `headersTimeout` (300s) pre-empting it first.
+ * See ADR-0062. Returns `undefined` when `timeoutMs` is not configured —
+ * construction is unchanged for a provider that never asked for a timeout.
+ *
+ * `createDispatcher` defaults to a real `undici.Agent` and exists only so a
+ * unit test can inject a fake and capture the exact value it was called
+ * with — undici's `Agent` doesn't expose `headersTimeout` back out as a
+ * public, readable property after construction.
+ */
+export function createHeadersTimeoutFetchOptions(
+  timeoutMs: number | undefined,
+  createDispatcher: (headersTimeout: number) => Dispatcher = (headersTimeout) =>
+    new Agent({ headersTimeout }),
+): { dispatcher: Dispatcher } | undefined {
+  return timeoutMs === undefined ? undefined : { dispatcher: createDispatcher(timeoutMs) };
+}
+
+/**
  * Pure factory — accepts explicit config rather than reading env.
  * Exported so unit tests can drive it without touching the live configManager.
  */
@@ -154,7 +177,10 @@ export function createProviderFromConfig(
       temperature: sampling.temperature,
       topP: sampling.topP,
       modelKwargs: sampling.seed === undefined ? undefined : { seed: sampling.seed },
-      configuration: { defaultHeaders: config.headers },
+      configuration: {
+        defaultHeaders: config.headers,
+        fetchOptions: createHeadersTimeoutFetchOptions(config.timeoutMs),
+      },
     });
   }
 
@@ -197,6 +223,7 @@ export function createProviderFromConfig(
           baseURL: config.baseUrl,
           fetch: process.env.DEBUG_LLM_HTTP === '1' ? loggingFetch : undefined,
           defaultHeaders: config.headers,
+          fetchOptions: createHeadersTimeoutFetchOptions(config.timeoutMs),
         },
       });
     case 'anthropic':
@@ -214,7 +241,11 @@ export function createProviderFromConfig(
         // ChatOpenAI) — it forwards `clientOptions` straight to the
         // underlying @anthropic-ai/sdk client, which is where `timeout`
         // actually lives.
-        clientOptions: { timeout: config.timeoutMs, defaultHeaders: config.headers },
+        clientOptions: {
+          timeout: config.timeoutMs,
+          defaultHeaders: config.headers,
+          fetchOptions: createHeadersTimeoutFetchOptions(config.timeoutMs),
+        },
       });
     case 'openai-compatible': {
       const debugFetch = process.env.DEBUG_LLM_HTTP === '1' ? loggingFetch : undefined;
@@ -244,6 +275,7 @@ export function createProviderFromConfig(
               debugFetch ?? fetch,
             ),
             defaultHeaders: config.headers,
+            fetchOptions: createHeadersTimeoutFetchOptions(config.timeoutMs),
           },
         });
       }
@@ -263,6 +295,7 @@ export function createProviderFromConfig(
           baseURL: config.baseUrl,
           fetch: debugFetch,
           defaultHeaders: config.headers,
+          fetchOptions: createHeadersTimeoutFetchOptions(config.timeoutMs),
         },
       });
     }
