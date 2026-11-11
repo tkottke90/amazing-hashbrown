@@ -6,8 +6,18 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { CredentialValueField } from '@/components/credential-value-field';
+import { useProviderModelPicker } from '@/components/provider-model-picker';
+import { FavoriteModelItems } from '@/components/favorite-model-items';
+import { fetchProviders, providers, favoriteModels } from '@/hooks/use-providers';
 import { showToast } from '@/lib/toast';
 import {
   patchToolSetting,
@@ -126,6 +136,7 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
   const addRowKey = useSignal(0);
   const envWarn = useSignal<string | null>(null);
   const envErrors = useSignal<Record<string, string>>({});
+  const providerError = useSignal<string | null>(null);
 
   const isSaving = useSignal(false);
   const isResetting = useSignal(false);
@@ -159,6 +170,7 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
     addRowKey.value++;
     envWarn.value = null;
     envErrors.value = {};
+    providerError.value = null;
     saveError.value = null;
     if (tool.toolId === 'shell_exec') {
       fetchShellEnvVarNames()
@@ -170,6 +182,23 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
   // Fetched once per drawer open; on failure the combobox degrades to
   // free-text-only (still fully usable, just without suggestions).
   const envVarNames = useSignal<string[]>([]);
+
+  // TTL-cached (ui/src/hooks/use-providers.ts) — cheap to call unconditionally,
+  // same as model-entry-modal.tsx. Populates `providers`/`favoriteModels` for
+  // the rlm_query provider/model picker below.
+  useEffect(() => {
+    void fetchProviders();
+  }, []);
+
+  const { items: rlmProviderModelItems, sheet: rlmProviderModelSheet } = useProviderModelPicker({
+    providers: providers.value,
+    activeProvider: provider.value,
+    activeModel: model.value,
+    onSelect: (p, m) => {
+      provider.value = p;
+      model.value = m;
+    },
+  });
 
   function setNewEnvName(raw: string) {
     envNameQuery.value = raw;
@@ -223,6 +252,7 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
     isSaving.value = true;
     saveError.value = null;
     envErrors.value = {};
+    providerError.value = null;
     try {
       const patch: ToolSettingPatch = {
         description: description.value,
@@ -240,8 +270,14 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
         patch.timeoutMs = timeoutMs.value;
         patch.respectRobotsTxt = respectRobotsTxt.value;
       } else if (tool.toolId === 'rlm_query') {
-        patch.provider = provider.value || undefined;
-        patch.model = model.value || undefined;
+        // Always sent as a plain string (never omitted via `|| undefined`):
+        // '' is how "Use default" explicitly clears a prior override — the
+        // server only persists extra fields it was actually sent (issue
+        // #220), so omitting the key here would silently keep the old
+        // value instead of clearing it. See config/env.ts's
+        // normalizeRlmConfig for how a stored '' is treated as unset.
+        patch.provider = provider.value;
+        patch.model = model.value;
         patch.maxIterations = maxIterations.value;
         patch.truncateThreshold = truncateThreshold.value;
       } else if (tool.toolId === 'shell_exec') {
@@ -259,6 +295,7 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
       saveError.value = err instanceof Error ? err.message : 'Failed to save';
       if (err instanceof RequestError && err.fieldErrors) {
         envErrors.value = envErrorsByName(err.fieldErrors);
+        providerError.value = err.fieldErrors['provider']?.join(' ') ?? null;
       }
     } finally {
       isSaving.value = false;
@@ -394,23 +431,45 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
         {tool.toolId === 'rlm_query' && (
           <div class="space-y-3 rounded-md border border-border p-3">
             <div class="space-y-1.5">
-              <Label htmlFor="tool-settings-rlm-provider">Provider</Label>
-              <Input
-                id="tool-settings-rlm-provider"
-                value={provider.value}
-                placeholder="Default provider"
-                onInput={(e) => (provider.value = (e.target as HTMLInputElement).value)}
-              />
+              <Label>Provider / Model</Label>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  id="tool-settings-rlm-provider-model"
+                  className={buttonVariants({
+                    variant: 'outline',
+                    size: 'default',
+                    className: 'w-full justify-start',
+                  })}
+                >
+                  {provider.value || model.value
+                    ? `${provider.value || 'default'} / ${model.value || 'default'}`
+                    : 'Use default'}
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      provider.value = '';
+                      model.value = '';
+                    }}
+                  >
+                    Use default
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <FavoriteModelItems
+                    favorites={favoriteModels.value}
+                    activeProvider={provider.value}
+                    activeModel={model.value}
+                    onSelect={(p, m) => {
+                      provider.value = p;
+                      model.value = m;
+                    }}
+                  />
+                  {rlmProviderModelItems}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              {providerError.value && <p class="text-xs text-destructive">{providerError.value}</p>}
             </div>
-            <div class="space-y-1.5">
-              <Label htmlFor="tool-settings-rlm-model">Model</Label>
-              <Input
-                id="tool-settings-rlm-model"
-                value={model.value}
-                placeholder="Default model"
-                onInput={(e) => (model.value = (e.target as HTMLInputElement).value)}
-              />
-            </div>
+            {rlmProviderModelSheet}
             <div class="space-y-1.5">
               <Label htmlFor="tool-settings-rlm-max-iterations">Max iterations</Label>
               <Input

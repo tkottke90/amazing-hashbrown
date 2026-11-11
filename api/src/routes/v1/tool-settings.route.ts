@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { toolsManager } from '../../services/tools-manager.js';
-import { configManager } from '../../config/env.js';
+import { configManager, env } from '../../config/env.js';
 import {
   listToolSettingsHandler,
   patchToolSettingHandler,
@@ -48,6 +48,7 @@ toolSettingsRouter.patch('/:toolId', (req: Request, res: Response) => {
     req.body,
     configManager.getConfigDir(),
     () => configManager.reload(),
+    env.providers.map((p) => p.name),
   );
   if (!result.ok) {
     sendFailure(res, result);

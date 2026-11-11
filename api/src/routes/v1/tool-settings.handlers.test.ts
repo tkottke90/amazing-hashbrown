@@ -15,6 +15,7 @@ import {
   refreshToolSettingsHandler,
   listAvailableEnvVarsHandler,
   readRawToolsConfig,
+  validateRlmProvider,
 } from './tool-settings.handlers.js';
 
 // listResolvedToolSettings() (which every handler above calls) reads
@@ -303,6 +304,61 @@ describe('routes/v1/tool-settings.handlers', () => {
       });
     });
 
+    describe('rlm_query provider patch validation', () => {
+      function fieldErrorKeys(result: ReturnType<typeof patchToolSettingHandler>): string[] {
+        return result.ok ? [] : Object.keys(result.fieldErrors ?? {});
+      }
+
+      it('accepts a patch that omits provider entirely, even with no providerNames configured [unit]', () => {
+        const result = patchToolSettingHandler('rlm_query', { maxIterations: 5 }, configDir);
+        expect(result.ok, JSON.stringify(result)).to.equal(true);
+      });
+
+      it('400s on an unknown provider name and reports it against the provider field [unit]', () => {
+        const result = patchToolSettingHandler(
+          'rlm_query',
+          { provider: 'ghost' },
+          configDir,
+          () => {},
+          ['do', 'local'],
+        );
+        expect(result.ok).to.equal(false);
+        if (!result.ok) expect(result.status).to.equal(400);
+        expect(fieldErrorKeys(result)).to.deep.equal(['provider']);
+      });
+
+      it('accepts a configured provider name [unit]', () => {
+        const result = patchToolSettingHandler(
+          'rlm_query',
+          { provider: 'do' },
+          configDir,
+          () => {},
+          ['do', 'local'],
+        );
+        expect(result.ok, JSON.stringify(result)).to.equal(true);
+      });
+
+      it('accepts clearing provider to an empty string ("use default") against a restrictive list [unit]', () => {
+        const result = patchToolSettingHandler('rlm_query', { provider: '' }, configDir, () => {}, [
+          'do',
+        ]);
+        expect(result.ok, JSON.stringify(result)).to.equal(true);
+        const written = yaml.parse(readFileSync(join(configDir, 'config.yaml'), 'utf8'));
+        expect(written.tools.rlm_query.provider).to.equal('');
+      });
+
+      it('does not validate the model field against anything [unit]', () => {
+        const result = patchToolSettingHandler(
+          'rlm_query',
+          { model: 'totally-made-up-model' },
+          configDir,
+          () => {},
+          ['do'],
+        );
+        expect(result.ok, JSON.stringify(result)).to.equal(true);
+      });
+    });
+
     // Zod 4's .partial() still applies field defaults, so validating a patch
     // of one field used to write every *other* field's default into
     // config.yaml — including shell_exec's host PATH/HOME/USER, which is how
@@ -445,6 +501,22 @@ describe('routes/v1/tool-settings.handlers', () => {
         expect(row!.category).to.equal('mcp');
         expect(row!.lastStatus).to.equal('connected');
       }
+    });
+  });
+
+  describe('validateRlmProvider()', () => {
+    it('accepts a provider that is in the configured list [unit]', () => {
+      expect(validateRlmProvider('do', ['do', 'local'])).to.deep.equal([]);
+    });
+
+    it('accepts an empty string, meaning "no override" [unit]', () => {
+      expect(validateRlmProvider('', ['do'])).to.deep.equal([]);
+    });
+
+    it('reports a provider name that is not configured [unit]', () => {
+      const errors = validateRlmProvider('ghost', ['do']);
+      expect(errors).to.have.length(1);
+      expect(errors[0]).to.include('"ghost"');
     });
   });
 });

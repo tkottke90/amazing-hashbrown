@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/preact';
+import { signal } from '@preact/signals';
 
 jest.mock('@/services/tool-settings-api', () => ({
   patchToolSetting: jest.fn(),
@@ -6,6 +7,19 @@ jest.mock('@/services/tool-settings-api', () => ({
   fetchShellEnvVarNames: jest.fn(),
 }));
 jest.mock('@/lib/toast', () => ({ showToast: jest.fn() }));
+
+// The rlm_query provider/model picker fetches the provider list to render —
+// mock the hook directly rather than letting fetchProviders() hit a real
+// (unmocked) `fetch('/api/v1/providers')` in jsdom. Same pattern as
+// settings-model-settings-panel.test.tsx's use-providers mock.
+jest.mock('@/hooks/use-providers', () => ({
+  providers: signal([
+    { name: 'do', type: 'openai', models: [{ id: 'glm-4.7-flash' }, { id: 'llama3' }] },
+    { name: 'local', type: 'ollama', models: [{ id: 'qwen3' }] },
+  ]),
+  favoriteModels: signal([{ provider: 'do', model: 'glm-4.7-flash' }]),
+  fetchProviders: jest.fn().mockResolvedValue(undefined),
+}));
 
 import { ToolSettingsDrawer } from '@/components/tool-settings-drawer';
 import * as api from '@/services/tool-settings-api';
@@ -21,6 +35,23 @@ const mockEnvNames = api.fetchShellEnvVarNames as jest.MockedFunction<
 // Distinct from the drawer's own internal "Save"/"Reset Defaults" buttons —
 // same convention as settings-mcp-server-drawer.test.tsx's OPEN_TRIGGER.
 const OPEN_TRIGGER = <button type="button">Open drawer</button>;
+
+// jsdom has no `onpointerdown` IDL property — mirrors chat-input.test.tsx's
+// helper, needed to open Radix's pointerdown-driven menus in tests.
+function firePointerDown(element: Element) {
+  fireEvent(element, new MouseEvent('PointerDown', { bubbles: true, cancelable: true, button: 0 }));
+}
+
+// Radix's DropdownMenuSubTrigger doesn't open on a bare pointerdown like the
+// top-level DropdownMenuTrigger above — it opens on click, or on real
+// pointer hover (timing-dependent), or an ArrowRight keypress while focused.
+// Layer click + keyboard so this doesn't depend on which of those internal
+// paths jsdom's synthetic events actually satisfy.
+function openSubmenu(element: HTMLElement) {
+  element.focus();
+  fireEvent.click(element);
+  fireEvent.keyDown(element, { key: 'ArrowRight' });
+}
 
 function tool(overrides: Partial<ToolSettingItem> = {}): ToolSettingItem {
   return {
@@ -75,14 +106,111 @@ describe('ToolSettingsDrawer', () => {
   it('renders rlm_query-specific fields only for that toolId', () => {
     render(
       <ToolSettingsDrawer
-        tool={tool({ toolId: 'rlm_query', provider: 'ollama', maxIterations: 5 })}
+        tool={tool({ toolId: 'rlm_query', provider: 'ollama', model: 'llama3', maxIterations: 5 })}
         onSaved={jest.fn()}
         trigger={OPEN_TRIGGER}
       />,
     );
-    expect(screen.getByLabelText('Provider')).toHaveValue('ollama');
+    expect(screen.getByText('ollama / llama3')).toBeInTheDocument();
     expect(screen.getByLabelText('Max iterations')).toHaveValue(5);
     expect(screen.queryByLabelText('Timeout (ms)')).not.toBeInTheDocument();
+  });
+
+  describe('rlm_query provider/model picker', () => {
+    function rlmTool(overrides: Partial<ToolSettingItem> = {}): ToolSettingItem {
+      return tool({ toolId: 'rlm_query', ...overrides });
+    }
+
+    it('shows "Use default" when no provider/model is configured', () => {
+      render(<ToolSettingsDrawer tool={rlmTool()} onSaved={jest.fn()} trigger={OPEN_TRIGGER} />);
+      expect(screen.getByText('Use default')).toBeInTheDocument();
+    });
+
+    it('selecting "Use default" after a prior selection resets the trigger label [unit]', () => {
+      render(
+        <ToolSettingsDrawer
+          tool={rlmTool({ provider: 'local', model: 'qwen3' })}
+          onSaved={jest.fn()}
+          trigger={OPEN_TRIGGER}
+        />,
+      );
+      expect(screen.getByText('local / qwen3')).toBeInTheDocument();
+
+      firePointerDown(screen.getByText('local / qwen3'));
+      fireEvent.click(screen.getByText('Use default'));
+
+      expect(screen.getByText('Use default')).toBeInTheDocument();
+      expect(screen.queryByText('local / qwen3')).not.toBeInTheDocument();
+    });
+
+    it('Save with no selection sends provider/model as empty strings, clearing a prior override [unit]', async () => {
+      mockPatch.mockResolvedValue(rlmTool());
+      render(
+        <ToolSettingsDrawer
+          tool={rlmTool({ provider: 'local', model: 'qwen3' })}
+          onSaved={jest.fn()}
+          trigger={OPEN_TRIGGER}
+        />,
+      );
+
+      firePointerDown(screen.getByText('local / qwen3'));
+      fireEvent.click(screen.getByText('Use default'));
+      fireEvent.click(screen.getByText('Save'));
+
+      await waitFor(() => expect(mockPatch).toHaveBeenCalled());
+      expect(mockPatch).toHaveBeenCalledWith(
+        'rlm_query',
+        expect.objectContaining({ provider: '', model: '' }),
+      );
+    });
+
+    it('picking a Favorites entry updates the trigger and is sent on save [unit]', async () => {
+      mockPatch.mockResolvedValue(rlmTool());
+      render(<ToolSettingsDrawer tool={rlmTool()} onSaved={jest.fn()} trigger={OPEN_TRIGGER} />);
+
+      firePointerDown(screen.getByText('Use default'));
+      fireEvent.click(screen.getByText('do / glm-4.7-flash'));
+      expect(screen.getByText('do / glm-4.7-flash')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText('Save'));
+      await waitFor(() => expect(mockPatch).toHaveBeenCalled());
+      expect(mockPatch).toHaveBeenCalledWith(
+        'rlm_query',
+        expect.objectContaining({ provider: 'do', model: 'glm-4.7-flash' }),
+      );
+    });
+
+    it('picking a non-favorite provider/model updates the trigger and is sent on save [unit]', async () => {
+      mockPatch.mockResolvedValue(rlmTool());
+      render(<ToolSettingsDrawer tool={rlmTool()} onSaved={jest.fn()} trigger={OPEN_TRIGGER} />);
+
+      firePointerDown(screen.getByText('Use default'));
+      openSubmenu(screen.getByText('local'));
+      fireEvent.click(screen.getByText('qwen3'));
+      expect(screen.getByText('local / qwen3')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText('Save'));
+      await waitFor(() => expect(mockPatch).toHaveBeenCalled());
+      expect(mockPatch).toHaveBeenCalledWith(
+        'rlm_query',
+        expect.objectContaining({ provider: 'local', model: 'qwen3' }),
+      );
+    });
+
+    it('shows a provider field-error from the server next to the picker, not swallowed by env-error filtering [unit]', async () => {
+      mockPatch.mockRejectedValue(
+        new RequestError('1 field is invalid.', 400, {
+          provider: ['"ghost" is not a configured provider'],
+        }),
+      );
+      render(<ToolSettingsDrawer tool={rlmTool()} onSaved={jest.fn()} trigger={OPEN_TRIGGER} />);
+
+      fireEvent.click(screen.getByText('Save'));
+
+      await waitFor(() =>
+        expect(screen.getByText('"ghost" is not a configured provider')).toBeInTheDocument(),
+      );
+    });
   });
 
   it('renders shell_exec-specific fields only for that toolId', () => {

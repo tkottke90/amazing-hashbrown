@@ -437,6 +437,20 @@ export const RLMConfigSchema = z.object({
 
 export type RLMConfig = z.infer<typeof RLMConfigSchema>;
 
+// '' means "cleared back to default" (the settings drawer's "Use default"
+// action persists an explicit empty string rather than omitting the key, so
+// a save can actually unset a prior override — see tool-settings.handlers.ts).
+// Normalizes it to undefined so createProvider()/resolveProviderConfig() fall
+// through to env.defaultProvider/the provider's own defaultModel instead of
+// looking up a provider literally named "".
+export function normalizeRlmConfig(parsed: RLMConfig): RLMConfig {
+  return {
+    ...parsed,
+    provider: parsed.provider || undefined,
+    model: parsed.model || undefined,
+  };
+}
+
 // A named sub-agent "role" (spawn_sub_agent tool) — a fixed provider/model
 // resolved server-side at dispatch time, never a parameter the calling model
 // supplies. See docs/superpowers/specs/2026-09-09-sub-agent-tooling-design.md §3.
@@ -821,7 +835,7 @@ export const env = {
         string,
         ToolEntry
       >;
-      return RLMConfigSchema.parse(tools['rlm_query'] ?? {});
+      return normalizeRlmConfig(RLMConfigSchema.parse(tools['rlm_query'] ?? {}));
     } catch {
       return RLMConfigSchema.parse({});
     }
