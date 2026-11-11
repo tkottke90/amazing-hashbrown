@@ -52,6 +52,13 @@ export interface RecursionGuardOptions {
   // test-only params — lets unit tests reach the reflection rung without a
   // real model call. Production callers never set this.
   evaluateLoopProgress?: typeof evaluateLoopProgress;
+  // 'throw' mode only: whether a `complete_task` call has already been
+  // accepted on this run. Checked before ever escalating a second time on
+  // the same trigger — a Sub-Agent Task's Run gets one Delivery Nudge, not
+  // an unconditional kill, the moment it actually delivers. Omitted by every
+  // 'interrupt'-mode caller (chat/task runs have no equivalent concept).
+  // See GLOSSARY.md § Loop Guard, ADR-0062.
+  hasDelivered?: () => boolean;
 }
 
 // Strips ISO-8601 timestamp substrings and surrounding whitespace before
@@ -91,6 +98,43 @@ function isStagnationWindowBoundary(msg: any): boolean {
     return msg.additional_kwargs?.loopGuardKind !== NUDGE_MARKER.loopGuardKind;
   }
   return true;
+}
+
+// Marker for the throw-mode-only "wrap it up" nudge — distinct from
+// NUDGE_MARKER's "try something different" nudge: this one asks for an
+// ending, not a different approach, so it deliberately isn't recognized by
+// isStagnationWindowBoundary above — a Delivery Nudge SHOULD act as a fresh
+// boundary (the model's behavior after it is what's being judged next, not
+// blended with pre-nudge churn). Carries which of the three triggers fired
+// it so step-count/stagnation/streak each track their own one-shot grace
+// independently. See GLOSSARY.md § Loop Guard, ADR-0062.
+type DeliveryNudgeReason = 'stagnation' | 'streak' | 'step_limit';
+
+function deliveryNudgeMarker(reason: DeliveryNudgeReason) {
+  return { loopGuardKind: 'delivery-nudge', deliveryNudgeReason: reason } as const;
+}
+
+// A Sub-Agent Task's Run is always a single Turn — no resume, no multi-turn
+// thread (see GLOSSARY.md § Sub-Agent Task) — so scanning the whole message
+// list for a prior Delivery Nudge is safe: there's no earlier, unrelated
+// Turn's nudge it could mistake for this one.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function hasDeliveryNudgeFired(messages: any[], reason: DeliveryNudgeReason): boolean {
+  return messages.some(
+    (m) =>
+      isHumanMessage(m) &&
+      m.additional_kwargs?.loopGuardKind === deliveryNudgeMarker(reason).loopGuardKind &&
+      m.additional_kwargs?.deliveryNudgeReason === reason,
+  );
+}
+
+function deliveryNudgeMessage(reason: DeliveryNudgeReason): HumanMessage {
+  return new HumanMessage({
+    content:
+      'Stop investigating now and call `complete_task` with whatever you have confirmed so ' +
+      'far — there is no further grace after this.',
+    additional_kwargs: { ...deliveryNudgeMarker(reason) },
+  });
 }
 
 // Walks backward from the most recently called tool, counting every prior
@@ -166,6 +210,7 @@ export function createRecursionGuardMiddleware(options: RecursionGuardOptions) {
     escalationMode = 'interrupt',
     taskId,
     evaluateLoopProgress: evaluateLoopProgressImpl = evaluateLoopProgress,
+    hasDelivered,
   } = options;
   const stepThreshold = Math.floor(recursionLimit * warnThreshold);
   // Omitting `loopGuard` entirely (not just `{ enabled: false }`) reproduces
@@ -231,9 +276,29 @@ export function createRecursionGuardMiddleware(options: RecursionGuardOptions) {
       const completedSteps: number = messages.filter(isAIMessage).length;
 
       // --- Step-count check-in (existing behavior; now escalation-mode-aware) ---
-      // Fire at multiples of threshold so the agent gets a fresh interval
-      // between consecutive resumes (e.g., at 75, 150, …).
-      if (completedSteps !== 0 && completedSteps % stepThreshold === 0) {
+      if (escalationMode === 'throw' && hasDeliveryNudgeFired(messages, 'step_limit')) {
+        // Already nudged once for step-count — the real throw can't wait
+        // for the next periodic crossing below, since recursionLimit isn't
+        // guaranteed to land on a multiple of stepThreshold (see ADR-0062),
+        // so it's checked here, on every call, independent of the periodic
+        // guard. Falls through to the stagnation/streak checks below either
+        // way — this trigger having already nudged doesn't suppress them.
+        if (completedSteps >= recursionLimit && !hasDelivered?.()) {
+          return escalate(
+            'step_limit',
+            `Reached ${completedSteps} LLM calls after already being asked to wrap up.`,
+            `I've been working for ${completedSteps} LLM calls and want to check in before continuing. What would you like me to do?`,
+            { stepsUsed: completedSteps },
+          );
+        }
+      } else if (completedSteps !== 0 && completedSteps % stepThreshold === 0) {
+        // Fire at multiples of threshold so the agent gets a fresh interval
+        // between consecutive resumes (e.g., at 75, 150, …) — in 'throw'
+        // mode, this first crossing injects a Delivery Nudge instead of
+        // escalating immediately (see GLOSSARY.md § Loop Guard, ADR-0062).
+        if (escalationMode === 'throw') {
+          return { messages: [deliveryNudgeMessage('step_limit')] };
+        }
         return escalate(
           'step_limit',
           `Reached ${completedSteps} LLM calls without a check-in opportunity.`,
@@ -296,6 +361,18 @@ export function createRecursionGuardMiddleware(options: RecursionGuardOptions) {
 
         if (result.converging) {
           return { messages: [new HumanMessage(result.guidance ?? result.summary)] };
+        }
+
+        if (escalationMode === 'throw') {
+          if (!hasDeliveryNudgeFired(messages, reflectionReason)) {
+            return { messages: [deliveryNudgeMessage(reflectionReason)] };
+          }
+          if (hasDelivered?.()) {
+            return undefined;
+          }
+          // Already nudged on this same streak and still not converging,
+          // with nothing delivered in between — fall through to the real
+          // throw below. See GLOSSARY.md § Loop Guard, ADR-0062.
         }
 
         return escalate(

@@ -21,7 +21,7 @@ a stuck thread without losing the ability to look back:
 
 See `GLOSSARY.md` ("Workspace Chat Continuity Across Threads") for the
 canonical terms used below (**Workspace Chat Summary**, **Supersession
-Reference**, **Replace Thread**), and ADR-0063/0064/0065 for the three
+Reference**, **Replace Thread**), and ADR-0064/0065/0066 for the three
 decisions that would otherwise be surprising to a future reader. This spec
 doesn't restate either — it covers the concrete implementation.
 
@@ -37,7 +37,7 @@ doesn't restate either — it covers the concrete implementation.
 - **Backfilling frontmatter onto summaries written before this change.**
   They simply have none; readers treat absence as "unknown."
 - **A database-level authorization boundary on `search_threads`.** See
-  ADR-0063.
+  ADR-0066.
 
 ## 1. Workspace Chat Summary frontmatter
 
@@ -101,7 +101,7 @@ Behavior:
 
 - Resolve the caller's own thread id from `config.configurable.thread_id`.
   If `threadId === ` that value, return a short refusal: use
-  `search_conversation` for your own thread instead. (ADR-0063 covers why
+  `search_conversation` for your own thread instead. (ADR-0066 covers why
   this is the only guard — there is no ownership check beyond it.)
 - Load `threadId`'s messages via `getThreadStore().getThreadMessages
   (threadId)` — no restriction on `ThreadType` or `archivedAt`; any

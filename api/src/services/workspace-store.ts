@@ -370,9 +370,13 @@ export interface PatchTaskInput {
 export type TriggerSource = 'manual' | 'webhook' | 'schedule' | 'catch_up' | 'chat' | 'agent';
 
 // Why a 'failed' Run failed — distinguishes an Exhausted Run (hit a hard
-// resource limit) from any other failure. See ADR-0056, GLOSSARY.md §
-// Exhausted Run.
-export type FailureReason = 'out_of_steps' | 'turn_overflow' | 'other';
+// resource limit) from a Loop-Guard Exhaustion (a Sub-Agent Task's Run ran
+// out its Delivery Nudge's grace window) from any other failure. See
+// ADR-0056, ADR-0062, GLOSSARY.md § Exhausted Run, § Loop-Guard Exhaustion.
+// 'loop_guard_exhausted' deliberately never appears in exhaustionStreaks()'s
+// query below — a Sub-Agent Task never participates in the Exhaustion
+// Streak/Cap/Narrowed-Retry machinery (ADR-0055/0056).
+export type FailureReason = 'out_of_steps' | 'turn_overflow' | 'other' | 'loop_guard_exhausted';
 
 // Which of the two things produced a 'handed_off' Run. See ADR-0056,
 // GLOSSARY.md § Hand-Off Cause.

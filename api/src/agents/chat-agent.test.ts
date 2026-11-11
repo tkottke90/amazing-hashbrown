@@ -13,6 +13,7 @@ import {
   STATIC_CHAT_TOOLS,
   WAKEUP_TOOLS,
   buildSubAgentToolCandidates,
+  buildSubAgentMiddleware,
   buildWorkspaceScopedTools,
   buildTaskVisibilityTools,
   buildFileConflictTools,
@@ -109,6 +110,29 @@ describe('agents/chat-agent', () => {
       const task = { id: 'task-1', workspaceId: undefined } as Task;
       const candidates = buildSubAgentToolCandidates(task, undefined, []);
       expect(candidates.map((t) => t.name)).to.include('get_tool_key');
+    });
+  });
+
+  describe('buildSubAgentMiddleware (issue #411, ADR-0063) [unit]', () => {
+    // Direct, live-provider-free proof that a Sub-Agent Task's Run never
+    // triggers AfterAgent — buildSubAgentAgent() itself has no
+    // injectable-provider seam (see its own header comment), so this
+    // middleware-array construction is extracted specifically to make this
+    // assertable without constructing a real agent.
+    it('does not include AfterAgentMiddleware', () => {
+      const middleware = buildSubAgentMiddleware({ recursionLimit: 25, hasDelivered: () => false });
+      expect(middleware.map((m) => m.name)).to.not.include('AfterAgentMiddleware');
+    });
+
+    it('still includes every other middleware a sub-agent run needs', () => {
+      const middleware = buildSubAgentMiddleware({ recursionLimit: 25, hasDelivered: () => false });
+      expect(middleware.map((m) => m.name)).to.include.members([
+        'ContentBlockSanitizerMiddleware',
+        'RecursionGuardMiddleware',
+        'ContextWindowMiddleware',
+        'ToolAccessMiddleware',
+        'AmbientContextMiddleware',
+      ]);
     });
   });
 

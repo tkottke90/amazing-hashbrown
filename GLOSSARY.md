@@ -364,6 +364,10 @@ _Avoid_: Budget failure, context overflow (see Turn Overflow — too generic on 
 A Run that ends with neither `complete_task`, `hand_off_task`, nor an `ask_user` interrupt, and didn't hit a hard resource limit either (see Exhausted Run) — the agent simply stopped producing further action for no detected reason. Persisted as `task_queue.status: 'failed'` with `failure_reason: 'other'`, the same status as a genuinely broken/crashed Run or an Exhausted Run; the only further distinguishing record is whatever plain text the agent's last message actually contained, preserved as the Run's summary instead of being discarded (see ADR-0054, ADR-0056).
 _Avoid_: Stall, timeout, dead run
 
+**Loop-Guard Exhaustion**:
+A Sub-Agent Task's Run ending because a Delivery Nudge's one-time grace window closed with nothing delivered (see the Loop Guard section, ADR-0062) — `failure_reason: 'loop_guard_exhausted'`. Distinct from a Stalled Run (that one has no detected reason; this one does) and from an Exhausted Run (that's `GraphRecursionError`/`ContextBudgetExceededError` on a board Task; this is the loop guard's own, earlier check-in, and only ever happens on a Sub-Agent Task's `escalationMode: 'throw'` Run). Never produced for a board Task.
+_Avoid_: Sub-agent timeout, stuck sub-agent, loop-guard failure
+
 **Scope Snapshot**:
 An Exhausted Run's own copy of its Task's title and description, captured at that Run's kickoff. The next attempt's title/description is compared against it (exact, whitespace-normalized match) to decide whether that attempt still has unchanged scope — the test behind both the Exhaustion Streak and the Exhaustion Cap's drag-to-queue rejection (see ADR-0056).
 _Avoid_: Task snapshot, retry snapshot
@@ -383,6 +387,36 @@ _Avoid_: Scoped retry, smart retry, condensed retry
 **Hand-Off Guidance**:
 A free-text field in the Task Drawer, offered on any Handed-Off Run's Task regardless of Hand-Off Cause — the standard way a human responds to a hand-off. On save, a one-shot LLM call folds the guidance together with the Hand-Off Note into a rewritten title/description, through the Task's existing title/description save path; a failed rewrite surfaces an error rather than falling back to raw text, and a successful one does not itself re-enqueue the Task (see ADR-0057).
 _Avoid_: Handoff response, resolution notes, override field
+
+# Loop Guard
+
+How a Run's own `beforeModel` check-in catches a model that's stuck — repeating itself, or churning tool calls with nothing to show for it — before it burns through its step budget, and how a Sub-Agent Task's Run gets exactly one chance to wrap up before its parent is told it found nothing.
+
+## Language
+
+**Stagnation Streak**:
+Counting backward from the most recently called tool, the number of consecutive `ToolMessage`s that share its name and its (timestamp-normalized) output — skipping over, not stopping at, a different tool's call in between, so an alternating A/B/A/B shape where each one keeps repeating its own output is still caught.
+_Avoid_: Repeat count, loop count
+
+**Raw Streak**:
+The number of consecutive tool-call turns — any tools, any outputs, no repeats required — immediately preceding the current model call, with no plain-text reply breaking the chain. Catches a model that stays busy without ever repeating itself or pausing to explain, a shape Stagnation Streak alone can't see.
+_Avoid_: Tool-call streak, busy streak
+
+**Stagnation Nudge**:
+A free check-in — no extra LLM call — fired exactly once, the first time a Stagnation Streak reaches its nudge threshold: an injected message states what's been repeated and asks the model to either try something clearly different or conclude. Distinct from a Delivery Nudge, which asks for an ending rather than a different approach.
+_Avoid_: Loop warning, repeat warning
+
+**Reflection**:
+The point past a Stagnation Nudge, or past a long enough Raw Streak, where the loop guard spends one extra LLM call asking a model to judge whether the Run is still Converging, rather than trusting another raw count.
+_Avoid_: Judge call, progress check
+
+**Converging**:
+Reflection's own verdict that the Run is still making real progress despite looking stuck by Stagnation Streak/Raw Streak's raw counts alone — guidance is injected and the Run continues uninterrupted. The opposite verdict escalates instead (an interrupt on a board Task's Run, a Delivery Nudge or Loop-Guard Exhaustion on a Sub-Agent Task's).
+_Avoid_: Making progress, on track
+
+**Delivery Nudge**:
+A one-time injected directive — fired the first time any loop-guard trigger (step-count check-in, Reflection's non-Converging verdict) would otherwise end a Sub-Agent Task's Run outright — telling it to stop investigating and call `complete_task` with whatever it has confirmed, since there is no further grace after this. If the same trigger fires again with nothing delivered, the Run ends as a Loop-Guard Exhaustion (GLOSSARY.md § Task Runs, ADR-0062).
+_Avoid_: Final warning, last chance, wrap-up nudge
 
 # MCP Tooling
 
@@ -451,7 +485,7 @@ How `spawn_sub_agent` creates and reports on delegated work, and why a Sub-Agent
 ## Language
 
 **Sub-Agent Task**:
-A Task created by `spawn_sub_agent` — identified not by `origin: 'agent'` alone (another mechanism, the after-agent pipeline's Placement Review Task, also sets that for provenance/tracking and is meant to surface to a human like any other Task) but by `origin: 'agent'` together with a non-null `parentThreadId`/`dispatchGroupId`/`role`, which only a real dispatch ever sets. Executed through the same Task Run machinery as any other Task but structurally unable to reach a human — `ask_user`, `hand_off_task`, and `complete_task` are absent from its Run's tool list by default, same as `spawn_sub_agent` itself — so it is always dispatched and reported on strictly agent-to-agent, like an assignment to an intern who reports back to the agent that sent it, never to the user directly. Never appears on the Task board/drawer and never gets a Task File.
+A Task created by `spawn_sub_agent` — identified not by `origin: 'agent'` alone (another mechanism, the after-agent pipeline's Placement Review Task, also sets that for provenance/tracking and is meant to surface to a human like any other Task) but by `origin: 'agent'` together with a non-null `parentThreadId`/`dispatchGroupId`/`role`, which only a real dispatch ever sets. Executed through the same Task Run machinery as any other Task but structurally unable to reach a human — `ask_user` and `hand_off_task` are absent from its Run's tool list by default, same as `spawn_sub_agent` itself — so it is always dispatched and reported on strictly agent-to-agent, like an assignment to an intern who reports back to the agent that sent it, never to the user directly. `complete_task`, by contrast, is always present: a Sub-Agent Task has no other way to end itself and report a structured outcome back to its dispatching turn. Never appears on the Task board/drawer, never gets a Task File, and never triggers the AfterAgent pipeline (see ADR-0063) — its own system prompt already tells it to call the wiki write tools directly when it finds something worth keeping.
 _Avoid_: Sub-agent thread, delegated task, background task, any origin: 'agent' Task (too broad — see above)
 
 **Dispatch**:
