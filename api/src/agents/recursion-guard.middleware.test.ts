@@ -83,10 +83,10 @@ async function callBeforeModel(guard: any, state: { messages: any[] }): Promise<
 // Nudge HumanMessage tagged for `reason`, followed by `aiCount` more
 // AIMessages — the state a run would be in the call after its first
 // Delivery Nudge, for whichever `aiCount` the test wants to probe.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function makeDeliveryNudgedState(
   aiCount: number,
   reason: 'step_limit' | 'stagnation' | 'streak',
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): { messages: any[] } {
   return {
     messages: [
@@ -106,12 +106,12 @@ function makeDeliveryNudgedState(
 // as a genuine window boundary for computeStagnationStreak (unlike the
 // older Stagnation Nudge), so the streak has to rebuild fully after it
 // before Reflection can fire a second time. See GLOSSARY.md § Loop Guard.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function makeNudgedThenStagnantState(
   toolName: string,
   output: string,
   reason: 'stagnation' | 'streak',
   postNudgeCount: number,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): { messages: any[] } {
   const messages: unknown[] = [
     new HumanMessage('start'),
@@ -132,10 +132,10 @@ function makeNudgedThenStagnantState(
 // Same "already nudged once" shape as above, but for the raw-streak path:
 // `postNudgeCount` consecutive tool calls, each a different tool with a
 // different output, after the Delivery Nudge.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function makeNudgedThenVariedStreakState(
   reason: 'stagnation' | 'streak',
   postNudgeCount: number,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): { messages: any[] } {
   const messages: unknown[] = [
     new HumanMessage('start'),
@@ -223,20 +223,17 @@ describe('agents/recursion-guard.middleware', () => {
       expect(Math.floor(10 * 0.1)).to.equal(1);
     });
 
-    it('step-count exhaustion throws StagnationLimitError (reason: step_limit) in throw mode', async () => {
+    it('step-count exhaustion in throw mode injects a Delivery Nudge first, not an immediate throw (issue #411, ADR-0062)', async () => {
       const guard = createRecursionGuardMiddleware({
         recursionLimit: 10,
         warnThreshold: 0.5, // threshold = 5
         escalationMode: 'throw',
       });
-      let caught: unknown;
-      try {
-        await callBeforeModel(guard, makeState(5));
-      } catch (err) {
-        caught = err;
-      }
-      expect(caught).to.be.instanceOf(StagnationLimitError);
-      expect((caught as StagnationLimitError).reason).to.equal('step_limit');
+      const result = (await callBeforeModel(guard, makeState(5))) as
+        { messages: HumanMessage[] } | undefined;
+      expect(result, 'the first crossing should nudge, not throw').to.not.equal(undefined);
+      expect(result!.messages[0].additional_kwargs?.loopGuardKind).to.equal('delivery-nudge');
+      expect(result!.messages[0].additional_kwargs?.deliveryNudgeReason).to.equal('step_limit');
     });
 
     it("loopGuard omitted entirely reproduces today's step-count-only behavior (no crash on a non-threshold step)", async () => {
@@ -375,8 +372,7 @@ describe('agents/recursion-guard.middleware', () => {
         new ToolMessage({ content: 'clean', name: 'git_status', tool_call_id: 'call_extra' }),
       );
       const result = (await callBeforeModel(guard, state)) as
-        | { messages: HumanMessage[] }
-        | undefined;
+        { messages: HumanMessage[] } | undefined;
       expect(result).to.not.equal(undefined);
       expect(result!.messages).to.have.lengthOf(1);
       expect(result!.messages[0]).to.be.instanceOf(HumanMessage);
@@ -470,8 +466,7 @@ describe('agents/recursion-guard.middleware', () => {
         new ToolMessage({ content: 'clean', name: 'git_status', tool_call_id: 'call_extra_1' }),
       );
       const firstResult = (await callBeforeModel(guard, state)) as
-        | { messages: HumanMessage[] }
-        | undefined;
+        { messages: HumanMessage[] } | undefined;
       expect(firstResult, 'git_status should trip the nudge here').to.not.equal(undefined);
 
       // A call to a brand-new third tool: its own count is 1 (anchoring to
@@ -507,8 +502,7 @@ describe('agents/recursion-guard.middleware', () => {
         }),
       );
       const thirdResult = (await callBeforeModel(guard, state)) as
-        | { messages: HumanMessage[] }
-        | undefined;
+        { messages: HumanMessage[] } | undefined;
       expect(thirdResult, 'wiki_locate should trip its own nudge now').to.not.equal(undefined);
       const content = String(thirdResult!.messages[0].content);
       expect(content).to.include('wiki_locate');
@@ -684,7 +678,7 @@ describe('agents/recursion-guard.middleware', () => {
       expect(threw, 'a non-converging reflection should escalate via interrupt()').to.equal(true);
     });
 
-    it('escalates by throwing StagnationLimitError when the stub reports converging: false (throw mode)', async () => {
+    it('injects a Delivery Nudge first, not an immediate throw, when the stub reports converging: false (throw mode, issue #411, ADR-0062)', async () => {
       const stub = async () => ({ converging: false, summary: 'not converging, stuck' });
       const guard = createRecursionGuardMiddleware({
         recursionLimit: 1000,
@@ -693,15 +687,15 @@ describe('agents/recursion-guard.middleware', () => {
         escalationMode: 'throw',
         evaluateLoopProgress: stub,
       });
-      let caught: unknown;
-      try {
-        await callBeforeModel(guard, makeStagnantState('shell_exec', 'same output', 5));
-      } catch (err) {
-        caught = err;
-      }
-      expect(caught).to.be.instanceOf(StagnationLimitError);
-      expect((caught as StagnationLimitError).reason).to.equal('stagnation');
-      expect((caught as StagnationLimitError).summary).to.equal('not converging, stuck');
+      const result = (await callBeforeModel(
+        guard,
+        makeStagnantState('shell_exec', 'same output', 5),
+      )) as { messages: HumanMessage[] } | undefined;
+      expect(result, 'the first non-converging verdict should nudge, not throw').to.not.equal(
+        undefined,
+      );
+      expect(result!.messages[0].additional_kwargs?.loopGuardKind).to.equal('delivery-nudge');
+      expect(result!.messages[0].additional_kwargs?.deliveryNudgeReason).to.equal('stagnation');
     });
   });
 
@@ -757,8 +751,7 @@ describe('agents/recursion-guard.middleware', () => {
           escalationMode: 'throw',
         });
         const result = (await callBeforeModel(guard, makeState(18))) as
-          | { messages: HumanMessage[] }
-          | undefined;
+          { messages: HumanMessage[] } | undefined;
         expect(result).to.not.equal(undefined);
         expect(result!.messages).to.have.lengthOf(1);
         expect(result!.messages[0]).to.be.instanceOf(HumanMessage);
@@ -945,8 +938,7 @@ describe('agents/recursion-guard.middleware', () => {
           evaluateLoopProgress: stub,
         });
         const result = (await callBeforeModel(guard, makeVariedStreakState(10))) as
-          | { messages: HumanMessage[] }
-          | undefined;
+          { messages: HumanMessage[] } | undefined;
         expect(result).to.not.equal(undefined);
         expect(result!.messages[0].additional_kwargs?.deliveryNudgeReason).to.equal('streak');
       });
