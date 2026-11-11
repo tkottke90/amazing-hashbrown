@@ -1119,7 +1119,12 @@ export async function buildSubAgentAgent(
   const candidatePool = buildSubAgentToolCandidates(task, workspaceScope, mcpTools);
   const allowedBoundNames = toBoundMatchKeys(getSubAgentToolIds());
   const excludedMcpBoundNames = toBoundMatchKeys(getExplicitlySubAgentExcludedIds());
-  const tools = resolveSubAgentTools(candidatePool, mcpTools, allowedBoundNames, excludedMcpBoundNames);
+  const tools = resolveSubAgentTools(
+    candidatePool,
+    mcpTools,
+    allowedBoundNames,
+    excludedMcpBoundNames,
+  );
 
   // Backs the recursion guard's hasDelivered check (see
   // recursion-guard.middleware.ts, ADR-0062) — set the moment complete_task

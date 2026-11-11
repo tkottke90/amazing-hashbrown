@@ -163,7 +163,12 @@ describe('agents/chat-agent', () => {
     });
 
     it('includes a built-in tool present in allowedBoundNames', () => {
-      const tools = resolveSubAgentTools(candidatePool, mcpTools, new Set(['web_fetch']), new Set());
+      const tools = resolveSubAgentTools(
+        candidatePool,
+        mcpTools,
+        new Set(['web_fetch']),
+        new Set(),
+      );
       expect(tools.map((t) => t.name)).to.include('web_fetch');
     });
 

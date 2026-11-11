@@ -15,7 +15,9 @@ const SearchMcpToolsInputSchema = z.object({
 // search-skills.tool.ts's makeSearchSkillsTool does — the live MCP catalog and
 // its enabled/disabled state can change between calls. See GLOSSARY.md §
 // MCP Tool Discovery, ADR-0067.
-export function makeSearchMcpToolsTool(getCatalog: () => DiscoverableMcpTool[] = listDiscoverableMcpTools) {
+export function makeSearchMcpToolsTool(
+  getCatalog: () => DiscoverableMcpTool[] = listDiscoverableMcpTools,
+) {
   return tool(
     async ({ keyword }) => {
       const needle = keyword?.toLowerCase();
@@ -27,7 +29,9 @@ export function makeSearchMcpToolsTool(getCatalog: () => DiscoverableMcpTool[] =
           t.description.toLowerCase().includes(needle),
       );
       if (results.length === 0) {
-        return keyword ? `No MCP tools found matching "${keyword}".` : 'No MCP tools are available.';
+        return keyword
+          ? `No MCP tools found matching "${keyword}".`
+          : 'No MCP tools are available.';
       }
       return JSON.stringify(results);
     },

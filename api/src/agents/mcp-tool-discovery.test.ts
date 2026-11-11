@@ -68,7 +68,11 @@ describe('agents/mcp-tool-discovery', () => {
       const messages = [
         new HumanMessage('try a couple'),
         useMcpToolsCall('c1', ['n8n:workflow_search', 'not_a_real_tool']),
-        useMcpToolsResult('c1', ['n8n:workflow_search'], [{ toolId: 'not_a_real_tool', reason: 'not_found' }]),
+        useMcpToolsResult(
+          'c1',
+          ['n8n:workflow_search'],
+          [{ toolId: 'not_a_real_tool', reason: 'not_found' }],
+        ),
       ];
       expect(computeDiscoveredToolIds(messages)).to.deep.equal(new Set(['n8n:workflow_search']));
     });
