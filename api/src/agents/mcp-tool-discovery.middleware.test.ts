@@ -151,9 +151,10 @@ describe('agents/mcp-tool-discovery.middleware', () => {
         return undefined as any;
       };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (toolAccess as any).wrapModelCall(request, (reqAfterToolAccess: any) =>
-        (discovery as any).wrapModelCall(reqAfterToolAccess, finalHandler),
-      );
+      await (toolAccess as any).wrapModelCall(request, (reqAfterToolAccess: any) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return (discovery as any).wrapModelCall(reqAfterToolAccess, finalHandler);
+      });
       return seenTools;
     }
 
