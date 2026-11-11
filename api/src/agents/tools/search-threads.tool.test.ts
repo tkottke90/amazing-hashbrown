@@ -98,7 +98,9 @@ describe('agents/tools/search-threads', () => {
       { threadId: 'other-thread', start: 100, end: 200 },
       invokeConfig('calling-thread'),
     );
-    expect(String(result)).to.equal('No messages found in thread "other-thread" in that seq range.');
+    expect(String(result)).to.equal(
+      'No messages found in thread "other-thread" in that seq range.',
+    );
   });
 
   it('ranks messages by a lookup query within the thread/range', async () => {

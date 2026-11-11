@@ -10,9 +10,9 @@ const SearchThreadsSchema = z.object({
     .string()
     .describe(
       "The id of a thread you already know about — e.g. from a Workspace Chat Summary's own " +
-        "frontmatter (its threadId, or a supersededBy pointing at a successor thread), or from " +
+        'frontmatter (its threadId, or a supersededBy pointing at a successor thread), or from ' +
         "a sub-agent completion notification's Thread: line. Never guess an id, and never use " +
-        'this tool to search for one you don\'t already have — there is no discovery mode.',
+        "this tool to search for one you don't already have — there is no discovery mode.",
     ),
   lookup: z
     .string()
@@ -25,12 +25,12 @@ const SearchThreadsSchema = z.object({
     .number()
     .int()
     .optional()
-    .describe('First seq (inclusive) to include — e.g. a summary\'s covers_from_seq.'),
+    .describe("First seq (inclusive) to include — e.g. a summary's covers_from_seq."),
   end: z
     .number()
     .int()
     .optional()
-    .describe('Last seq (inclusive) to include — e.g. a summary\'s covers_to_seq.'),
+    .describe("Last seq (inclusive) to include — e.g. a summary's covers_to_seq."),
 });
 
 // Comfortably larger than any real workspace-chat thread's un-summarized
@@ -125,7 +125,7 @@ export const searchThreadsTool = tool(
       "e.g. a past Workspace Chat thread named in a summary's frontmatter, or a sub-agent run " +
       "you dispatched. Not a discovery tool: if you don't already have the threadId, do not use " +
       "this. Never call it with your own current thread's id — use search_conversation for that. " +
-      'Pass `start`/`end` (raw seq numbers, e.g. from a summary\'s covers_from_seq/covers_to_seq) ' +
+      "Pass `start`/`end` (raw seq numbers, e.g. from a summary's covers_from_seq/covers_to_seq) " +
       'to read a specific range, `lookup` to rank matches within that thread/range by relevance, ' +
       'or neither for the most recent messages in that thread.',
     schema: SearchThreadsSchema,

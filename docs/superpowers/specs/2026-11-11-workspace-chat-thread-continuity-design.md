@@ -51,20 +51,20 @@ Task Files, wiki pages, and skill artifacts) ahead of that body:
 threadId: <workspace.threadId>
 covers_from_seq: <seq of the first row in `conversational`>
 covers_to_seq: <seq of the last row in `conversational`>
-supersededBy: <newThreadId>   # only present when this is a Replace Thread's final summary
+supersededBy: <newThreadId> # only present when this is a Replace Thread's final summary
 ---
 ```
 
 - `covers_from_seq`/`covers_to_seq` are `thread_messages.seq` values (raw,
   monotonic, per-thread — not a Turn count), read directly off the
   `conversational` array the function already builds (the `kind:'user'|
-  'assistant'` rows filtered from `sinceLast`). No new query is needed —
+'assistant'` rows filtered from `sinceLast`). No new query is needed —
   `conversational[0].seq` and `conversational[conversational.length -
-  1].seq`.
+1].seq`.
 - `threadId` is `workspace.threadId` at the moment of the call.
 - `supersededBy` is new: `maybeSummarizeWorkspace` gains an optional
   parameter, `{ force, supersededBy }: { force?: boolean; supersededBy?:
-  string }`, written into frontmatter only when present. No other behavior
+string }`, written into frontmatter only when present. No other behavior
   changes based on it.
 - No database schema changes. All four fields live only in the markdown
   file's frontmatter — `workspaces`/`threads` gain no new columns for this
@@ -84,16 +84,29 @@ New file: `api/src/agents/tools/search-threads.tool.ts`, modeled on
 
 ```ts
 const SearchThreadsSchema = z.object({
-  threadId: z.string().describe(
-    'The id of a thread you already know about — e.g. from a Workspace Chat Summary\'s ' +
-    'frontmatter, or from a sub-agent completion notification. Never guess or search for an id.'
-  ),
-  lookup: z.string().optional().describe(
-    'Free-text query to rank matches within the target thread (and within start/end if given). ' +
-    'Omit to get a plain range instead of a ranked search.'
-  ),
-  start: z.number().int().optional().describe('First seq (inclusive) to include, e.g. from covers_from_seq.'),
-  end: z.number().int().optional().describe('Last seq (inclusive) to include, e.g. from covers_to_seq.'),
+  threadId: z
+    .string()
+    .describe(
+      "The id of a thread you already know about — e.g. from a Workspace Chat Summary's " +
+        'frontmatter, or from a sub-agent completion notification. Never guess or search for an id.',
+    ),
+  lookup: z
+    .string()
+    .optional()
+    .describe(
+      'Free-text query to rank matches within the target thread (and within start/end if given). ' +
+        'Omit to get a plain range instead of a ranked search.',
+    ),
+  start: z
+    .number()
+    .int()
+    .optional()
+    .describe('First seq (inclusive) to include, e.g. from covers_from_seq.'),
+  end: z
+    .number()
+    .int()
+    .optional()
+    .describe('Last seq (inclusive) to include, e.g. from covers_to_seq.'),
 });
 ```
 
@@ -104,7 +117,7 @@ Behavior:
   `search_conversation` for your own thread instead. (ADR-0066 covers why
   this is the only guard — there is no ownership check beyond it.)
 - Load `threadId`'s messages via `getThreadStore().getThreadMessages
-  (threadId)` — no restriction on `ThreadType` or `archivedAt`; any
+(threadId)` — no restriction on `ThreadType` or `archivedAt`; any
   existing thread (chat, workspace-chat, wiki, task; active or archived)
   is readable this way, consistent with how an Archived Thread already
   stays readable everywhere except its write-ish routes (GLOSSARY's
@@ -148,8 +161,8 @@ model. Two fixes, both small:
   `{role:'human', content: message}` — the structured `sub_agent_marker`
   row already threaded through `runThreadId` is bookkeeping for the UI,
   not something replayed into the model's context. Add a line when
-  `runThreadId` is present, e.g. `` Thread: `{runThreadId}` (use
-  search_threads to look into it) ``.
+  `runThreadId` is present, e.g. ``Thread: `{runThreadId}` (use
+search_threads to look into it)``.
 - `spawn_sub_agent`'s own dispatch return payload is **not** changed — at
   dispatch time no run/thread exists yet (`task_queue.thread_id` is minted
   on the run's first start, per `api/AGENTS.md`), so there is nothing to
@@ -169,7 +182,7 @@ Server-side sequence, as one handler:
    thread, so the successor thread materializes normally once the user
    sends into it.
 2. Call `maybeSummarizeWorkspace(..., { force: true, supersededBy:
-   newThreadId })` against the *current* `workspace.threadId`. This is the
+newThreadId })` against the _current_ `workspace.threadId`. This is the
    one and only write of the final summary — no follow-up edit of the
    markdown file to inject `supersededBy` after the fact.
 3. Archive the old thread (`store.archiveThread(oldThreadId)`), and rename
@@ -181,7 +194,7 @@ Server-side sequence, as one handler:
    own atomic step, since an Archived Thread can never run the turn a
    wake-up would resume).
 5. `store.patchWorkspace(workspace.id, { threadId: newThreadId,
-   lastSummarizedMessageId: null })`. `summaryPath` is **not** touched —
+lastSummarizedMessageId: null })`. `summaryPath` is **not** touched —
    it keeps pointing at the just-written final summary, which is exactly
    what the new thread's `buildWorkspaceContext` picks up as its "latest
    summary" on its very first turn (summaries already live per-workspace
@@ -219,6 +232,6 @@ PR, following the existing adjacent-file convention:
   and the partial-failure/rollback case.
 - Per `AGENTS.md`'s Evaluation-Driven Development rules: `search_threads`
   is LLM-facing tool-call behavior, so a `tool-call`-type eval scenario
-  (confirming the model calls it with a known threadId, and does *not*
+  (confirming the model calls it with a known threadId, and does _not_
   call it on its own thread) belongs in `suites/` before this ships,
   written first per rule 1.

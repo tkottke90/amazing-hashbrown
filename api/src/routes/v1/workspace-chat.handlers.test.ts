@@ -5,8 +5,16 @@ import { describe, it, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { bootThreadStore, getThreadStore } from '../../services/thread-store.js';
-import { bootWorkspaceStore, getWorkspaceStore, type Workspace } from '../../services/workspace-store.js';
-import { bootWakeupStore, getWakeupStore, type WakeupCancelSource } from '../../services/wakeup-store.js';
+import {
+  bootWorkspaceStore,
+  getWorkspaceStore,
+  type Workspace,
+} from '../../services/workspace-store.js';
+import {
+  bootWakeupStore,
+  getWakeupStore,
+  type WakeupCancelSource,
+} from '../../services/wakeup-store.js';
 import { replaceThreadHandler, type WakeupCanceler } from './workspace-chat.handlers.js';
 
 function fakeRegistry(impl?: (id: string, by: WakeupCancelSource) => void): {
