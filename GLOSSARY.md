@@ -565,3 +565,17 @@ _Avoid_: Successor field, replacement pointer
 **Replace Thread**:
 The compound action that retires a workspace's current chat thread in favor of a fresh one: force-generate a final Workspace Chat Summary (carrying a Supersession Reference to the new thread), Archive the old thread (its title suffixed `(replaced)`), mint a blank successor thread with no checkpoint copied from the old one, and repoint the workspace's `threadId` to it. Triggered only from a dedicated UI button next to the existing on-demand "Summarise" button — never something an agent invokes on itself. Distinct from the existing thread Fork feature, which copies checkpoint history forward into the new thread; Replace Thread deliberately does not — continuity is carried only through the Workspace Chat Summary (see ADR-0064).
 _Avoid_: New thread, start fresh, fork
+
+# MCP Tool Discovery
+
+How the agent finds and pulls in an MCP tool that isn't part of a Turn's default bound-tool set, instead of every connected MCP server's full tool catalog being sent to the model on every call.
+
+## Language
+
+**MCP Tool Discovery**:
+The two-tool mechanism — a search tool returning keyword matches (display id, name, description only, no schema) and a selection tool that grants specific matches real binding — that lets the model find and pull in an MCP tool outside the thread's default bound-tool set, without that MCP server's full catalog ever being sent to the model. Model-driven and ad hoc, unlike Skill-Gated Tools, which hides a tool behind one specific named skill invocation rather than a keyword search.
+_Avoid_: Tool search, on-demand tools, tool catalog search
+
+**Discovered Tool**:
+An MCP tool granted into the bound-tool set for the remainder of the current Turn after being explicitly selected from an MCP Tool Discovery search result. Distinct from a tool bound via Tool Access (global defaults or a thread's own customization), which persists across Turns — a Discovered Tool's grant does not survive past the Turn it was selected in, even if the same tool is needed again next Turn.
+_Avoid_: Pulled-in tool, activated tool, bound tool (ambiguous with Bound Name)
