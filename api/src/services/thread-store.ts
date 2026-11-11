@@ -362,6 +362,20 @@ export class ThreadStore extends BaseStore {
     return this.getThreadMeta(id);
   }
 
+  // Runs fn inside one SQLite transaction on the shared connection, so
+  // handler-layer code that must write atomically across stores (e.g.
+  // Replace Thread: archive+rename here, patchWorkspace on WorkspaceStore)
+  // can compose their already-public methods without reaching into another
+  // store's own `db` (protected on the shared BaseStore) or a cross-package
+  // change — safe because every store sharing this file's connection goes
+  // through the same `this.db` (see the migration-numbering comment above:
+  // "Version numbers must be unique across ALL stores sharing this
+  // database"). `fn` must be synchronous — better-sqlite3 transactions
+  // cannot wrap async work.
+  runInTransaction<T>(fn: () => T): T {
+    return this.db.transaction(fn)();
+  }
+
   // Deletes the threads row and all of its thread_messages rows. Does NOT
   // touch the LangGraph checkpointer — the handler layer composes that call
   // separately, since ThreadStore has no knowledge of LangGraph.

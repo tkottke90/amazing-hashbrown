@@ -1,0 +1,3 @@
+# Replace Thread lineage lives in summary frontmatter, not threads.forked_from_thread_id
+
+`threads.forked_from_thread_id`/`forked_from_seq` already mean one specific thing: a checkpoint-copying Fork. Populating them for a Replace Thread successor — which, per ADR-0064, copies no checkpoint — would make those columns lie to anything that reads them expecting real Fork lineage. Replace Thread's predecessor/successor relationship is instead carried entirely by the Workspace Chat Summary's own frontmatter (`threadId` naming the thread it summarizes, a Supersession Reference naming its successor on the terminal summary) — a separate, file-based mechanism that never touches the Fork columns.

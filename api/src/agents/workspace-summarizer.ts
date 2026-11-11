@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import matter from 'gray-matter';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { SseWriter } from './active-sse-writer.js';
 import { env } from '../config/env.js';
@@ -47,7 +48,7 @@ export async function maybeSummarizeWorkspace(
   model: BaseChatModel,
   provider: string | undefined,
   modelName: string | undefined,
-  { force = false }: { force?: boolean } = {},
+  { force = false, supersededBy }: { force?: boolean; supersededBy?: string } = {},
 ): Promise<void> {
   const enabled = env.chat.workspaceSummary?.enabled ?? true;
   if (!enabled || !workspace.threadId) return;
@@ -110,7 +111,21 @@ export async function maybeSummarizeWorkspace(
       `${timestamp.replace(/[:.]/g, '-')}.md`,
     );
     await mkdir(path.join(workspace.location, '.hashbrown', 'summaries'), { recursive: true });
-    await writeFile(path.join(workspace.location, summaryRelPath), content, 'utf8');
+
+    // Frontmatter makes the file self-describing: which thread it
+    // summarizes and exactly which raw thread_messages.seq range it
+    // covers (see GLOSSARY.md "Workspace Chat Continuity Across
+    // Threads"). `supersededBy` is set only for the one, final summary a
+    // Replace Thread forces before archiving this thread (ADR-0065) —
+    // absent on every ordinary automatic or on-demand summary.
+    const frontmatter: Record<string, unknown> = {
+      threadId: workspace.threadId,
+      covers_from_seq: conversational[0]!.seq,
+      covers_to_seq: conversational[conversational.length - 1]!.seq,
+      ...(supersededBy ? { supersededBy } : {}),
+    };
+    const fileContent = matter.stringify(content, frontmatter);
+    await writeFile(path.join(workspace.location, summaryRelPath), fileContent, 'utf8');
 
     // The summary message becomes the new cursor itself (not the last
     // original message it summarized) — so the "hide messages at/before the

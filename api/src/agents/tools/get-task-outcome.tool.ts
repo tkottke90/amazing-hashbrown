@@ -16,7 +16,8 @@ const GetTaskOutcomeSchema = z.object({
 const MAX_PAST_RUNS_SHOWN = 10;
 
 function describeRun(run: TaskRun): string {
-  return `#${run.runNumber} ${run.id} (${run.status}, via ${run.triggerSource})`;
+  const threadNote = run.threadId ? `, thread ${run.threadId}` : '';
+  return `#${run.runNumber} ${run.id} (${run.status}, via ${run.triggerSource}${threadNote})`;
 }
 
 // get_task_outcome / read_workspace_task_run take only an exact taskId,

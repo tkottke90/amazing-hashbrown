@@ -1,5 +1,5 @@
 import { signal } from '@preact/signals';
-import { render, screen, fireEvent } from '@testing-library/preact';
+import { render, screen, fireEvent, waitFor } from '@testing-library/preact';
 
 import type { ThreadInstance } from '@/hooks/use-thread';
 
@@ -17,10 +17,11 @@ jest.mock('@/hooks/use-providers', () => ({
 jest.mock('@/hooks/use-workspaces', () => ({
   patchWorkspace: jest.fn().mockResolvedValue(undefined),
   refreshWorkspaces: jest.fn().mockResolvedValue(undefined),
+  applyThreadReplacement: jest.fn(),
 }));
 
 import { WorkspaceChatTab } from '@/pages/workspaces/workspace-chat-tab';
-import { patchWorkspace } from '@/hooks/use-workspaces';
+import { patchWorkspace, applyThreadReplacement } from '@/hooks/use-workspaces';
 import type { Workspace } from '@/services/workspaces-api';
 
 // jsdom has no `onpointerdown` IDL property — mirrors chat-input.test.tsx's
@@ -144,5 +145,79 @@ describe('WorkspaceChatTab', () => {
     fireEvent.click(sendButton);
     expect(thread.sendMessage).toHaveBeenCalledWith('hello workspace', [], []);
     expect(textarea.value).toBe('');
+  });
+
+  describe('Replace Thread', () => {
+    const originalFetch = global.fetch;
+
+    beforeEach(() => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ threadId: 'new-thread-99', archivedThreadId: 'thread-1' }),
+      }) as unknown as typeof fetch;
+    });
+
+    afterEach(() => {
+      global.fetch = originalFetch;
+      jest.clearAllMocks();
+      mockUseThreadInstance.mockReturnValue(stubThreadInstance());
+    });
+
+    it('shows a confirm/cancel pair instead of posting immediately on first click [unit]', () => {
+      render(<WorkspaceChatTab workspace={baseWorkspace()} />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Replace Thread' }));
+
+      expect(screen.getByText('Replace this thread?')).toBeInTheDocument();
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('cancelling returns to the plain button row without ever calling fetch [unit]', () => {
+      render(<WorkspaceChatTab workspace={baseWorkspace()} />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Replace Thread' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      expect(screen.queryByText('Replace this thread?')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Replace Thread' })).toBeInTheDocument();
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('confirming posts to the replace endpoint and merges the new threadId in [unit]', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ threadId: 'new-thread-99', archivedThreadId: 'thread-1' }),
+      }) as unknown as typeof fetch;
+
+      render(<WorkspaceChatTab workspace={baseWorkspace()} />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Replace Thread' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Replace' }));
+
+      await waitFor(() =>
+        expect(global.fetch).toHaveBeenCalledWith(
+          '/api/v1/workspaces/ws-1/chat/thread-1/replace',
+          expect.objectContaining({ method: 'POST' }),
+        ),
+      );
+      await waitFor(() =>
+        expect(applyThreadReplacement).toHaveBeenCalledWith('ws-1', 'new-thread-99'),
+      );
+    });
+
+    it('a failed replace call leaves the confirm row up and does not merge anything [unit]', async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValue({ ok: false, json: async () => ({}) }) as unknown as typeof fetch;
+
+      render(<WorkspaceChatTab workspace={baseWorkspace()} />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Replace Thread' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Replace' }));
+
+      await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+      expect(applyThreadReplacement).not.toHaveBeenCalled();
+      expect(screen.getByText('Replace this thread?')).toBeInTheDocument();
+    });
   });
 });

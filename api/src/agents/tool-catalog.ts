@@ -90,6 +90,13 @@ export const TOOL_CATALOG: CatalogEntry[] = [
     alwaysOn: false,
   },
   {
+    toolId: 'search_threads',
+    name: 'Search Threads',
+    description: 'Search or read a range of messages from a thread whose id you already know.',
+    category: 'built-in',
+    alwaysOn: false,
+  },
+  {
     toolId: 'spawn_sub_agent',
     name: 'Spawn Sub-Agent',
     description: 'Delegate a bounded sub-task to a fresh, read-only sub-agent run.',

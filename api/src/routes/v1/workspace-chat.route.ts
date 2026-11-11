@@ -17,9 +17,12 @@ import {
 import { maybeSummarizeWorkspace } from '../../agents/workspace-summarizer.js';
 import { getWorkspaceChatAgent } from '../../agents/chat-agent.js';
 import { createProvider } from '../../services/provider-factory.js';
-import { getWorkspaceStore } from '../../services/workspace-store.js';
+import { getWorkspaceStore, type Workspace } from '../../services/workspace-store.js';
 import { getThreadStore } from '../../services/thread-store.js';
+import { getWakeupStore } from '../../services/wakeup-store.js';
+import { getWakeupRegistry } from '../../services/wakeup-registry.js';
 import { getThreadHandler } from './threads.handlers.js';
+import { replaceThreadHandler } from './workspace-chat.handlers.js';
 import { respondIfTaskPrompt } from './task-prompt-answer.js';
 import { serializeError } from '../../config/logger.js';
 
@@ -291,4 +294,56 @@ workspaceChatRouter.post('/:threadId/summarize', async (req: Request, res: Respo
             ?.createdAt ?? null)
         : null,
   });
+});
+
+// "Replace Thread" button — retires the workspace's current thread (a
+// final forced summary, then Archive) in favor of a brand-new, blank one,
+// so a stuck/obstinate thread can be escaped without losing the ability to
+// look back. See docs/superpowers/specs/2026-11-11-workspace-chat-thread-continuity-design.md.
+// Plain request/response, same shape as /summarize — not SSE.
+workspaceChatRouter.post('/:threadId/replace', async (req: Request, res: Response) => {
+  const workspace = resolveWorkspaceForThread(req, res);
+  if (!workspace) return;
+
+  const { provider, model } = req.body as { provider?: string; model?: string };
+  const threadStore = getThreadStore();
+  const threadMeta = workspace.threadId ? threadStore.getThreadMeta(workspace.threadId) : null;
+  const effectiveProvider = provider ?? threadMeta?.provider ?? undefined;
+  const effectiveModel = model ?? threadMeta?.model ?? undefined;
+
+  const result = await replaceThreadHandler(
+    {
+      workspaceStore: getWorkspaceStore(),
+      threadStore,
+      wakeupStore: getWakeupStore(),
+      wakeupRegistry: getWakeupRegistry(),
+      summarize: async (ws: Workspace, supersededBy: string) => {
+        const workspaceContext = await buildWorkspaceContext(ws);
+        const { agent } = await getWorkspaceChatAgent(
+          ws.id,
+          workspaceContext,
+          effectiveProvider,
+          effectiveModel,
+        );
+        await maybeSummarizeWorkspace(
+          undefined,
+          getWorkspaceStore(),
+          threadStore,
+          ws,
+          agent,
+          createProvider(effectiveProvider, effectiveModel),
+          effectiveProvider,
+          effectiveModel,
+          { force: true, supersededBy },
+        );
+      },
+    },
+    workspace,
+  );
+
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(result.data);
 });

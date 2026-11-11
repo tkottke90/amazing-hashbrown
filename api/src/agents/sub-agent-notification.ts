@@ -9,14 +9,21 @@ import { recordSubAgentMarker } from './thread-message-writer.js';
 
 export type SubAgentOutcome = 'done' | 'failed' | 'cancelled' | 'handed_off';
 
-// Exported for direct unit testing — the exact wording for a Loop-Guard
-// Exhaustion (GLOSSARY.md § Task Runs, ADR-0062) matters enough to assert on
-// without going through deliverSubAgentCompletion's full fire-and-forget path.
+// Exported for direct testing (same rationale as spawn-sub-agent.tool.ts's
+// resolveDispatchGroupId) — deliverSubAgentCompletion's own test coverage
+// (task-execution.test.ts) runs with no provider configured, so the
+// headless turn this message feeds into never completes there and this
+// text is otherwise unobservable; it's a pure function, so testing it in
+// isolation needs no store/agent fixtures at all. Also lets the exact
+// wording for a Loop-Guard Exhaustion (GLOSSARY.md § Task Runs, ADR-0062)
+// be asserted on directly, without going through the full fire-and-forget
+// path either.
 export function buildNotificationMessage(
   task: Task,
   outcome: SubAgentOutcome,
   summary: string | undefined,
   remainingCount: number,
+  runThreadId: string | undefined,
   // Only ever 'loop_guard_exhausted' in practice today — task-execution.ts
   // only threads a failureReason through for that one case. Typed as the
   // full FailureReason union anyway rather than a narrower boolean, since
@@ -41,6 +48,13 @@ export function buildNotificationMessage(
       ? `${remainingCount} sibling sub-agent(s) from this dispatch are still running.`
       : 'No other sub-agents from this dispatch are still running.',
   );
+  // The one point where the *model itself* reads this run's thread id as
+  // plain text — recordSubAgentMarker's own structured payload already
+  // carries runThreadId too, but that row is UI bookkeeping, never
+  // replayed into the model's own context the way this message is.
+  if (runThreadId) {
+    lines.push(`Thread: \`${runThreadId}\` (use search_threads to look into it)`);
+  }
   return lines.join('\n');
 }
 
@@ -87,7 +101,14 @@ export async function deliverSubAgentCompletion(
     const resolved = await resolveThreadAgent(parentThreadId);
     if (!resolved) return;
 
-    const message = buildNotificationMessage(task, outcome, summary, remainingCount, failureReason);
+    const message = buildNotificationMessage(
+      task,
+      outcome,
+      summary,
+      remainingCount,
+      runThreadId,
+      failureReason,
+    );
     enqueuePendingTurn(parentThreadId, () =>
       runHeadlessTurn({
         threadId: parentThreadId,

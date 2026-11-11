@@ -185,6 +185,42 @@ describe('services/thread-store', () => {
     });
   });
 
+  describe('runInTransaction', () => {
+    let store: ThreadStore;
+    let dir: string;
+
+    before(() => ({ store, dir } = makeStore()));
+    after(() => {
+      store.close();
+      rmSync(dir, { recursive: true });
+    });
+
+    it('commits every write performed inside the callback', () => {
+      store.upsertThreadOnFirstMessage('t1', 'Hello');
+
+      const result = store.runInTransaction(() => {
+        store.renameThread('t1', 'Renamed');
+        return 'done';
+      });
+
+      expect(result).to.equal('done');
+      expect(store.getThreadMeta('t1')!.title).to.equal('Renamed');
+    });
+
+    it('rolls back every write in the callback if it throws partway through', () => {
+      store.upsertThreadOnFirstMessage('t2', 'Original title');
+
+      expect(() =>
+        store.runInTransaction(() => {
+          store.renameThread('t2', 'Should not stick');
+          throw new Error('simulated failure after the rename');
+        }),
+      ).to.throw('simulated failure after the rename');
+
+      expect(store.getThreadMeta('t2')!.title).to.equal('Original title');
+    });
+  });
+
   describe('insertMessage / updateMessage / nextSeq sequencing', () => {
     let store: ThreadStore;
     let dir: string;
