@@ -513,3 +513,21 @@ _Avoid_: Slot window, fire tolerance
 **Reused Task**:
 The outcome when a task creation request's Duplicate Signature, Matching Time Slot, and `trackerId` all match an existing task (or an earlier entry in the same creation batch): no new row is inserted, the existing task's `id`/`title` is returned with `reused: true`, and the existing task itself is left completely unmodified.
 _Avoid_: Skipped task, deduped task, merged task
+
+# Workspace Chat Continuity Across Threads
+
+How a Workspace Chat Summary identifies exactly which thread and message range it covers, and how a workspace's current thread can be retired in favor of a fresh one without losing the ability to look back.
+
+## Language
+
+**Workspace Chat Summary**:
+One markdown file per summarization event, written to a workspace's `.hashbrown/summaries/` and read back into that workspace's own system-prompt context. Carries YAML frontmatter identifying its source thread (`threadId`) and the raw `thread_messages.seq` range it covers (`covers_from_seq`/`covers_to_seq`) — scoped to exactly the conversational rows the summarizer actually read, not a Turn count (see GLOSSARY's **Turn** — a different, trim-only unit). A summary file written before this frontmatter existed simply carries none; nothing backfills it.
+_Avoid_: Summary, workspace summary (too generic — doesn't say what identifies it)
+
+**Supersession Reference**:
+The optional `supersededBy` frontmatter field on a Workspace Chat Summary, naming the successor thread a Replace Thread action created. Set only on the one, final summary a Replace Thread forces before archiving its thread; absent on every ordinary automatic or on-demand summary.
+_Avoid_: Successor field, replacement pointer
+
+**Replace Thread**:
+The compound action that retires a workspace's current chat thread in favor of a fresh one: force-generate a final Workspace Chat Summary (carrying a Supersession Reference to the new thread), Archive the old thread (its title suffixed `(replaced)`), mint a blank successor thread with no checkpoint copied from the old one, and repoint the workspace's `threadId` to it. Triggered only from a dedicated UI button next to the existing on-demand "Summarise" button — never something an agent invokes on itself. Distinct from the existing thread Fork feature, which copies checkpoint history forward into the new thread; Replace Thread deliberately does not — continuity is carried only through the Workspace Chat Summary (see ADR-0064).
+_Avoid_: New thread, start fresh, fork
