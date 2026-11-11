@@ -339,13 +339,9 @@ describe('routes/v1/tool-settings.handlers', () => {
       });
 
       it('accepts clearing provider to an empty string ("use default") against a restrictive list [unit]', () => {
-        const result = patchToolSettingHandler(
-          'rlm_query',
-          { provider: '' },
-          configDir,
-          () => {},
-          ['do'],
-        );
+        const result = patchToolSettingHandler('rlm_query', { provider: '' }, configDir, () => {}, [
+          'do',
+        ]);
         expect(result.ok, JSON.stringify(result)).to.equal(true);
         const written = yaml.parse(readFileSync(join(configDir, 'config.yaml'), 'utf8'));
         expect(written.tools.rlm_query.provider).to.equal('');

@@ -199,7 +199,7 @@ describe('ToolSettingsDrawer', () => {
 
     it('shows a provider field-error from the server next to the picker, not swallowed by env-error filtering [unit]', async () => {
       mockPatch.mockRejectedValue(
-        new RequestError('"ghost" is not a configured provider', 400, {
+        new RequestError('1 field is invalid.', 400, {
           provider: ['"ghost" is not a configured provider'],
         }),
       );

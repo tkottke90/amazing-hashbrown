@@ -467,9 +467,7 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
                   {rlmProviderModelItems}
                 </DropdownMenuContent>
               </DropdownMenu>
-              {providerError.value && (
-                <p class="text-xs text-destructive">{providerError.value}</p>
-              )}
+              {providerError.value && <p class="text-xs text-destructive">{providerError.value}</p>}
             </div>
             {rlmProviderModelSheet}
             <div class="space-y-1.5">
