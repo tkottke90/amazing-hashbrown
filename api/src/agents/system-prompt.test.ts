@@ -31,6 +31,8 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('</memory>');
       expect(result).to.include('<notation>');
       expect(result).to.include('</notation>');
+      expect(result).to.include('<mcp_tool_discovery>');
+      expect(result).to.include('</mcp_tool_discovery>');
       expect(result).to.include('<search_conversation>');
       expect(result).to.include('</search_conversation>');
       expect(result).to.include('<wiki_navigation>');
@@ -63,15 +65,16 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('</block_on_user_action_routing>');
       const opens = (result.match(/<[a-z_]+>/g) ?? []).length;
       const closes = (result.match(/<\/[a-z_]+>/g) ?? []).length;
-      expect(opens).to.equal(18);
-      expect(closes).to.equal(18);
+      expect(opens).to.equal(19);
+      expect(closes).to.equal(19);
     });
 
-    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, notation, search_conversation, wiki navigation, web fetch, attachment, wiki ingest, rlm, shell execution, waiting, image, search_skills, create_tasks, spawn_sub_agent, ask_user routing, hand_off_task routing, block_on_user_action routing', () => {
+    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, notation, mcp tool discovery, search_conversation, wiki navigation, web fetch, attachment, wiki ingest, rlm, shell execution, waiting, image, search_skills, create_tasks, spawn_sub_agent, ask_user routing, hand_off_task routing, block_on_user_action routing', () => {
       const result = buildSystemPrompt();
       const identityTagIndex = result.indexOf('<identity>');
       const memoryTagIndex = result.indexOf('<memory>');
       const notationTagIndex = result.indexOf('<notation>');
+      const mcpToolDiscoveryTagIndex = result.indexOf('<mcp_tool_discovery>');
       const searchConversationTagIndex = result.indexOf('<search_conversation>');
       const wikiTagIndex = result.indexOf('<wiki_navigation>');
       const webFetchTagIndex = result.indexOf('<web_fetch>');
@@ -90,6 +93,7 @@ describe('agents/system-prompt', () => {
       expect(identityTagIndex).to.be.greaterThan(-1);
       expect(memoryTagIndex).to.be.greaterThan(-1);
       expect(notationTagIndex).to.be.greaterThan(-1);
+      expect(mcpToolDiscoveryTagIndex).to.be.greaterThan(-1);
       expect(searchConversationTagIndex).to.be.greaterThan(-1);
       expect(wikiTagIndex).to.be.greaterThan(-1);
       expect(webFetchTagIndex).to.be.greaterThan(-1);
@@ -107,7 +111,8 @@ describe('agents/system-prompt', () => {
       expect(blockOnUserActionTagIndex).to.be.greaterThan(-1);
       expect(identityTagIndex).to.be.lessThan(memoryTagIndex);
       expect(memoryTagIndex).to.be.lessThan(notationTagIndex);
-      expect(notationTagIndex).to.be.lessThan(searchConversationTagIndex);
+      expect(notationTagIndex).to.be.lessThan(mcpToolDiscoveryTagIndex);
+      expect(mcpToolDiscoveryTagIndex).to.be.lessThan(searchConversationTagIndex);
       expect(searchConversationTagIndex).to.be.lessThan(wikiTagIndex);
       expect(wikiTagIndex).to.be.lessThan(webFetchTagIndex);
       expect(webFetchTagIndex).to.be.lessThan(attachmentTagIndex);
@@ -1000,6 +1005,14 @@ describe('agents/system-prompt', () => {
       const result = filterHarnessSections(buildSystemPrompt(), new Set());
       expect(result).to.include('<identity>');
       expect(result).to.include('<memory>');
+    });
+
+    it('never removes mcp_tool_discovery regardless of the available set', () => {
+      // search_mcp_tools/use_mcp_tools are alwaysOn (tool-catalog.ts) — this
+      // section has no requiresAnyOf/requiresAllOf gate, same as
+      // identity/memory above.
+      const result = filterHarnessSections(buildSystemPrompt(), new Set());
+      expect(result).to.include('<mcp_tool_discovery>');
     });
 
     it('removes wiki_navigation and wiki_ingest when no wiki tool is available, keeping web_fetch', () => {

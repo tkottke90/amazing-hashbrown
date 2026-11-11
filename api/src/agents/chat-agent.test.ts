@@ -14,6 +14,7 @@ import {
   WAKEUP_TOOLS,
   buildSubAgentToolCandidates,
   buildSubAgentMiddleware,
+  resolveSubAgentTools,
   buildWorkspaceScopedTools,
   buildTaskVisibilityTools,
   buildFileConflictTools,
@@ -131,8 +132,55 @@ describe('agents/chat-agent', () => {
         'RecursionGuardMiddleware',
         'ContextWindowMiddleware',
         'ToolAccessMiddleware',
+        'McpToolDiscoveryMiddleware',
         'AmbientContextMiddleware',
       ]);
+    });
+
+    // Issue #408: added without requiring a `mcpTools` option, so existing
+    // call sites that don't care about MCP tools (or construct the
+    // middleware array before any are loaded) need no change.
+    it('includes McpToolDiscoveryMiddleware even when mcpTools is omitted', () => {
+      const middleware = buildSubAgentMiddleware({ recursionLimit: 25, hasDelivered: () => false });
+      expect(middleware.map((m) => m.name)).to.include('McpToolDiscoveryMiddleware');
+    });
+  });
+
+  // Issue #408: MCP tools bypass getSubAgentToolIds()'s allowedBoundNames
+  // check entirely — this is the pure filter buildSubAgentAgent applies,
+  // extracted for direct unit testing without a live provider.
+  describe('resolveSubAgentTools() (issue #408) [unit]', () => {
+    const candidatePool = [
+      { name: 'web_fetch' },
+      { name: 'n8n__workflow_search' },
+      { name: 'n8n__workflow_delete' },
+    ];
+    const mcpTools = [{ name: 'n8n__workflow_search' }, { name: 'n8n__workflow_delete' }];
+
+    it('excludes a built-in tool not present in allowedBoundNames', () => {
+      const tools = resolveSubAgentTools(candidatePool, mcpTools, new Set(), new Set());
+      expect(tools.map((t) => t.name)).to.not.include('web_fetch');
+    });
+
+    it('includes a built-in tool present in allowedBoundNames', () => {
+      const tools = resolveSubAgentTools(candidatePool, mcpTools, new Set(['web_fetch']), new Set());
+      expect(tools.map((t) => t.name)).to.include('web_fetch');
+    });
+
+    it('includes an MCP tool with no override, even though it is absent from allowedBoundNames', () => {
+      const tools = resolveSubAgentTools(candidatePool, mcpTools, new Set(), new Set());
+      expect(tools.map((t) => t.name)).to.include('n8n__workflow_search');
+    });
+
+    it('excludes an MCP tool with an explicit defaultInclude.subAgent: false override', () => {
+      const tools = resolveSubAgentTools(
+        candidatePool,
+        mcpTools,
+        new Set(),
+        new Set(['n8n__workflow_delete']),
+      );
+      expect(tools.map((t) => t.name)).to.include('n8n__workflow_search');
+      expect(tools.map((t) => t.name)).to.not.include('n8n__workflow_delete');
     });
   });
 

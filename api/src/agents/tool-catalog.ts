@@ -197,6 +197,26 @@ export const TOOL_CATALOG: CatalogEntry[] = [
     category: 'built-in',
     alwaysOn: false,
   },
+  {
+    toolId: 'search_mcp_tools',
+    name: 'Search MCP Tools',
+    description:
+      'Search for an MCP tool by keyword. Returns id, name, and description — not full schemas. See issue #408.',
+    category: 'built-in',
+    // The only door back into the MCP catalog now that an MCP tool is not
+    // bound by default (see tool-config.ts's category-aware
+    // defaultInclude.chat fallback) — Tool Access must never be able to
+    // close this one off, the same reasoning wiki tools get alwaysOn for.
+    alwaysOn: true,
+  },
+  {
+    toolId: 'use_mcp_tools',
+    name: 'Use MCP Tools',
+    description:
+      'Grant access to specific MCP tools (by id, from a search_mcp_tools result) for the rest of this turn. See issue #408.',
+    category: 'built-in',
+    alwaysOn: true,
+  },
 
   // ── Wiki (always available — core to the platform) ───────────────────
   {

@@ -14,7 +14,21 @@ import {
   getGloballyEnabledToolIds,
   getSubAgentToolIds,
   getToolInstructions,
+  getExplicitlySubAgentExcludedIds,
+  listDiscoverableMcpTools,
+  listAllMcpToolRows,
 } from './tool-config.js';
+
+const MCP_BASE: Parameters<typeof resolveToolSettings>[0] = {
+  toolId: 'n8n:workflow_search',
+  name: 'workflow_search',
+  description: 'd',
+  category: 'mcp',
+  alwaysOn: false,
+  mcpServer: 'n8n',
+  lastSeenAt: null,
+  lastStatus: 'connected',
+};
 
 const ALWAYS_ON: Parameters<typeof resolveToolSettings>[0] = {
   toolId: 'wiki_search',
@@ -112,6 +126,46 @@ describe('agents/tool-config', () => {
       const resolved = resolveToolSettings(REGULAR, toolsConfig);
       expect(resolved['timeoutMs']).to.equal(5000);
       expect(resolved['respectRobotsTxt']).to.equal(false);
+    });
+
+    // Issue #408: an MCP-category tool defaults to NOT bound by chat, unlike
+    // every other category (REGULAR's web_fetch, above, defaults chat:true).
+    it('defaults defaultInclude.chat to false for an MCP-category tool when nothing is stored', () => {
+      const resolved = resolveToolSettings(MCP_BASE, {});
+      expect(resolved.defaultInclude.chat).to.equal(false);
+      // enabled/autonomous are unaffected by the MCP-category carve-out.
+      expect(resolved.enabled).to.equal(true);
+      expect(resolved.defaultInclude.autonomous).to.equal(true);
+    });
+
+    it('a config.yaml override for an MCP-category tool still wins over the new false default', () => {
+      const toolsConfig: Record<string, ToolEntry> = {
+        'n8n:workflow_search': { defaultInclude: { chat: true } },
+      };
+      const resolved = resolveToolSettings(MCP_BASE, toolsConfig);
+      expect(resolved.defaultInclude.chat).to.equal(true);
+    });
+  });
+
+  describe('getExplicitlySubAgentExcludedIds() (issue #408)', () => {
+    it('returns an empty set when nothing is stored', () => {
+      expect(getExplicitlySubAgentExcludedIds({})).to.deep.equal(new Set());
+    });
+
+    it('returns an empty set when a tool has an override that does not set subAgent to false', () => {
+      const toolsConfig: Record<string, ToolEntry> = {
+        'n8n:workflow_search': { defaultInclude: { subAgent: true } },
+      };
+      expect(getExplicitlySubAgentExcludedIds(toolsConfig)).to.deep.equal(new Set());
+    });
+
+    it('includes a tool id with an explicit defaultInclude.subAgent: false override', () => {
+      const toolsConfig: Record<string, ToolEntry> = {
+        'n8n:workflow_delete': { defaultInclude: { subAgent: false } },
+      };
+      expect(getExplicitlySubAgentExcludedIds(toolsConfig)).to.deep.equal(
+        new Set(['n8n:workflow_delete']),
+      );
     });
   });
 
@@ -234,6 +288,10 @@ describe('agents/tool-config', () => {
         // symmetry with search_conversation — see tool-config.ts's own
         // comment on LEGACY_SUB_AGENT_TOOL_IDS.
         'search_threads',
+        // Deliberately added to the legacy set for issue #408 — see
+        // tool-config.ts's own comment on LEGACY_SUB_AGENT_TOOL_IDS.
+        'search_mcp_tools',
+        'use_mcp_tools',
       ];
       for (const id of expectedIncluded) {
         expect(ids.has(id), `expected getSubAgentToolIds() to include ${id}`).to.equal(true);
@@ -264,6 +322,61 @@ describe('agents/tool-config', () => {
       for (const id of expectedExcluded) {
         expect(ids.has(id), `expected getSubAgentToolIds() to exclude ${id}`).to.equal(false);
       }
+    });
+
+    describe('listDiscoverableMcpTools() / listAllMcpToolRows() (issue #408)', () => {
+      beforeEach(() => {
+        getToolSettingsStore().recordMcpDiscoveryResult(
+          [
+            {
+              toolId: 'n8n:workflow_search',
+              name: 'workflow_search',
+              description: 'Search workflows',
+              mcpServer: 'n8n',
+            },
+            {
+              toolId: 'n8n:workflow_delete',
+              name: 'workflow_delete',
+              description: 'Delete a workflow',
+              mcpServer: 'n8n',
+            },
+          ],
+          new Map([['n8n', 'connected']]),
+        );
+      });
+
+      it('listDiscoverableMcpTools() includes an enabled MCP tool, with only toolId/name/description', () => {
+        const results = listDiscoverableMcpTools({});
+        const entry = results.find((t) => t.toolId === 'n8n:workflow_search');
+        expect(entry).to.deep.equal({
+          toolId: 'n8n:workflow_search',
+          name: 'workflow_search',
+          description: 'Search workflows',
+        });
+      });
+
+      it('listDiscoverableMcpTools() excludes a tool explicitly disabled via config.yaml', () => {
+        const toolsConfig: Record<string, ToolEntry> = {
+          'n8n:workflow_delete': { enabled: false },
+        };
+        const results = listDiscoverableMcpTools(toolsConfig);
+        expect(results.map((t) => t.toolId)).to.not.include('n8n:workflow_delete');
+      });
+
+      it('listDiscoverableMcpTools() never includes a non-MCP catalog tool', () => {
+        getToolSettingsStore().seedCatalogDefaults(TOOL_CATALOG);
+        const results = listDiscoverableMcpTools({});
+        expect(results.map((t) => t.toolId)).to.not.include('web_fetch');
+      });
+
+      it('listAllMcpToolRows() includes a disabled tool (unlike listDiscoverableMcpTools()), so it can be told apart from a nonexistent one', () => {
+        const toolsConfig: Record<string, ToolEntry> = {
+          'n8n:workflow_delete': { enabled: false },
+        };
+        const rows = listAllMcpToolRows(toolsConfig);
+        expect(rows).to.deep.include({ toolId: 'n8n:workflow_delete', enabled: false });
+        expect(rows).to.deep.include({ toolId: 'n8n:workflow_search', enabled: true });
+      });
     });
   });
 

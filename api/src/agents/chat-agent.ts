@@ -33,6 +33,9 @@ import { wikiSearchTool } from './tools/wiki-search.tool.js';
 import { makeWikiUpdatePageTool } from './tools/wiki-update-page.tool.js';
 import { rlmQueryTool } from './tools/rlm-query.tool.js';
 import { makeSearchSkillsTool } from './tools/search-skills.tool.js';
+import { makeSearchMcpToolsTool } from './tools/search-mcp-tools.tool.js';
+import { makeUseMcpToolsTool } from './tools/use-mcp-tools.tool.js';
+import { createMcpToolDiscoveryMiddleware } from './mcp-tool-discovery.middleware.js';
 import { searchConversationTool } from './tools/search-conversation.tool.js';
 import { searchThreadsTool } from './tools/search-threads.tool.js';
 import { webFetchTool } from './tools/web-fetch.tool.js';
@@ -55,7 +58,11 @@ import { GATED_SKILL_REGISTRATIONS } from './gated-skill-registrations.js';
 import { toolAccessMiddleware } from './tool-access.middleware.js';
 import { ambientContextMiddleware } from './ambient-context.middleware.js';
 import { modelInputSnapshotMiddleware } from './model-input-snapshot.middleware.js';
-import { getSubAgentToolIds, toBoundMatchKeys } from './tool-config.js';
+import {
+  getSubAgentToolIds,
+  toBoundMatchKeys,
+  getExplicitlySubAgentExcludedIds,
+} from './tool-config.js';
 import { syncMcpToolStatus } from './mcp-tool-status.js';
 import { getToolSettingsStore } from '../services/tool-settings-store.js';
 import { makeCreateWorkspaceTool } from './tools/create-workspace.tool.js';
@@ -527,6 +534,8 @@ async function buildChatAgent(provider?: string, model?: string) {
     tools: [
       makeShellExecTool(undefined, { wakeupAvailable: true }),
       makeGetToolKeyTool(),
+      makeSearchMcpToolsTool(),
+      makeUseMcpToolsTool(),
       ...STATIC_CHAT_TOOLS,
       ...WAKEUP_TOOLS,
       ...buildSkillTools(globalSkills),
@@ -562,6 +571,7 @@ async function buildChatAgent(provider?: string, model?: string) {
       skillGatedToolsMiddleware,
       skillScopedToolsMiddleware,
       toolAccessMiddleware,
+      createMcpToolDiscoveryMiddleware(mcpTools),
       ambientContextMiddleware,
       createContextWindowMiddleware(env.chat?.contextWindow),
       afterAgentMiddleware,
@@ -692,6 +702,8 @@ async function buildWorkspaceChatAgent(
         autoApprove: workspaceContext.autoApproveShell,
       }),
       makeGetToolKeyTool(workspaceContext.location),
+      makeSearchMcpToolsTool(),
+      makeUseMcpToolsTool(),
       ...STATIC_CHAT_TOOLS,
       ...WAKEUP_TOOLS,
       ...buildSkillTools(skills),
@@ -725,6 +737,7 @@ async function buildWorkspaceChatAgent(
       skillGatedToolsMiddleware,
       skillScopedToolsMiddleware,
       toolAccessMiddleware,
+      createMcpToolDiscoveryMiddleware(mcpTools),
       ambientContextMiddleware,
       createContextWindowMiddleware(env.chat?.contextWindow),
       afterAgentMiddleware,
@@ -864,6 +877,8 @@ export async function buildTaskAgent(
         autoApprove: workspaceScope?.workspaceContext.autoApproveShell,
       }),
       makeGetToolKeyTool(workspaceScope?.workspaceContext.location),
+      makeSearchMcpToolsTool(),
+      makeUseMcpToolsTool(),
       ...STATIC_CHAT_TOOLS,
       ...buildSkillTools(skills),
       ...buildWorkspaceScopedTools(task.id),
@@ -923,6 +938,7 @@ export async function buildTaskAgent(
       skillGatedToolsMiddleware,
       skillScopedToolsMiddleware,
       toolAccessMiddleware,
+      createMcpToolDiscoveryMiddleware(mcpTools),
       ambientContextMiddleware,
       createContextWindowMiddleware(env.chat?.contextWindow),
       afterAgentMiddleware,
@@ -1003,6 +1019,29 @@ export function buildSubAgentToolCandidates(
 }
 
 // Extracted out of buildSubAgentAgent, same rationale as
+// buildSubAgentToolCandidates below — directly unit-testable without a live
+// provider. MCP tools bypass allowedBoundNames entirely (issue #408):
+// getSubAgentToolIds() no longer gates them, so they're included whenever
+// they're in the candidate pool (mcpBoundNames) UNLESS a config.yaml entry
+// explicitly set `defaultInclude.subAgent: false` for that specific tool
+// (excludedMcpBoundNames) — real per-call visibility is decided by
+// createMcpToolDiscoveryMiddleware instead. Every non-MCP candidate keeps
+// going through allowedBoundNames exactly as before.
+export function resolveSubAgentTools<T extends { name: unknown }>(
+  candidatePool: T[],
+  mcpTools: { name: unknown }[],
+  allowedBoundNames: Set<string>,
+  excludedMcpBoundNames: Set<string>,
+): T[] {
+  const mcpBoundNames = new Set(mcpTools.map((t) => t.name as string));
+  return candidatePool.filter(
+    (t) =>
+      allowedBoundNames.has(t.name as string) ||
+      (mcpBoundNames.has(t.name as string) && !excludedMcpBoundNames.has(t.name as string)),
+  );
+}
+
+// Extracted out of buildSubAgentAgent, same rationale as
 // buildSubAgentToolCandidates above — directly unit-testable (e.g.
 // "AfterAgentMiddleware is not in here") without a live provider.
 // afterAgentMiddleware is deliberately absent: a Sub-Agent Task's Run never
@@ -1012,6 +1051,12 @@ export function buildSubAgentToolCandidates(
 export function buildSubAgentMiddleware(options: {
   recursionLimit: number;
   hasDelivered: () => boolean;
+  // The same mcpTools array buildSubAgentAgent passes through to
+  // buildSubAgentToolCandidates() — needed here too so
+  // createMcpToolDiscoveryMiddleware can resolve a Discovered display id back
+  // to its real bound tool object (issue #408). Defaults to [] so existing
+  // call sites/tests that don't care about MCP tools need no change.
+  mcpTools?: ClientTool[];
 }) {
   return [
     contentBlockSanitizerMiddleware,
@@ -1024,6 +1069,7 @@ export function buildSubAgentMiddleware(options: {
     }),
     createContextWindowMiddleware(env.chat?.contextWindow),
     toolAccessMiddleware,
+    createMcpToolDiscoveryMiddleware(options.mcpTools ?? []),
     ambientContextMiddleware,
   ];
 }
@@ -1059,10 +1105,21 @@ export async function buildSubAgentAgent(
   // getSubAgentToolIds()'s resolved set. Filtering by boundName (via
   // toBoundMatchKeys()) since MCP tools bind under that form, not their
   // display id.
+  //
+  // MCP tools are a deliberate exception (issue #408): getSubAgentToolIds()
+  // stops gating them entirely — they pass through unconditionally, same as
+  // in buildChatAgent/buildWorkspaceChatAgent/buildTaskAgent, with real
+  // per-call visibility decided by createMcpToolDiscoveryMiddleware instead
+  // of this build-time filter. An explicit `defaultInclude.subAgent: false`
+  // override for a specific MCP tool is still a hard opt-out —
+  // getExplicitlySubAgentExcludedIds() is the one remaining place that's
+  // checked for them, since they no longer go through getSubAgentToolIds()'s
+  // normal allow-by-default check at all.
   const mcpTools = await loadMcpTools();
   const candidatePool = buildSubAgentToolCandidates(task, workspaceScope, mcpTools);
   const allowedBoundNames = toBoundMatchKeys(getSubAgentToolIds());
-  const tools = candidatePool.filter((t) => allowedBoundNames.has(t.name));
+  const excludedMcpBoundNames = toBoundMatchKeys(getExplicitlySubAgentExcludedIds());
+  const tools = resolveSubAgentTools(candidatePool, mcpTools, allowedBoundNames, excludedMcpBoundNames);
 
   // Backs the recursion guard's hasDelivered check (see
   // recursion-guard.middleware.ts, ADR-0062) — set the moment complete_task
@@ -1090,6 +1147,7 @@ export async function buildSubAgentAgent(
     middleware: buildSubAgentMiddleware({
       recursionLimit: env.agent?.subAgentRecursionLimit ?? 25,
       hasDelivered: () => delivered,
+      mcpTools,
     }),
   });
 
