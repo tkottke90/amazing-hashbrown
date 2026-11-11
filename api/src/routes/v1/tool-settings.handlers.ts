@@ -97,6 +97,17 @@ function validateShellEnv(env: Record<string, unknown>): HandlerResult<Record<st
   return { ok: true, data: validated };
 }
 
+// ---- rlm_query provider validation --------------------------------------
+
+// Mirrors validateFavoriteModels (settings.handlers.ts) — provider must be
+// a configured provider name; model is deliberately left unvalidated since
+// checking it needs a live call to that provider. '' means "no override,
+// fall back to the app default" and is always valid.
+export function validateRlmProvider(provider: string, providerNames: string[]): string[] {
+  if (provider === '' || providerNames.includes(provider)) return [];
+  return [`"${provider}" is not a configured provider`];
+}
+
 // Names only — values are never included, logged, or sent. Used by the
 // drawer's env editor combobox to suggest names for new rows.
 export function listAvailableEnvVarsHandler(): HandlerResult<{ names: string[] }> {
@@ -177,6 +188,10 @@ export function patchToolSettingHandler(
   // configManager.reload; tests omit it (their own response is built from
   // the in-memory updatedTools map below, not a re-read of the singleton).
   reload: () => void = () => {},
+  // Only consulted when the patch actually touches rlm_query's `provider`
+  // field; defaults to [] so no other caller/test needs to change. The
+  // route supplies the real live list (env.providers.map(p => p.name)).
+  providerNames: string[] = [],
 ): HandlerResult<ToolSettingItem> {
   const existing = findResolved(toolId);
   if (!existing) return notFound(`Tool "${toolId}" not found`);
@@ -217,6 +232,15 @@ export function patchToolSettingHandler(
       const envResult = validateShellEnv(validatedExtra['env'] as Record<string, unknown>);
       if (!envResult.ok) return envResult;
       validatedExtra['env'] = envResult.data;
+    }
+    // rlm_query-specific: reject an unknown provider name (mirrors the
+    // Favorite Models precedent). Model is intentionally not checked here;
+    // see validateRlmProvider's comment.
+    if (toolId === 'rlm_query' && validatedExtra['provider'] !== undefined) {
+      const errors = validateRlmProvider(validatedExtra['provider'] as string, providerNames);
+      if (errors.length > 0) {
+        return badRequest(errors.join('; '), { provider: errors });
+      }
     }
   }
 

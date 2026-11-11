@@ -5,9 +5,11 @@ import {
   ContextWindowSchema,
   LoopGuardSchema,
   ModelConfigSchema,
+  RLMConfigSchema,
   SkillsConfigSchema,
   TaskBoardSchema,
   TaskCreationSchema,
+  normalizeRlmConfig,
   parseFavoriteModels,
   parseProviders,
   resolveServerTimezone,
@@ -438,6 +440,25 @@ describe('config/env', () => {
       expect(resolveServerTimezone(undefined)).to.equal('UTC');
       expect(resolveServerTimezone(null)).to.equal('UTC');
       expect(resolveServerTimezone(42)).to.equal('UTC');
+    });
+  });
+
+  describe('normalizeRlmConfig', () => {
+    it('passes through a configured provider/model unchanged [unit]', () => {
+      const parsed = RLMConfigSchema.parse({ provider: 'do', model: 'glm-4.7-flash' });
+      expect(normalizeRlmConfig(parsed)).to.deep.equal(parsed);
+    });
+
+    it('normalizes an empty-string provider/model (the "Use default" save) to undefined [unit]', () => {
+      const parsed = RLMConfigSchema.parse({ provider: '', model: '' });
+      const result = normalizeRlmConfig(parsed);
+      expect(result.provider).to.equal(undefined);
+      expect(result.model).to.equal(undefined);
+    });
+
+    it('leaves maxIterations/truncateThreshold untouched [unit]', () => {
+      const parsed = RLMConfigSchema.parse({ maxIterations: 3, truncateThreshold: 1000 });
+      expect(normalizeRlmConfig(parsed)).to.deep.equal(parsed);
     });
   });
 });
