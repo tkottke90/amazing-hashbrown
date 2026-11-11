@@ -1000,6 +1000,32 @@ export function buildSubAgentToolCandidates(
   ];
 }
 
+// Extracted out of buildSubAgentAgent, same rationale as
+// buildSubAgentToolCandidates above — directly unit-testable (e.g.
+// "AfterAgentMiddleware is not in here") without a live provider.
+// afterAgentMiddleware is deliberately absent: a Sub-Agent Task's Run never
+// triggers it (see ADR-0063, GLOSSARY.md § Sub-Agent Task) — not because
+// it's disabled per-call, but because this factory never builds an agent
+// with it wired in at all.
+export function buildSubAgentMiddleware(options: {
+  recursionLimit: number;
+  hasDelivered: () => boolean;
+}) {
+  return [
+    contentBlockSanitizerMiddleware,
+    createRecursionGuardMiddleware({
+      recursionLimit: options.recursionLimit,
+      warnThreshold: env.agent?.recursionWarnThreshold ?? 0.75,
+      loopGuard: env.agent?.loopGuard,
+      escalationMode: 'throw',
+      hasDelivered: options.hasDelivered,
+    }),
+    createContextWindowMiddleware(env.chat?.contextWindow),
+    toolAccessMiddleware,
+    ambientContextMiddleware,
+  ];
+}
+
 // Return type deliberately not annotated as ChatAgent — that alias is
 // pinned to buildChatAgent's exact 5-entry middleware tuple, and this
 // builder's middleware array is a different (shorter) tuple, so
@@ -1036,30 +1062,33 @@ export async function buildSubAgentAgent(
   const allowedBoundNames = toBoundMatchKeys(getSubAgentToolIds());
   const tools = candidatePool.filter((t) => allowedBoundNames.has(t.name));
 
+  // Backs the recursion guard's hasDelivered check (see
+  // recursion-guard.middleware.ts, ADR-0062) — set the moment complete_task
+  // is accepted, before forwarding to the caller's own onAccepted hook
+  // (task-execution.ts's completeTaskBox), so that hook's contract is
+  // completely unchanged.
+  let delivered = false;
+  const completeTaskTool = makeCompleteTaskTool(task.id, {
+    onAccepted: (call) => {
+      delivered = true;
+      hooks?.onTaskComplete?.(call);
+    },
+  });
+
   const agent = createAgent({
     model: llm,
-    // makeCompleteTaskTool(task.id) listed before the ...tools spread
-    // deliberately — createAgent's overloaded, const-generic tools param
-    // fails TS's overload resolution when a single element trails a spread
-    // here (though the identical pattern is fine elsewhere in this file
-    // with more/longer spreads around it); order has no runtime effect
-    // either way.
-    tools: [makeCompleteTaskTool(task.id, { onAccepted: hooks?.onTaskComplete }), ...tools],
+    // completeTaskTool listed before the ...tools spread deliberately —
+    // createAgent's overloaded, const-generic tools param fails TS's
+    // overload resolution when a single element trails a spread here
+    // (though the identical pattern is fine elsewhere in this file with
+    // more/longer spreads around it); order has no runtime effect either way.
+    tools: [completeTaskTool, ...tools],
     systemPrompt,
     checkpointer: getCheckpointer(),
-    middleware: [
-      contentBlockSanitizerMiddleware,
-      createRecursionGuardMiddleware({
-        recursionLimit: env.agent?.subAgentRecursionLimit ?? 25,
-        warnThreshold: env.agent?.recursionWarnThreshold ?? 0.75,
-        loopGuard: env.agent?.loopGuard,
-        escalationMode: 'throw',
-      }),
-      createContextWindowMiddleware(env.chat?.contextWindow),
-      toolAccessMiddleware,
-      ambientContextMiddleware,
-      afterAgentMiddleware,
-    ],
+    middleware: buildSubAgentMiddleware({
+      recursionLimit: env.agent?.subAgentRecursionLimit ?? 25,
+      hasDelivered: () => delivered,
+    }),
   });
 
   return { agent, systemPrompt };

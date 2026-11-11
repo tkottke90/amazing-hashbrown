@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { logger } from '../config/logger.js';
-import { getWorkspaceStore, type Task } from '../services/workspace-store.js';
+import { getWorkspaceStore, type FailureReason, type Task } from '../services/workspace-store.js';
 import { getThreadStore } from '../services/thread-store.js';
 import { runHeadlessTurn } from './headless-turn.js';
 import { resolveThreadAgent } from './resolve-thread-agent.js';
@@ -9,17 +9,32 @@ import { recordSubAgentMarker } from './thread-message-writer.js';
 
 export type SubAgentOutcome = 'done' | 'failed' | 'cancelled' | 'handed_off';
 
-function buildNotificationMessage(
+// Exported for direct unit testing — the exact wording for a Loop-Guard
+// Exhaustion (GLOSSARY.md § Task Runs, ADR-0062) matters enough to assert on
+// without going through deliverSubAgentCompletion's full fire-and-forget path.
+export function buildNotificationMessage(
   task: Task,
   outcome: SubAgentOutcome,
   summary: string | undefined,
   remainingCount: number,
+  // Only ever 'loop_guard_exhausted' in practice today — task-execution.ts
+  // only threads a failureReason through for that one case. Typed as the
+  // full FailureReason union anyway rather than a narrower boolean, since
+  // that's the type the caller already has on hand and widening it instead
+  // of inventing a second, parallel concept is the smaller surface.
+  failureReason?: FailureReason,
 ): string {
   const lines = [
     `Sub-agent [${task.role ?? 'unknown'}] ${
       outcome === 'done' ? 'completed' : outcome === 'handed_off' ? 'handed off' : outcome
     } — goal: "${task.title}".`,
   ];
+  if (failureReason === 'loop_guard_exhausted') {
+    lines.push(
+      'It was asked to stop investigating and deliver what it had, but still produced nothing ' +
+        'before its budget ran out.',
+    );
+  }
   lines.push(summary ? `Summary: ${summary}` : 'No summary was provided.');
   lines.push(
     remainingCount > 0
@@ -42,6 +57,7 @@ export async function deliverSubAgentCompletion(
   outcome: SubAgentOutcome,
   summary?: string,
   runThreadId?: string,
+  failureReason?: FailureReason,
 ): Promise<void> {
   if (!task.parentThreadId || !task.dispatchGroupId) {
     logger.error('sub-agent-notification: origin=agent task missing parent/dispatch group', {
@@ -71,7 +87,7 @@ export async function deliverSubAgentCompletion(
     const resolved = await resolveThreadAgent(parentThreadId);
     if (!resolved) return;
 
-    const message = buildNotificationMessage(task, outcome, summary, remainingCount);
+    const message = buildNotificationMessage(task, outcome, summary, remainingCount, failureReason);
     enqueuePendingTurn(parentThreadId, () =>
       runHeadlessTurn({
         threadId: parentThreadId,
