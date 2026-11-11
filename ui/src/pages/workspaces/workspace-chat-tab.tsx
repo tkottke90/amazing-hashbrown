@@ -19,7 +19,7 @@ import {
   type ProviderInfo,
 } from '@/hooks/use-providers';
 import { useThreadInstance } from '@/hooks/use-thread';
-import { patchWorkspace, refreshWorkspaces } from '@/hooks/use-workspaces';
+import { applyThreadReplacement, patchWorkspace, refreshWorkspaces } from '@/hooks/use-workspaces';
 import type { Workspace } from '@/services/workspaces-api';
 import { randomUUID } from '@/lib/utils';
 
@@ -123,6 +123,12 @@ export function WorkspaceChatTab({
   // automatic in-turn path), so both trigger paths show the same disabled/
   // "Summarising…" treatment even though only one rides the chat stream.
   const manualSummarizing = useSignal(false);
+  // Replace Thread's own loading/confirm state — kept separate from
+  // manualSummarizing/isBusy so the "Summarising…" banner text doesn't
+  // misfire while a replace (which itself force-summarizes first) is in
+  // flight; see handleReplaceClick below.
+  const isReplacing = useSignal(false);
+  const isConfirmingReplace = useSignal(false);
 
   useEffect(() => {
     void fetchProviders();
@@ -177,6 +183,22 @@ export function WorkspaceChatTab({
       await thread.hydrate();
     } finally {
       manualSummarizing.value = false;
+    }
+  }
+
+  async function handleReplaceClick() {
+    isReplacing.value = true;
+    try {
+      const res = await fetch(
+        `/api/v1/workspaces/${workspace.id}/chat/${workspace.threadId}/replace`,
+        { method: 'POST' },
+      );
+      if (!res.ok) return;
+      const { threadId: newThreadId } = (await res.json()) as { threadId: string };
+      applyThreadReplacement(workspace.id, newThreadId);
+      isConfirmingReplace.value = false;
+    } finally {
+      isReplacing.value = false;
     }
   }
 
@@ -251,18 +273,58 @@ export function WorkspaceChatTab({
 
         <div class="border-t border-border p-3">
           <div class="mb-2 flex items-center justify-between">
-            {isBusy ? <span class="text-xs text-muted-foreground">Summarising…</span> : <span />}
-            <div class="flex items-center gap-1">
-              <ThreadReportButton threadId={workspace.threadId ?? ''} />
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={isBusy}
-                onClick={() => void handleSummarizeClick()}
-              >
-                Summarise
-              </Button>
-            </div>
+            {isReplacing.value ? (
+              <span class="text-xs text-muted-foreground">Replacing thread…</span>
+            ) : isBusy ? (
+              <span class="text-xs text-muted-foreground">Summarising…</span>
+            ) : (
+              <span />
+            )}
+            {isConfirmingReplace.value ? (
+              <div class="flex items-center gap-1">
+                <span class="text-xs text-muted-foreground">Replace this thread?</span>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  disabled={isReplacing.value}
+                  onClick={() => void handleReplaceClick()}
+                >
+                  Replace
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={isReplacing.value}
+                  onClick={() => {
+                    isConfirmingReplace.value = false;
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            ) : (
+              <div class="flex items-center gap-1">
+                <ThreadReportButton threadId={workspace.threadId ?? ''} />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={isBusy || isReplacing.value}
+                  onClick={() => {
+                    isConfirmingReplace.value = true;
+                  }}
+                >
+                  Replace Thread
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={isBusy || isReplacing.value}
+                  onClick={() => void handleSummarizeClick()}
+                >
+                  Summarise
+                </Button>
+              </div>
+            )}
           </div>
           <ChatComposer
             inputValue={inputValue}
@@ -273,7 +335,7 @@ export function WorkspaceChatTab({
             onFocus={() => onInputFocusChange?.(true)}
             onBlur={() => onInputFocusChange?.(false)}
             isGenerating={thread.isStreaming.value || thread.backgroundTurnActive.value}
-            disabled={!!thread.pendingHitlId.value || isBusy}
+            disabled={!!thread.pendingHitlId.value || isBusy || isReplacing.value}
             providers={providers.value}
             favoriteModels={favoriteModels.value}
             activeProvider={thread.activeThreadModel.value?.provider}

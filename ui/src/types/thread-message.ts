@@ -214,7 +214,7 @@ export type ThreadMessage =
 
 export type WakeupState = 'pending' | 'fired' | 'cancelled';
 export type WakeupFireSource = 'timer' | 'trigger_now' | 'catch_up';
-export type WakeupSettledBy = WakeupFireSource | 'user_cancel' | 'agent_cancel';
+export type WakeupSettledBy = WakeupFireSource | 'user_cancel' | 'agent_cancel' | 'thread_replaced';
 
 export type UserThreadMessage = Extract<ThreadMessage, { kind: 'user' }>;
 export type AssistantThreadMessage = Extract<ThreadMessage, { kind: 'assistant' }>;

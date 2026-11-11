@@ -137,4 +137,29 @@ describe('agents/tools/get-task-outcome', () => {
     expect(result).to.include(run.id);
     expect(result).to.include('read_workspace_task_run');
   });
+
+  it("includes the run's threadId when one is set, so a caller can use search_threads [unit]", async () => {
+    const store = getWorkspaceStore();
+    const task = store.createTask({ title: 'Sub-agent delegated work', workspaceId });
+    const run = store.enqueueTask(task.id);
+    store.setQueueEntryThread(run.id, 'run-thread-123');
+    store.completeQueueEntry(run.id, 'done');
+
+    const result = String(
+      await getTaskOutcomeTool.invoke({ taskId: task.id }, invokeConfig(workspaceId)),
+    );
+    expect(result).to.include('thread run-thread-123');
+  });
+
+  it('omits the thread clause entirely for a run with no threadId recorded [unit]', async () => {
+    const store = getWorkspaceStore();
+    const task = store.createTask({ title: 'Legacy run', workspaceId });
+    const run = store.enqueueTask(task.id);
+    store.completeQueueEntry(run.id, 'done');
+
+    const result = String(
+      await getTaskOutcomeTool.invoke({ taskId: task.id }, invokeConfig(workspaceId)),
+    );
+    expect(result).to.not.include('thread ');
+  });
 });

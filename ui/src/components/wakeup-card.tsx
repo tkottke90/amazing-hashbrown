@@ -30,9 +30,13 @@ const FIRED_HOW: Partial<Record<WakeupSettledBy, string>> = {
 
 function settledText(card: WakeupCardPayload): string {
   if (card.state === 'cancelled') {
-    return card.settledBy === 'agent_cancel'
-      ? `Cancelled by agent${card.cancelReason ? `: ${card.cancelReason}` : ''}`
-      : 'Cancelled by you';
+    if (card.settledBy === 'agent_cancel') {
+      return `Cancelled by agent${card.cancelReason ? `: ${card.cancelReason}` : ''}`;
+    }
+    if (card.settledBy === 'thread_replaced') {
+      return 'Cancelled — this thread was replaced';
+    }
+    return 'Cancelled by you';
   }
   const how = card.settledBy ? FIRED_HOW[card.settledBy] : undefined;
   const at = card.settledAt ? ` ${clockTime(card.settledAt)}` : '';

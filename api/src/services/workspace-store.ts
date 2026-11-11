@@ -64,7 +64,11 @@ export interface PatchWorkspaceInput {
   systemPrompt?: string | null;
   threadId?: string;
   summaryPath?: string;
-  lastSummarizedMessageId?: string;
+  // string | null (not plain string) — Replace Thread resets this to null
+  // when repointing a workspace to a brand-new thread, since the cursor is
+  // scoped to the old thread's own row space and would be meaningless left
+  // stale (see docs/superpowers/specs/2026-11-11-workspace-chat-thread-continuity-design.md).
+  lastSummarizedMessageId?: string | null;
   autoApproveShell?: boolean;
 }
 

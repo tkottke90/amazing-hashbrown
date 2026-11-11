@@ -1,12 +1,10 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import type { RunnableConfig } from '@langchain/core/runnables';
-import { OllamaEmbeddingProvider, OpenAIEmbeddingProvider } from '@tkottke90/llm-wiki/providers';
-import type { EmbeddingAdapter } from '@tkottke90/inference-adapter';
 import { env } from '../../config/env.js';
-import { logger } from '../../config/logger.js';
 import { getThreadStore, type ThreadMessageRecord } from '../../services/thread-store.js';
 import { extractText } from '../thread-text.js';
+import { rankMessages } from './thread-search-ranking.js';
 
 const SearchConversationSchema = z.object({
   query: z.string().describe('Natural language query to search the conversation history.'),
@@ -19,95 +17,6 @@ const SearchConversationSchema = z.object({
     .default(5)
     .describe('Number of turns to return (default 5).'),
 });
-
-function keywordSearch(
-  query: string,
-  texts: string[],
-  limit: number,
-): { index: number; score: number }[] {
-  const terms = query
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((t) => t.length > 1);
-
-  const scores = texts.map((text, index) => {
-    const lower = text.toLowerCase();
-    const score = terms.reduce((sum, term) => {
-      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const matches = lower.match(new RegExp(escaped, 'g'));
-      return sum + (matches?.length ?? 0);
-    }, 0);
-    return { index, score };
-  });
-
-  return scores
-    .filter((s) => s.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
-}
-
-function cosineSim(a: number[], b: number[]): number {
-  let dot = 0,
-    normA = 0,
-    normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i]! * b[i]!;
-    normA += a[i]! * a[i]!;
-    normB += b[i]! * b[i]!;
-  }
-  if (normA === 0 || normB === 0) return 0;
-  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
-}
-
-let _embeddingProvider: EmbeddingAdapter | undefined;
-
-function getEmbeddingProvider(): EmbeddingAdapter | undefined {
-  if (!env.embeddings.enabled) return undefined;
-  if (_embeddingProvider) return _embeddingProvider;
-
-  if (env.embeddings.type === 'openai') {
-    _embeddingProvider = new OpenAIEmbeddingProvider({
-      apiKey: env.embeddings.apiKey,
-      baseURL: env.embeddings.baseUrl,
-      model: env.embeddings.model,
-    });
-  } else {
-    _embeddingProvider = new OllamaEmbeddingProvider({
-      baseUrl: env.embeddings.baseUrl,
-      model: env.embeddings.model,
-    });
-  }
-  return _embeddingProvider;
-}
-
-interface EmbeddingCache {
-  messageCount: number;
-  embeddings: number[][];
-}
-
-const _embeddingCache = new Map<string, EmbeddingCache>();
-
-async function getCorpusEmbeddings(threadId: string, texts: string[]): Promise<number[][] | null> {
-  const provider = getEmbeddingProvider();
-  if (!provider) return null;
-
-  const cached = _embeddingCache.get(threadId);
-  if (cached && cached.messageCount === texts.length) {
-    return cached.embeddings;
-  }
-
-  try {
-    const embeddings = await provider.embed(texts);
-    _embeddingCache.set(threadId, { messageCount: texts.length, embeddings });
-    return embeddings;
-  } catch (err) {
-    logger.warn('search_conversation: embedding failed, falling back to keyword search', {
-      threadId,
-      err: err instanceof Error ? err.message : String(err),
-    });
-    return null;
-  }
-}
 
 export const searchConversationTool = tool(
   async ({ query, limit }, config: RunnableConfig | undefined) => {
@@ -143,34 +52,7 @@ export const searchConversationTool = tool(
     const texts = corpus.map((c) => c.text);
     const resolvedLimit = limit ?? 5;
 
-    const corpusEmbeddings = await getCorpusEmbeddings(threadId, texts);
-
-    let rankedIndices: { index: number; score: number }[];
-
-    if (corpusEmbeddings) {
-      const provider = getEmbeddingProvider()!;
-      let queryVec: number[] | null = null;
-      try {
-        const [vec] = await provider.embed([query]);
-        queryVec = vec ?? null;
-      } catch {
-        queryVec = null;
-      }
-
-      if (queryVec) {
-        rankedIndices = texts
-          .map((_, i) => ({
-            index: i,
-            score: cosineSim(corpusEmbeddings[i]!, queryVec!),
-          }))
-          .sort((a, b) => b.score - a.score)
-          .slice(0, resolvedLimit);
-      } else {
-        rankedIndices = keywordSearch(query, texts, resolvedLimit);
-      }
-    } else {
-      rankedIndices = keywordSearch(query, texts, resolvedLimit);
-    }
+    const rankedIndices = await rankMessages(threadId, query, texts, resolvedLimit);
 
     if (rankedIndices.length === 0) return 'No relevant turns found for that query.';
 

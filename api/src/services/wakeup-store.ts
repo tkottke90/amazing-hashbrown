@@ -20,7 +20,14 @@ export const WAKEUP_MAX_CHAIN = 12;
 
 export type WakeupStatus = 'pending' | 'fired' | 'cancelled';
 export type WakeupFireSource = 'timer' | 'trigger_now' | 'catch_up';
-export type WakeupCancelSource = 'user_cancel' | 'agent_cancel' | 'externally_blocked_handoff';
+export type WakeupCancelSource =
+  | 'user_cancel'
+  | 'agent_cancel'
+  | 'externally_blocked_handoff'
+  // Set when Replace Thread archives the thread this wake-up was pending
+  // on — a distinct value from externally_blocked_handoff, which means
+  // something specific and different (a task's own dead end).
+  | 'thread_replaced';
 export type WakeupSettledBy = WakeupFireSource | WakeupCancelSource;
 
 export interface Wakeup {

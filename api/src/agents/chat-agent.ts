@@ -34,6 +34,7 @@ import { makeWikiUpdatePageTool } from './tools/wiki-update-page.tool.js';
 import { rlmQueryTool } from './tools/rlm-query.tool.js';
 import { makeSearchSkillsTool } from './tools/search-skills.tool.js';
 import { searchConversationTool } from './tools/search-conversation.tool.js';
+import { searchThreadsTool } from './tools/search-threads.tool.js';
 import { webFetchTool } from './tools/web-fetch.tool.js';
 import { makeGetToolKeyTool } from './tools/get-tool-key.tool.js';
 import { toolStub, STUB_THRESHOLD_CHARS } from './tools/tool-stub.js';
@@ -342,6 +343,7 @@ export const STATIC_CHAT_TOOLS = [
   webFetchTool,
   rlmQueryTool,
   searchConversationTool,
+  searchThreadsTool,
   spawnSubAgentTool,
   makeUpdateWidgetContentTool(),
 ];

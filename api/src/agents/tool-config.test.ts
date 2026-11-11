@@ -230,6 +230,10 @@ describe('agents/tool-config', () => {
         'rlm_query',
         'search_skills',
         'search_conversation',
+        // Postdates the legacy snapshot but added deliberately, for
+        // symmetry with search_conversation — see tool-config.ts's own
+        // comment on LEGACY_SUB_AGENT_TOOL_IDS.
+        'search_threads',
       ];
       for (const id of expectedIncluded) {
         expect(ids.has(id), `expected getSubAgentToolIds() to include ${id}`).to.equal(true);

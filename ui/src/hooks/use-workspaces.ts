@@ -63,6 +63,18 @@ export async function patchWorkspace(id: string, patch: PatchWorkspaceInput): Pr
   if (currentWorkspace.value?.id === id) currentWorkspace.value = updated;
 }
 
+// Merges a Replace Thread response straight into the local signal, instead
+// of re-PATCHing through patchWorkspace (which would be a second,
+// redundant round trip through the generic PATCH route — the server has
+// already repointed the workspace as part of the replace call itself).
+export function applyThreadReplacement(workspaceId: string, newThreadId: string): void {
+  const patch = { threadId: newThreadId, lastSummarizedMessageId: null };
+  workspaces.value = workspaces.value.map((w) => (w.id === workspaceId ? { ...w, ...patch } : w));
+  if (currentWorkspace.value?.id === workspaceId) {
+    currentWorkspace.value = { ...currentWorkspace.value, ...patch };
+  }
+}
+
 export async function deleteWorkspace(id: string): Promise<DeleteWorkspaceResult> {
   const result = await apiDeleteWorkspace(id);
   workspaces.value = workspaces.value.filter((w) => w.id !== id);

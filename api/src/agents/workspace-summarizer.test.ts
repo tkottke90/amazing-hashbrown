@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, before, after, beforeEach } from 'mocha';
 import { expect } from 'chai';
+import matter from 'gray-matter';
 import Database from 'better-sqlite3';
 import { SqliteSaver } from '@langchain/langgraph-checkpoint-sqlite';
 import { createAgent } from 'langchain';
@@ -198,6 +199,56 @@ describe('agents/workspace-summarizer', () => {
     expect(events().some((e) => e.type === 'summarizing_end' && e.error === undefined)).to.equal(
       true,
     );
+  });
+
+  it('writes threadId and the covered seq range as frontmatter on the summary file', async () => {
+    seedConversationalMessages(threadStore, workspace.threadId!, 40);
+    const model = new FakeListChatModel({ responses: ['# Summary\n\nKey decision: use SQLite.'] });
+
+    await maybeSummarizeWorkspace(
+      undefined,
+      workspaceStore,
+      threadStore,
+      workspace,
+      agent,
+      model,
+      undefined,
+      undefined,
+    );
+
+    const reloaded = workspaceStore.getWorkspace(workspace.id)!;
+    const summaryDir = join(workspace.location, '.hashbrown', 'summaries');
+    const file = readdirSync(summaryDir)[0]!;
+    const { data } = matter(readFileSync(join(summaryDir, file), 'utf8'));
+
+    expect(data.threadId).to.equal(workspace.threadId);
+    expect(data.covers_from_seq).to.equal(1);
+    expect(data.covers_to_seq).to.equal(40);
+    expect(data.supersededBy).to.equal(undefined);
+    expect(reloaded.summaryPath).to.equal(join('.hashbrown', 'summaries', file));
+  });
+
+  it('writes a supersededBy field only when passed, for a Replace Thread final summary', async () => {
+    seedConversationalMessages(threadStore, workspace.threadId!, 2);
+    const model = new FakeListChatModel({ responses: ['# Final summary'] });
+    const newThreadId = randomUUID();
+
+    await maybeSummarizeWorkspace(
+      undefined,
+      workspaceStore,
+      threadStore,
+      workspace,
+      agent,
+      model,
+      undefined,
+      undefined,
+      { force: true, supersededBy: newThreadId },
+    );
+
+    const summaryDir = join(workspace.location, '.hashbrown', 'summaries');
+    const file = readdirSync(summaryDir)[0]!;
+    const { data } = matter(readFileSync(join(summaryDir, file), 'utf8'));
+    expect(data.supersededBy).to.equal(newThreadId);
   });
 
   it('records a boundary marker message in the checkpoint after a successful summarize', async () => {

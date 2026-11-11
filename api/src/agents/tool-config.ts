@@ -33,6 +33,12 @@ const LEGACY_SUB_AGENT_TOOL_IDS = new Set([
   'rlm_query',
   'search_skills',
   'search_conversation',
+  // search_threads postdates the "today's exact membership" snapshot above
+  // but is added here deliberately, for symmetry with its read-only
+  // sibling search_conversation — a sub-agent that learns another
+  // thread's id (e.g. from its own completion notification) should be
+  // able to use it the same way a parent chat can.
+  'search_threads',
 ]);
 
 // Tools that are structurally incompatible with a sub-agent run, not just
