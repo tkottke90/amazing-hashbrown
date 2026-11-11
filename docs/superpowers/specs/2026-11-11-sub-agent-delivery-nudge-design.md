@@ -16,11 +16,11 @@ grace window; this spec covers the resulting mechanism end to end.
 
 ### The two-rung structure, per trigger
 
-| Trigger | First crossing → Delivery Nudge | Real throw → Loop-Guard Exhaustion |
-|---|---|---|
-| Step-count check-in | `stepThreshold` (`subAgentRecursionLimit * warnThreshold`, 18 at today's defaults) | `subAgentRecursionLimit` itself (25) — not the next periodic multiple (see ADR-0062) |
-| Reflection, Stagnation Streak | First non-Converging verdict | Next reflection call on the same streak, if still non-Converging |
-| Reflection, Raw Streak | First non-Converging verdict | Next reflection call on the same streak, if still non-Converging |
+| Trigger                       | First crossing → Delivery Nudge                                                    | Real throw → Loop-Guard Exhaustion                                                   |
+| ----------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Step-count check-in           | `stepThreshold` (`subAgentRecursionLimit * warnThreshold`, 18 at today's defaults) | `subAgentRecursionLimit` itself (25) — not the next periodic multiple (see ADR-0062) |
+| Reflection, Stagnation Streak | First non-Converging verdict                                                       | Next reflection call on the same streak, if still non-Converging                     |
+| Reflection, Raw Streak        | First non-Converging verdict                                                       | Next reflection call on the same streak, if still non-Converging                     |
 
 One shared Delivery Nudge message text across all three triggers — the model doesn't need a
 different framing depending on which counter caught it.
@@ -36,17 +36,17 @@ Stagnation Streak/Raw Streak counted fresh from after the nudge, not blended wit
 and the function's existing default (any `HumanMessage` not tagged with the Stagnation Nudge's own
 `loopGuardKind` is a boundary) already does the right thing.
 
-For step-count: once its marker is present (nudged at 18), check on *every* subsequent
+For step-count: once its marker is present (nudged at 18), check on _every_ subsequent
 `beforeModel` call — not just at the next multiple of `stepThreshold` — whether `completedSteps`
 has reached `subAgentRecursionLimit` (25). `subAgentRecursionLimit` isn't guaranteed to land on a
 multiple of `stepThreshold` for every possible config, so this has to be a plain `>=` check against
 the fixed ceiling, not a second periodic crossing. If reached: check delivery (below) and either
 let the Run continue (delivered) or throw Loop-Guard Exhaustion (not delivered). Before the marker
 is present at all, the existing periodic check (`completedSteps % stepThreshold === 0`) still
-governs the *first* crossing, which injects the Delivery Nudge instead of throwing.
+governs the _first_ crossing, which injects the Delivery Nudge instead of throwing.
 
 For Reflection (Stagnation Streak, Raw Streak): once a trigger's marker is present from a first
-non-Converging verdict, the *next* time Reflection runs on the same streak and judges it still
+non-Converging verdict, the _next_ time Reflection runs on the same streak and judges it still
 non-Converging is the real, second crossing — check delivery and either continue or throw. This one
 genuinely is "wait for the next occurrence," since Reflection only runs when its own threshold is
 hit again, not on every `beforeModel` call.
@@ -65,7 +65,7 @@ second crossing.
 As a side effect, this also fixes a pre-existing race: today, an accepted `complete_task` call
 followed by the model's own courtesy reply (the standard ReAct loop's one extra round-trip after
 any tool call) could land exactly on a threshold crossing and discard an already-successful
-completion. Checking `hasDelivered()` before ever throwing — on *either* rung — closes that gap too.
+completion. Checking `hasDelivered()` before ever throwing — on _either_ rung — closes that gap too.
 
 ### Outcome classification (unchanged on one path, new on the other)
 

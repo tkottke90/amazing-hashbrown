@@ -366,9 +366,13 @@ export interface PatchTaskInput {
 export type TriggerSource = 'manual' | 'webhook' | 'schedule' | 'catch_up' | 'chat' | 'agent';
 
 // Why a 'failed' Run failed — distinguishes an Exhausted Run (hit a hard
-// resource limit) from any other failure. See ADR-0056, GLOSSARY.md §
-// Exhausted Run.
-export type FailureReason = 'out_of_steps' | 'turn_overflow' | 'other';
+// resource limit) from a Loop-Guard Exhaustion (a Sub-Agent Task's Run ran
+// out its Delivery Nudge's grace window) from any other failure. See
+// ADR-0056, ADR-0062, GLOSSARY.md § Exhausted Run, § Loop-Guard Exhaustion.
+// 'loop_guard_exhausted' deliberately never appears in exhaustionStreaks()'s
+// query below — a Sub-Agent Task never participates in the Exhaustion
+// Streak/Cap/Narrowed-Retry machinery (ADR-0055/0056).
+export type FailureReason = 'out_of_steps' | 'turn_overflow' | 'other' | 'loop_guard_exhausted';
 
 // Which of the two things produced a 'handed_off' Run. See ADR-0056,
 // GLOSSARY.md § Hand-Off Cause.
@@ -1212,7 +1216,8 @@ export class WorkspaceStore extends BaseStore {
 
   getWorkspace(id: string): Workspace | null {
     const row = this.db.prepare(`SELECT * FROM workspaces WHERE id = ?`).get(id) as
-      RawWorkspaceRow | undefined;
+      | RawWorkspaceRow
+      | undefined;
     return row ? mapWorkspace(row) : null;
   }
 
@@ -1220,7 +1225,8 @@ export class WorkspaceStore extends BaseStore {
   // the parent thread is type='workspace-chat' — see task-execution.ts.
   getWorkspaceByThreadId(threadId: string): Workspace | null {
     const row = this.db.prepare(`SELECT * FROM workspaces WHERE thread_id = ?`).get(threadId) as
-      RawWorkspaceRow | undefined;
+      | RawWorkspaceRow
+      | undefined;
     return row ? mapWorkspace(row) : null;
   }
 
@@ -1596,7 +1602,8 @@ export class WorkspaceStore extends BaseStore {
 
   getTask(id: string): Task | null {
     const row = this.db.prepare(`SELECT * FROM tasks WHERE id = ?`).get(id) as
-      RawTaskRow | undefined;
+      | RawTaskRow
+      | undefined;
     return row ? mapTask(row) : null;
   }
 
@@ -1616,7 +1623,8 @@ export class WorkspaceStore extends BaseStore {
       .get(threadId) as RawTaskRow | undefined;
     if (row) return mapTask(row);
     const legacy = this.db.prepare(`SELECT * FROM tasks WHERE thread_id = ?`).get(threadId) as
-      RawTaskRow | undefined;
+      | RawTaskRow
+      | undefined;
     return legacy ? mapTask(legacy) : null;
   }
 
@@ -2243,7 +2251,8 @@ export class WorkspaceStore extends BaseStore {
 
   getQueueEntry(id: string): TaskQueueEntry | null {
     const row = this.db.prepare(`SELECT * FROM task_queue WHERE id = ?`).get(id) as
-      RawQueueRow | undefined;
+      | RawQueueRow
+      | undefined;
     return row ? mapQueueEntry(row) : null;
   }
 
@@ -2914,7 +2923,8 @@ export class WorkspaceStore extends BaseStore {
       )
       .run(now, id);
     const row = this.db.prepare(`SELECT task_id FROM task_queue WHERE id = ?`).get(id) as
-      { task_id: string } | undefined;
+      | { task_id: string }
+      | undefined;
     if (row) {
       this.db
         .prepare(`UPDATE tasks SET status = 'blocked', updated_at = ? WHERE id = ?`)
@@ -2951,7 +2961,8 @@ export class WorkspaceStore extends BaseStore {
       )
       .run(now, id);
     const row = this.db.prepare(`SELECT task_id FROM task_queue WHERE id = ?`).get(id) as
-      { task_id: string } | undefined;
+      | { task_id: string }
+      | undefined;
     if (row) {
       this.db
         .prepare(

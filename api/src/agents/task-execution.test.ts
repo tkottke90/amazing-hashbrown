@@ -377,6 +377,28 @@ function fakeBuildSubAgentAgent(agent: any): typeof buildSubAgentAgent {
   }) as any;
 }
 
+// Wraps a fake agent's streamEvents to record the config it was actually
+// called with (its 2nd positional arg) before delegating — spying rather
+// than re-implementing the assertion via a new mock, per this repo's
+// orchestration-test convention. Used to prove task-execution.ts's
+// recursionLimit is origin-aware (ADR-0062), not to re-test the recursion
+// guard itself (that's recursion-guard.middleware.test.ts's job).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function spyStreamEventsConfig(agent: any): { agent: any; configs: unknown[] } {
+  const configs: unknown[] = [];
+  const original = agent.streamEvents.bind(agent);
+  return {
+    agent: {
+      ...agent,
+      streamEvents: (...args: unknown[]) => {
+        configs.push(args[1]);
+        return original(...args);
+      },
+    },
+    configs,
+  };
+}
+
 const COMPLETE_TASK_DONE_EVENTS: RawEvent[] = [
   {
     event: 'on_tool_start',
@@ -1701,6 +1723,9 @@ describe('agents/task-execution', () => {
       await executeTask(entry, { buildSubAgentAgent: fakeBuildSubAgentAgent(agent) });
 
       expect(store.getTask(entry.task.id)!.status).to.equal('failed');
+      // A Loop-Guard Exhaustion, not a Stalled Run's "no detected reason" —
+      // see GLOSSARY.md § Task Runs, ADR-0062.
+      expect(store.getQueueEntry(entry.id)!.failureReason).to.equal('loop_guard_exhausted');
       // Same provider-independent scope as the adjacent tests in this
       // describe block (see its header comment): the marker payload itself
       // carries outcome/remainingCount, not summary — summary flows into
@@ -1766,6 +1791,21 @@ describe('agents/task-execution', () => {
       expect(markers).to.have.length(1);
       expect((markers[0]!.payload as Record<string, unknown>).outcome).to.equal('failed');
     });
+
+    it("uses subAgentRecursionLimit for streamEvents' recursionLimit, not the shared env.agent.recursionLimit (ADR-0062)", async () => {
+      configManager.set('agent', {
+        roles: { researcher: {} },
+        subAgentRecursionLimit: 7,
+        recursionLimit: 999,
+      });
+      const entry = makeSubAgentEntry({ parentThreadId: 'parent-h', dispatchGroupId: 'group-h' });
+      const { agent, configs } = spyStreamEventsConfig(fakeAgent(COMPLETE_TASK_DONE_EVENTS));
+
+      await executeTask(entry, { buildSubAgentAgent: fakeBuildSubAgentAgent(agent) });
+
+      expect(configs).to.have.length(1);
+      expect((configs[0] as { recursionLimit: number }).recursionLimit).to.equal(7);
+    });
   });
 
   describe('StagnationLimitError on a non-sub-agent task (defensive case)', () => {
@@ -1783,8 +1823,25 @@ describe('agents/task-execution', () => {
       expect(store.getTask(entry.task.id)!.status).to.equal('failed');
       expect(
         store.getQueueEntry(entry.id)!.failureReason,
-        'sub-agent-only, classified other',
-      ).to.equal('other');
+        'StagnationLimitError always classifies as loop_guard_exhausted, regardless of origin',
+      ).to.equal('loop_guard_exhausted');
+    });
+  });
+
+  describe("streamEvents' recursionLimit for an ordinary task (ADR-0062)", () => {
+    afterEach(() => {
+      configManager.set('agent', { roles: {} });
+    });
+
+    it("uses the shared env.agent.recursionLimit, not subAgentRecursionLimit, for an origin='user' task", async () => {
+      configManager.set('agent', { roles: {}, subAgentRecursionLimit: 7, recursionLimit: 999 });
+      const entry = makeGlobalEntry('Ordinary task');
+      const { agent, configs } = spyStreamEventsConfig(fakeAgent(COMPLETE_TASK_DONE_EVENTS));
+
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+      expect(configs).to.have.length(1);
+      expect((configs[0] as { recursionLimit: number }).recursionLimit).to.equal(999);
     });
   });
 

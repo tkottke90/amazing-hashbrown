@@ -7,6 +7,7 @@ import { getThreadStore, type ThreadStore } from '../services/thread-store.js';
 import {
   getWorkspaceStore,
   scopeUnchanged,
+  type FailureReason,
   type Task,
   type TaskQueueEntry,
   type TaskRun,
@@ -457,7 +458,12 @@ export async function executeTask(
     setActiveSseWriter(threadId, sink);
 
     let finalOutcome:
-      'done' | 'failed' | 'waiting_on_user' | 'cancelled' | 'blocked' | 'handed_off' = 'failed';
+      | 'done'
+      | 'failed'
+      | 'waiting_on_user'
+      | 'cancelled'
+      | 'blocked'
+      | 'handed_off' = 'failed';
     // Hoisted above the try block (rather than declared inside it) so the
     // catch block below can still reach them to clean up a mid-stream failure
     // — mirroring failAssistant's role in the interactive chat/workspace-chat
@@ -766,7 +772,15 @@ export async function executeTask(
                 resolvedTurnObs.attach({
                   ...resolvedConfig,
                   version: 'v2',
-                  recursionLimit: env.agent?.recursionLimit ?? 100,
+                  // A Sub-Agent Task's Run gets its own, much smaller ceiling
+                  // here — previously this was always the shared, much
+                  // larger env.agent.recursionLimit regardless of origin,
+                  // leaving subAgentRecursionLimit enforcing nothing of its
+                  // own (see ADR-0062).
+                  recursionLimit:
+                    runTask.origin === 'agent'
+                      ? (env.agent?.subAgentRecursionLimit ?? 25)
+                      : (env.agent?.recursionLimit ?? 100),
                   signal: controller.signal,
                   context: {
                     provider,
@@ -1007,6 +1021,11 @@ export async function executeTask(
       const finishFailedRun = async (
         notifyMessage: string,
         summary = notifyMessage,
+        // Only the StagnationLimitError branch below ever passes this —
+        // every other failure path omits it, leaving the parent
+        // notification's wording unchanged. See GLOSSARY.md § Task Runs
+        // (Loop-Guard Exhaustion), ADR-0062.
+        failureReason?: FailureReason,
       ): Promise<void> => {
         finalOutcome = 'failed';
         store.setQueueEntrySummary(entry.id, summary);
@@ -1021,7 +1040,7 @@ export async function executeTask(
           });
         }
         if (task.origin === 'agent') {
-          await deliverSubAgentCompletion(task, 'failed', notifyMessage, threadId);
+          await deliverSubAgentCompletion(task, 'failed', notifyMessage, threadId, failureReason);
         }
         if (taskFileScope) {
           await finishFile(
@@ -1206,11 +1225,18 @@ export async function executeTask(
           reason: (err as StagnationLimitError).reason,
         });
         traceError = (err as StagnationLimitError).summary;
-        // Sub-agent-only (escalationMode: 'throw'); out of this feature's
-        // scope per ADR-0056, but still classified as 'other' for a
-        // consistent failure_reason column.
-        store.setQueueEntryFailureReason(entry.id, 'other');
-        await finishFailedRun((err as StagnationLimitError).summary);
+        // Sub-agent-only (escalationMode: 'throw'); out of ADR-0056's
+        // Exhaustion Streak/Cap scope entirely (never a board Task), and its
+        // own distinct failure_reason — a Loop-Guard Exhaustion, not a
+        // Stalled Run's "no detected reason" (see GLOSSARY.md § Task Runs,
+        // ADR-0062). By the time this throws, the Run already got one
+        // Delivery Nudge and still delivered nothing.
+        store.setQueueEntryFailureReason(entry.id, 'loop_guard_exhausted');
+        await finishFailedRun(
+          (err as StagnationLimitError).summary,
+          undefined,
+          'loop_guard_exhausted',
+        );
       } else if ((err as Error).name === 'ContextBudgetExceededError') {
         // Thrown by boundaryAwareTrim's Turn Overflow recovery
         // (summary-boundary.ts) when even fully truncating the current

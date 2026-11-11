@@ -36,6 +36,7 @@ import {
   createRecursionGuardMiddleware,
   StagnationLimitError,
 } from './recursion-guard.middleware.js';
+import { makeCompleteTaskTool } from './tools/complete-task.tool.js';
 
 // Always calls the same tool with the same args, and the tool always returns
 // the same result — a deterministic stagnation loop, unlike
@@ -64,6 +65,55 @@ const noOpTool = tool(async () => 'ok', {
   description: 'Does nothing, always returns the same result',
   schema: z.object({}),
 });
+
+// Same deterministic no_op loop as StagnantChatModel, but switches to
+// calling complete_task once it's been invoked `switchAfterCalls` times,
+// then stops with a plain-text reply the next time around (like a real
+// model would after its own tool call resolves) — simulates a sub-agent
+// that complies with the Delivery Nudge and wraps up, rather than one that
+// ignores it and keeps exploring (or keeps calling complete_task) forever.
+class StagnantThenDeliverChatModel extends BaseChatModel {
+  // Set by the test after construction (mirrors AlternatingChatModel's
+  // no-constructor style, rather than adding a custom one whose required
+  // super() params aren't worth guessing at here).
+  switchAfterCalls = 3;
+  private callCount = 0;
+  private delivered = false;
+
+  _llmType() {
+    return 'stagnant-then-deliver-fake';
+  }
+
+  bindTools() {
+    return this;
+  }
+
+  async _generate(_messages: BaseMessage[]): Promise<ChatResult> {
+    this.callCount += 1;
+    if (this.delivered) {
+      return { generations: [{ message: new AIMessage('Done.'), text: 'Done.' }] };
+    }
+    if (this.callCount <= this.switchAfterCalls) {
+      const msg = new AIMessage({
+        content: '',
+        tool_calls: [{ id: `call_${Math.random()}`, name: 'no_op', args: {} }],
+      });
+      return { generations: [{ message: msg, text: '' }] };
+    }
+    this.delivered = true;
+    const msg = new AIMessage({
+      content: '',
+      tool_calls: [
+        {
+          id: `call_${Math.random()}`,
+          name: 'complete_task',
+          args: { outcome: 'done', summary: 'Wrapped up after the nudge.' },
+        },
+      ],
+    });
+    return { generations: [{ message: msg, text: '' }] };
+  }
+}
 
 // Alternates between two tools call-by-call, each with its own stable
 // output — reproduces the production incident's shape (issue #301:
@@ -320,7 +370,7 @@ describe('agents/loop-guard (integration)', () => {
       rmSync(dir, { recursive: true });
     });
 
-    it('throws StagnationLimitError instead of interrupting — nothing can resume an interrupt() in a sub-agent run', async () => {
+    it('nudges once (Delivery Nudge), then throws StagnationLimitError on the second non-converging verdict — nothing delivered, nothing can resume an interrupt() in a sub-agent run', async () => {
       let caughtError: unknown = null;
       try {
         const stream = agent.streamEvents(
@@ -348,6 +398,107 @@ describe('agents/loop-guard (integration)', () => {
         isDirect || isWrapped,
         `expected a StagnationLimitError, got ${err.name}: ${err.message}`,
       ).to.equal(true);
+
+      // A Delivery Nudge (not the older Stagnation Nudge) must have been
+      // injected before the throw — this model never calls complete_task,
+      // so the nudge's own grace window closes with nothing delivered,
+      // which is exactly what should have produced this throw. See
+      // GLOSSARY.md § Loop Guard, ADR-0062.
+      const state = await agent.graph.getState(config);
+      const humanMessages = (state.values?.messages ?? []).filter(
+        (m: BaseMessage) => m.getType() === 'human',
+      );
+      const deliveryNudge = humanMessages.find(
+        (m: BaseMessage) => m.additional_kwargs?.loopGuardKind === 'delivery-nudge',
+      );
+      expect(
+        deliveryNudge,
+        'a Delivery Nudge should have been injected before the real throw',
+      ).to.not.equal(undefined);
+    });
+  });
+
+  describe('throw mode — Delivery Nudge delivers after the nudge (ADR-0062)', () => {
+    let dir: string;
+    let db: Database.Database;
+    let checkpointer: SqliteSaver;
+    let delivered: boolean;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let agent: any;
+
+    const threadId = 'loop-guard-delivery-nudge-integration-thread';
+    const config = { configurable: { thread_id: threadId } };
+
+    before(() => {
+      dir = mkdtempSync(join(tmpdir(), 'loop-guard-delivery-nudge-integration-'));
+      db = new Database(join(dir, 'test.db'));
+      checkpointer = new SqliteSaver(db);
+      delivered = false;
+      const completeTaskTool = makeCompleteTaskTool('fixture-task', {
+        onAccepted: () => {
+          delivered = true;
+        },
+      });
+      // Calls no_op 3 times (crossing the stagnationReflectionThreshold
+      // once, triggering the first Delivery Nudge), then switches to
+      // complete_task — simulating a sub-agent that complies.
+      const model = new StagnantThenDeliverChatModel({});
+      model.switchAfterCalls = 3;
+      agent = createAgent({
+        model,
+        tools: [noOpTool, completeTaskTool],
+        checkpointer,
+        middleware: [
+          createRecursionGuardMiddleware({
+            recursionLimit: 25,
+            warnThreshold: 0.75,
+            loopGuard: LOOP_GUARD,
+            escalationMode: 'throw',
+            evaluateLoopProgress: async () => ({
+              converging: false,
+              summary: 'Stuck calling no_op repeatedly with no new information.',
+            }),
+            hasDelivered: () => delivered,
+          }),
+        ],
+      });
+    });
+
+    after(() => {
+      db.close();
+      rmSync(dir, { recursive: true });
+    });
+
+    it('does not throw once complete_task is called after the Delivery Nudge', async () => {
+      let caughtError: unknown = null;
+      try {
+        const stream = agent.streamEvents(
+          { messages: [{ role: 'human', content: 'go' }] },
+          { ...config, version: 'v2', recursionLimit: 25 },
+        );
+        for await (const _event of stream) {
+          // drain
+        }
+      } catch (err) {
+        caughtError = err;
+      }
+
+      expect(
+        caughtError,
+        'should not throw once the sub-agent complied with the Delivery Nudge and delivered',
+      ).to.equal(null);
+      expect(delivered, 'complete_task should have been accepted').to.equal(true);
+
+      const state = await agent.graph.getState(config);
+      const humanMessages = (state.values?.messages ?? []).filter(
+        (m: BaseMessage) => m.getType() === 'human',
+      );
+      const deliveryNudge = humanMessages.find(
+        (m: BaseMessage) => m.additional_kwargs?.loopGuardKind === 'delivery-nudge',
+      );
+      expect(deliveryNudge, 'a Delivery Nudge should still have been injected first').to.not.equal(
+        undefined,
+      );
     });
   });
 });
