@@ -1644,6 +1644,29 @@ all, not treating the unmatched name as a shortcut to whichever tool sounds rela
 own no-directive default — not a direct wiki_search just because a tool-shaped token appeared in the
 message.`;
 
+// Added for issue #408 (MCP Tool Discovery — see GLOSSARY.md and ADR-0067).
+// Always-on, like identity/memory/notation above: search_mcp_tools and
+// use_mcp_tools are themselves always bound, so this section's own
+// applicability never needs gating the way a tool-specific section below
+// does. Exact prose is an implementation-time starting point, to be
+// validated/iterated via the auto-eval loop the same way every other
+// section in this file has been — no eval run has exercised this wording
+// yet.
+const MCP_TOOL_DISCOVERY_SECTION = `Not every connected MCP server's tools are available to you by default — most aren't, until you ask for
+them. Two tools handle this:
+
+- \`search_mcp_tools\`: search by keyword (or call with no argument to list everything). Returns each
+match's id, name, and description — never its full schema. This is read-only and never grants you
+anything by itself; searching broadly doesn't pull anything in.
+- \`use_mcp_tools\`: grant yourself access to specific ids from a search result. Only an id you pass here
+becomes callable. The result tells you which ids were accepted and, for each one that wasn't, whether
+it simply doesn't exist (a typo — search again) or is disabled (don't keep retrying it; tell the user
+why if it's relevant).
+
+A grant from \`use_mcp_tools\` lasts only for the rest of this turn — it does not carry over to your next
+reply. If the same MCP tool is needed again later in the conversation, search and grant it again at that
+point; don't assume an earlier grant is still in effect.`;
+
 // Motivated by auto-eval round 1 of suites/conversation-search.yaml
 // (2026-10-11, local/Lemonade/Ornith/Digital Ocean, judge anthropic) —
 // search_conversation (issue #276) had no system-prompt guidance anywhere in
@@ -2108,6 +2131,7 @@ const HARNESS_SECTIONS: HarnessSection[] = [
   { tag: 'identity', content: IDENTITY_SECTION },
   { tag: 'memory', content: MEMORY_SECTION },
   { tag: 'notation', content: NOTATION_SECTION },
+  { tag: 'mcp_tool_discovery', content: MCP_TOOL_DISCOVERY_SECTION },
   {
     tag: 'search_conversation',
     content: SEARCH_CONVERSATION_SECTION,

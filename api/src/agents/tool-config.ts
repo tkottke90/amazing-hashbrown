@@ -39,6 +39,15 @@ const LEGACY_SUB_AGENT_TOOL_IDS = new Set([
   // thread's id (e.g. from its own completion notification) should be
   // able to use it the same way a parent chat can.
   'search_threads',
+  // search_mcp_tools/use_mcp_tools aren't part of the pre-redesign legacy
+  // set either — added here deliberately so a sub-agent gets the same
+  // default-on MCP Tool Discovery path chat does, without needing a
+  // config.yaml override (issue #408). getSubAgentToolIds() stops gating
+  // MCP tools themselves at all (see chat-agent.ts's buildSubAgentAgent),
+  // but these two discovery tools are ordinary built-ins and still go
+  // through this membership check like everything else here.
+  'search_mcp_tools',
+  'use_mcp_tools',
 ]);
 
 // Tools that are structurally incompatible with a sub-agent run, not just
@@ -116,7 +125,14 @@ export function resolveToolSettings(
   // membership default.
   const enabled = base.alwaysOn ? true : (stored?.enabled ?? true);
   const defaultInclude: ResolvedDefaultInclude = {
-    chat: base.alwaysOn ? true : (stored?.defaultInclude?.chat ?? true),
+    // MCP-category tools default to NOT bound by chat/workspace chat/task
+    // runs (issue #408) — every other category still defaults true. `stored`
+    // is a config.yaml entry, so an installation that already has an
+    // explicit override for a specific MCP tool keeps it unchanged; only the
+    // no-override fallback differs by category.
+    chat: base.alwaysOn
+      ? true
+      : (stored?.defaultInclude?.chat ?? (base.category === 'mcp' ? false : true)),
     subAgent: stored?.defaultInclude?.subAgent ?? LEGACY_SUB_AGENT_TOOL_IDS.has(base.toolId),
     autonomous: base.alwaysOn ? true : (stored?.defaultInclude?.autonomous ?? true),
   };
@@ -257,4 +273,50 @@ export function toBoundMatchKeys(ids: Set<string>): Set<string> {
     keys.add(colonIdx === -1 ? id : `${id.slice(0, colonIdx)}__${id.slice(colonIdx + 1)}`);
   }
   return keys;
+}
+
+// Used only for the MCP-tool sub-agent bypass (chat-agent.ts's
+// buildSubAgentAgent, issue #408) — getSubAgentToolIds() stops gating
+// MCP-category tools at all, so this is the one remaining place an explicit
+// `defaultInclude.subAgent: false` override for a specific MCP tool is
+// checked. Built-in/wiki tools don't need this: they still go through
+// getSubAgentToolIds() unchanged, which already honors the same override.
+export function getExplicitlySubAgentExcludedIds(
+  toolsConfig: Record<string, ToolEntry> = env.tools,
+): Set<string> {
+  return new Set(
+    Object.entries(toolsConfig)
+      .filter(([, entry]) => entry.defaultInclude?.subAgent === false)
+      .map(([id]) => id),
+  );
+}
+
+export interface DiscoverableMcpTool {
+  toolId: string; // display id, colon form (e.g. "n8n:workflow_search")
+  name: string;
+  description: string;
+}
+
+// The live, keyword-searchable MCP catalog view search_mcp_tools reads —
+// enabled rows only. A globally- or thread-disabled MCP tool is invisible to
+// discovery, the same contract disabled tools already have everywhere else
+// (issue #408).
+export function listDiscoverableMcpTools(
+  toolsConfig: Record<string, ToolEntry> = env.tools,
+  store: ToolSettingsStore = getToolSettingsStore(),
+): DiscoverableMcpTool[] {
+  return listResolvedToolSettings(toolsConfig, store)
+    .filter((t) => t.category === 'mcp' && t.enabled)
+    .map((t) => ({ toolId: t.toolId, name: t.name, description: t.description }));
+}
+
+// Validation view for use_mcp_tools — every MCP row, enabled or not, so a
+// disabled tool can be told apart from one that never existed (issue #408).
+export function listAllMcpToolRows(
+  toolsConfig: Record<string, ToolEntry> = env.tools,
+  store: ToolSettingsStore = getToolSettingsStore(),
+): { toolId: string; enabled: boolean }[] {
+  return listResolvedToolSettings(toolsConfig, store)
+    .filter((t) => t.category === 'mcp')
+    .map((t) => ({ toolId: t.toolId, enabled: t.enabled }));
 }
