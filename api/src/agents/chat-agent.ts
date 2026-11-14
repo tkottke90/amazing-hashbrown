@@ -32,6 +32,7 @@ import { wikiRegisterDomainTool } from './tools/wiki-register-domain.tool.js';
 import { wikiSearchTool } from './tools/wiki-search.tool.js';
 import { makeWikiUpdatePageTool } from './tools/wiki-update-page.tool.js';
 import { rlmQueryTool } from './tools/rlm-query.tool.js';
+import { searchHarnessDocsTool } from './tools/search-harness-docs.tool.js';
 import { makeSearchSkillsTool } from './tools/search-skills.tool.js';
 import { makeSearchMcpToolsTool } from './tools/search-mcp-tools.tool.js';
 import { makeUseMcpToolsTool } from './tools/use-mcp-tools.tool.js';
@@ -349,6 +350,7 @@ export const STATIC_CHAT_TOOLS = [
   wikiRegisterDomainTool,
   webFetchTool,
   rlmQueryTool,
+  searchHarnessDocsTool,
   searchConversationTool,
   searchThreadsTool,
   spawnSubAgentTool,

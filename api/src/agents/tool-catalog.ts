@@ -217,6 +217,17 @@ export const TOOL_CATALOG: CatalogEntry[] = [
     category: 'built-in',
     alwaysOn: true,
   },
+  {
+    toolId: 'search_harness_docs',
+    name: 'Search Harness Docs',
+    description:
+      'Look up a reference/terminology question about how this app itself works. See issue #416.',
+    category: 'built-in',
+    // The agent's only route to its own self-knowledge of the harness —
+    // Tool Access must never be able to close this off, same reasoning
+    // search_mcp_tools gets it above.
+    alwaysOn: true,
+  },
 
   // ── Wiki (always available — core to the platform) ───────────────────
   {

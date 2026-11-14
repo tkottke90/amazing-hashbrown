@@ -1667,6 +1667,25 @@ A grant from \`use_mcp_tools\` lasts only for the rest of this turn — it does 
 reply. If the same MCP tool is needed again later in the conversation, search and grant it again at that
 point; don't assume an earlier grant is still in effect.`;
 
+// Added for issue #416. Always-on, like MCP_TOOL_DISCOVERY_SECTION above:
+// search_harness_docs is itself always bound, so this section's own
+// applicability never needs gating. Exact prose is an implementation-time
+// starting point, not yet validated via the auto-eval loop — no eval run
+// has exercised this wording yet. Deliberately scoped narrow: this tool
+// answers "what is X" questions from GLOSSARY.md/docs/App-Docs, not "when
+// should I use tool X" questions, which stay owned by each tool's own
+// section here — see docs/superpowers/specs/
+// 2026-11-13-harness-docs-tool-corpus-design.md for why that split exists.
+const SEARCH_HARNESS_DOCS_SECTION = `search_harness_docs looks up a reference/terminology question about how this app itself works — what a
+term means, what a concept is, or how something is configured (e.g. "what is a Widget", "what is the
+Self wiki", "where do I configure MCP servers"). Reach for it when the user (or you, mid-task) has a
+factual question about the harness itself that you can't already answer with confidence, rather than
+guessing or saying nothing.
+
+It does not answer "when should I use tool X" questions — that guidance lives in each tool's own
+section here, not in this lookup. If search_harness_docs has no answer, say so plainly rather than
+filling the gap with an assumption.`;
+
 // Motivated by auto-eval round 1 of suites/conversation-search.yaml
 // (2026-10-11, local/Lemonade/Ornith/Digital Ocean, judge anthropic) —
 // search_conversation (issue #276) had no system-prompt guidance anywhere in
@@ -2132,6 +2151,7 @@ const HARNESS_SECTIONS: HarnessSection[] = [
   { tag: 'memory', content: MEMORY_SECTION },
   { tag: 'notation', content: NOTATION_SECTION },
   { tag: 'mcp_tool_discovery', content: MCP_TOOL_DISCOVERY_SECTION },
+  { tag: 'search_harness_docs', content: SEARCH_HARNESS_DOCS_SECTION },
   {
     tag: 'search_conversation',
     content: SEARCH_CONVERSATION_SECTION,
