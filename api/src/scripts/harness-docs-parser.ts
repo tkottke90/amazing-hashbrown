@@ -47,7 +47,10 @@ const ANY_HEADING = /^#{1,6}\s+.+$/;
 
 function termTitle(line: string): string {
   const match = TERM_LINE.exec(line);
-  const inner = match ? match[1] : line.replace(/:$/, '');
+  // match[1] is the regex's only capturing group — it always participates
+  // when TERM_LINE matches at all, so this is safe despite the group's
+  // nominal `string | undefined` type.
+  const inner = match ? match[1]! : line.replace(/:$/, '');
   return inner
     .split('/')
     .map((part) => part.trim().replace(/^\*\*|\*\*$/g, ''))
@@ -64,10 +67,11 @@ export function parseGlossary(markdown: string, sourceFile = 'GLOSSARY.md'): Pag
   let i = 0;
 
   while (i < lines.length) {
-    const line = lines[i];
+    // Safe: the while condition above guarantees index i is in bounds.
+    const line = lines[i]!;
     const topHeading = TOP_HEADING.exec(line);
     if (topHeading) {
-      currentSection = topHeading[1].trim();
+      currentSection = topHeading[1]!.trim();
       i += 1;
       continue;
     }
@@ -76,8 +80,10 @@ export function parseGlossary(markdown: string, sourceFile = 'GLOSSARY.md'): Pag
       const title = termTitle(line);
       const bodyLines: string[] = [];
       let j = i + 1;
-      while (j < lines.length && !TERM_LINE.test(lines[j]) && !ANY_HEADING.test(lines[j])) {
-        bodyLines.push(lines[j]);
+      while (j < lines.length) {
+        const bodyLine = lines[j]!;
+        if (TERM_LINE.test(bodyLine) || ANY_HEADING.test(bodyLine)) break;
+        bodyLines.push(bodyLine);
         j += 1;
       }
       const body = bodyLines.join('\n').trim();
@@ -130,7 +136,9 @@ function splitByHeading(markdown: string): RawSection[] {
     const heading = !inFence ? HEADING.exec(line) : null;
     if (heading) {
       flush();
-      title = cleanHeadingTitle(heading[2]);
+      // heading[2] is HEADING's second capturing group — always present
+      // when the regex matches at all.
+      title = cleanHeadingTitle(heading[2]!);
       body = [];
       continue;
     }
@@ -145,7 +153,7 @@ function splitByHeading(markdown: string): RawSection[] {
 function cleanHeadingTitle(raw: string): string {
   const trimmed = raw.trim();
   const backtickWrapped = /^`([^`]+)`$/.exec(trimmed);
-  return backtickWrapped ? backtickWrapped[1] : trimmed;
+  return backtickWrapped ? backtickWrapped[1]! : trimmed;
 }
 
 function slugAnchor(title: string): string {
@@ -210,14 +218,19 @@ function toBlocks(body: string): Block[] {
   const blocks: Block[] = [];
   let i = 0;
 
+  // Safe: every index used below (i, i+1, j) is only ever read once its own
+  // loop condition has confirmed it's within `lines.length`.
+  const isTableStart = (at: number): boolean =>
+    at + 1 < lines.length && TABLE_ROW.test(lines[at]!) && TABLE_SEPARATOR.test(lines[at + 1]!);
+
   while (i < lines.length) {
-    if (TABLE_ROW.test(lines[i]) && i + 1 < lines.length && TABLE_SEPARATOR.test(lines[i + 1])) {
-      const header = lines[i];
-      const separator = lines[i + 1];
+    if (isTableStart(i)) {
+      const header = lines[i]!;
+      const separator = lines[i + 1]!;
       const rows: string[] = [];
       let j = i + 2;
-      while (j < lines.length && TABLE_ROW.test(lines[j])) {
-        rows.push(lines[j]);
+      while (j < lines.length && TABLE_ROW.test(lines[j]!)) {
+        rows.push(lines[j]!);
         j += 1;
       }
       blocks.push({ kind: 'table', header, separator, rows });
@@ -226,11 +239,8 @@ function toBlocks(body: string): Block[] {
     }
 
     const textLines: string[] = [];
-    while (
-      i < lines.length &&
-      !(TABLE_ROW.test(lines[i]) && i + 1 < lines.length && TABLE_SEPARATOR.test(lines[i + 1]))
-    ) {
-      textLines.push(lines[i]);
+    while (i < lines.length && !isTableStart(i)) {
+      textLines.push(lines[i]!);
       i += 1;
     }
     blocks.push({ kind: 'text', lines: textLines });
