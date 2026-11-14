@@ -251,39 +251,53 @@ describe('agents/chat-agent', () => {
   });
 
   describe('mcpToolToLangChain()', () => {
+    // No tool in this describe block (other than the dedicated "result
+    // caching" sub-block below) is configured cacheable — an empty map
+    // means cacheTtlByBoundName.get(t.boundName) is always undefined, so
+    // every test here exercises the exact non-cacheable path that existed
+    // before this feature, unchanged.
+    const NOT_CACHEABLE = new Map<string, number>();
+
     it('preserves the tool name', () => {
-      const lc = mcpToolToLangChain(makeMcpTool({ name: 'my_tool' }));
+      const lc = mcpToolToLangChain(makeMcpTool({ name: 'my_tool' }), NOT_CACHEABLE);
       expect(lc.name).to.equal('my_tool');
     });
 
     it('binds by boundName, not bare name, when they differ (server-qualified MCP tool ids)', () => {
       const lc = mcpToolToLangChain(
         makeMcpTool({ name: 'browser_click', boundName: 'playwright__browser_click' }),
+        NOT_CACHEABLE,
       );
       expect(lc.name).to.equal('playwright__browser_click');
     });
 
     it('preserves the tool description', () => {
-      const lc = mcpToolToLangChain(makeMcpTool({ description: 'does something useful' }));
+      const lc = mcpToolToLangChain(
+        makeMcpTool({ description: 'does something useful' }),
+        NOT_CACHEABLE,
+      );
       expect(lc.description).to.equal('does something useful');
     });
 
     it('passes string results through unchanged', async () => {
-      const lc = mcpToolToLangChain(makeMcpTool({ execute: async () => 'hello from mcp' }));
+      const lc = mcpToolToLangChain(
+        makeMcpTool({ execute: async () => 'hello from mcp' }),
+        NOT_CACHEABLE,
+      );
       const result = await lc.invoke({});
       expect(result).to.equal('hello from mcp');
     });
 
     it('JSON-stringifies object results', async () => {
       const payload = { status: 'ok', count: 3 };
-      const lc = mcpToolToLangChain(makeMcpTool({ execute: async () => payload }));
+      const lc = mcpToolToLangChain(makeMcpTool({ execute: async () => payload }), NOT_CACHEABLE);
       const result = await lc.invoke({});
       expect(result).to.equal(JSON.stringify(payload));
     });
 
     it('JSON-stringifies array results', async () => {
       const payload = [1, 2, 3];
-      const lc = mcpToolToLangChain(makeMcpTool({ execute: async () => payload }));
+      const lc = mcpToolToLangChain(makeMcpTool({ execute: async () => payload }), NOT_CACHEABLE);
       const result = await lc.invoke({});
       expect(result).to.equal(JSON.stringify(payload));
     });
@@ -298,6 +312,7 @@ describe('agents/chat-agent', () => {
             return 'ok';
           },
         }),
+        NOT_CACHEABLE,
       );
       await lc.invoke({ x: 'hello' });
       expect(captured).to.deep.equal({ x: 'hello' });
@@ -307,6 +322,7 @@ describe('agents/chat-agent', () => {
       const bigResult = 'x'.repeat(STUB_THRESHOLD_CHARS + 1);
       const lc = mcpToolToLangChain(
         makeMcpTool({ boundName: 'gateway__big_fetch', execute: async () => bigResult }),
+        NOT_CACHEABLE,
       );
 
       const result = (await lc.invoke(
@@ -323,7 +339,10 @@ describe('agents/chat-agent', () => {
 
     it('passes a result at or under STUB_THRESHOLD_CHARS through unchanged', async () => {
       const smallResult = 'x'.repeat(STUB_THRESHOLD_CHARS);
-      const lc = mcpToolToLangChain(makeMcpTool({ execute: async () => smallResult }));
+      const lc = mcpToolToLangChain(
+        makeMcpTool({ execute: async () => smallResult }),
+        NOT_CACHEABLE,
+      );
 
       const result = await lc.invoke({}, { configurable: { thread_id: 'mcp-stub-thread-2' } });
 
@@ -332,7 +351,7 @@ describe('agents/chat-agent', () => {
 
     it('passes a large result through unchanged when no thread_id is available', async () => {
       const bigResult = 'x'.repeat(STUB_THRESHOLD_CHARS + 1);
-      const lc = mcpToolToLangChain(makeMcpTool({ execute: async () => bigResult }));
+      const lc = mcpToolToLangChain(makeMcpTool({ execute: async () => bigResult }), NOT_CACHEABLE);
 
       const result = await lc.invoke({});
 
@@ -341,7 +360,7 @@ describe('agents/chat-agent', () => {
 
     it('passes a large result through unchanged when mcpToolStub.enabled is false', async () => {
       const bigResult = 'x'.repeat(STUB_THRESHOLD_CHARS + 1);
-      const lc = mcpToolToLangChain(makeMcpTool({ execute: async () => bigResult }));
+      const lc = mcpToolToLangChain(makeMcpTool({ execute: async () => bigResult }), NOT_CACHEABLE);
       configManager.set('chat', { mcpToolStub: { enabled: false } });
 
       try {
@@ -350,6 +369,182 @@ describe('agents/chat-agent', () => {
       } finally {
         configManager.set('chat', {});
       }
+    });
+
+    describe('result caching (mcp-tool-cache design)', () => {
+      afterEach(() => {
+        configManager.set('chat', {});
+      });
+
+      it('a cache hit skips t.execute and returns a message pointing at the existing result', async () => {
+        let callCount = 0;
+        const cacheable = new Map([['n8n__get_workflow_details', 60000]]);
+        const lc = mcpToolToLangChain(
+          makeMcpTool({
+            boundName: 'n8n__get_workflow_details',
+            parameters: z.object({
+              workflowId: z.string(),
+            }) as unknown as RegisteredTool['parameters'],
+            execute: async () => {
+              callCount++;
+              return 'the workflow json';
+            },
+          }),
+          cacheable,
+        );
+        const config = { configurable: { thread_id: 'mcp-cache-hit-thread' } };
+        const first = await lc.invoke({ workflowId: 'abc' }, config);
+        const second = await lc.invoke({ workflowId: 'abc' }, config);
+
+        expect(callCount).to.equal(1);
+        expect(first).to.equal('the workflow json');
+        expect(second).to.not.equal('the workflow json');
+        expect(second).to.include('Already have this result');
+      });
+
+      it('a cache miss (different args) calls t.execute again', async () => {
+        let callCount = 0;
+        const cacheable = new Map([['n8n__get_workflow_details', 60000]]);
+        const lc = mcpToolToLangChain(
+          makeMcpTool({
+            boundName: 'n8n__get_workflow_details',
+            parameters: z.object({
+              workflowId: z.string(),
+            }) as unknown as RegisteredTool['parameters'],
+            execute: async () => {
+              callCount++;
+              return 'the workflow json';
+            },
+          }),
+          cacheable,
+        );
+        const config = { configurable: { thread_id: 'mcp-cache-miss-thread' } };
+        await lc.invoke({ workflowId: 'abc' }, config);
+        await lc.invoke({ workflowId: 'xyz' }, config);
+
+        expect(callCount).to.equal(2);
+      });
+
+      it('forceRefresh: true bypasses a fresh cache hit and calls t.execute again', async () => {
+        let callCount = 0;
+        const cacheable = new Map([['n8n__get_workflow_details', 60000]]);
+        const lc = mcpToolToLangChain(
+          makeMcpTool({
+            boundName: 'n8n__get_workflow_details',
+            parameters: z.object({
+              workflowId: z.string(),
+            }) as unknown as RegisteredTool['parameters'],
+            execute: async () => {
+              callCount++;
+              return 'the workflow json';
+            },
+          }),
+          cacheable,
+        );
+        const config = { configurable: { thread_id: 'mcp-cache-force-thread' } };
+        await lc.invoke({ workflowId: 'abc' }, config);
+        await lc.invoke({ workflowId: 'abc', forceRefresh: true }, config);
+
+        expect(callCount).to.equal(2);
+      });
+
+      it('a TTL-expired entry is treated as a miss', async () => {
+        let callCount = 0;
+        const cacheable = new Map([['n8n__get_workflow_details', 10]]); // 10ms TTL
+        const lc = mcpToolToLangChain(
+          makeMcpTool({
+            boundName: 'n8n__get_workflow_details',
+            parameters: z.object({
+              workflowId: z.string(),
+            }) as unknown as RegisteredTool['parameters'],
+            execute: async () => {
+              callCount++;
+              return 'the workflow json';
+            },
+          }),
+          cacheable,
+        );
+        const config = { configurable: { thread_id: 'mcp-cache-ttl-thread' } };
+        await lc.invoke({ workflowId: 'abc' }, config);
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        await lc.invoke({ workflowId: 'abc' }, config);
+
+        expect(callCount).to.equal(2);
+      });
+
+      it('degrades gracefully (executes, does not cache) when the configured tool has no extendable schema', async () => {
+        let callCount = 0;
+        // A non-ZodObject top-level schema — nothing with .extend().
+        const cacheable = new Map([['weird_schema_tool', 60000]]);
+        const lc = mcpToolToLangChain(
+          makeMcpTool({
+            boundName: 'weird_schema_tool',
+            parameters: z.string() as unknown as RegisteredTool['parameters'],
+            execute: async () => {
+              callCount++;
+              return 'result';
+            },
+          }),
+          cacheable,
+        );
+        const config = { configurable: { thread_id: 'mcp-cache-degrade-thread' } };
+        await lc.invoke({}, config);
+        await lc.invoke({}, config);
+
+        expect(callCount).to.equal(2); // never cached — both calls hit execute
+      });
+
+      it('does not cache across threads — a hit in one thread is a miss in another', async () => {
+        let callCount = 0;
+        const cacheable = new Map([['n8n__get_workflow_details', 60000]]);
+        const lc = mcpToolToLangChain(
+          makeMcpTool({
+            boundName: 'n8n__get_workflow_details',
+            parameters: z.object({
+              workflowId: z.string(),
+            }) as unknown as RegisteredTool['parameters'],
+            execute: async () => {
+              callCount++;
+              return 'the workflow json';
+            },
+          }),
+          cacheable,
+        );
+        await lc.invoke(
+          { workflowId: 'abc' },
+          { configurable: { thread_id: 'mcp-cache-thread-a' } },
+        );
+        await lc.invoke(
+          { workflowId: 'abc' },
+          { configurable: { thread_id: 'mcp-cache-thread-b' } },
+        );
+
+        expect(callCount).to.equal(2);
+      });
+
+      it('skips caching entirely (always executes) when mcpToolCache.enabled is false', async () => {
+        let callCount = 0;
+        const cacheable = new Map([['n8n__get_workflow_details', 60000]]);
+        const lc = mcpToolToLangChain(
+          makeMcpTool({
+            boundName: 'n8n__get_workflow_details',
+            parameters: z.object({
+              workflowId: z.string(),
+            }) as unknown as RegisteredTool['parameters'],
+            execute: async () => {
+              callCount++;
+              return 'the workflow json';
+            },
+          }),
+          cacheable,
+        );
+        configManager.set('chat', { mcpToolCache: { enabled: false } });
+        const config = { configurable: { thread_id: 'mcp-cache-disabled-thread' } };
+        await lc.invoke({ workflowId: 'abc' }, config);
+        await lc.invoke({ workflowId: 'abc' }, config);
+
+        expect(callCount).to.equal(2);
+      });
     });
   });
 
@@ -578,6 +773,7 @@ describe('buildWorkspaceContextBlock()', () => {
       olderSummaries: [],
       taskFiles: [],
       autoApproveShell: false,
+      cachedResources: '',
       ...overrides,
     };
   }
@@ -644,5 +840,22 @@ describe('buildWorkspaceContextBlock()', () => {
     const block = buildWorkspaceContextBlock(makeContext({ taskFiles: [] }));
 
     expect(block).to.not.include('## Task files');
+  });
+
+  it('renders the cachedResources block when non-empty (mcp-tool-cache design)', () => {
+    const block = buildWorkspaceContextBlock(
+      makeContext({
+        cachedResources: 'Resources already fetched this thread:\n- some_tool(x: 1) — fresh, at ...',
+      }),
+    );
+
+    expect(block).to.include('Resources already fetched this thread');
+    expect(block).to.include('some_tool(x: 1)');
+  });
+
+  it('omits the cachedResources block entirely when it is an empty string', () => {
+    const block = buildWorkspaceContextBlock(makeContext({ cachedResources: '' }));
+
+    expect(block).to.not.include('Resources already fetched this thread');
   });
 });

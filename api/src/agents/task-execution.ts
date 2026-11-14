@@ -33,6 +33,7 @@ import {
 } from './chat-agent.js';
 import type { StagnationLimitError } from './recursion-guard.middleware.js';
 import { getProviderQueue } from '../services/provider-queue.js';
+import { renderCacheLedger } from '../services/mcp-tool-cache.js';
 import { resolveProviderConfig, createProvider } from '../services/provider-factory.js';
 import { buildWorkspaceContext } from './workspace-chat-stream-handler.js';
 import {
@@ -349,6 +350,15 @@ export async function executeTask(
     }
     clearTaskAbort(entry.id);
     return;
+  }
+
+  // buildWorkspaceContext() (above) defaults cachedResources to
+  // workspace.threadId's ledger, which is wrong here: a task run executes
+  // in its own per-run thread, never the workspace chat thread (see
+  // api/AGENTS.md's "never run a task in a shared thread"), and threadId
+  // wasn't resolved yet at that call anyway. Override it now that it is.
+  if (workspaceScope) {
+    workspaceScope.workspaceContext.cachedResources = renderCacheLedger(threadId);
   }
 
   // A Task File only exists for a workspace-scoped task — a workspace-less

@@ -1040,6 +1040,28 @@ in your current toolset, don't try to satisfy it — not by calling anything und
 not by asking the user for missing details like a title. Present the stub's summary and key concepts
 as your answer instead, and say plainly that you don't currently have write access to store it.`;
 
+// Unconditional (no requiresAnyOf) — this describes a workspace-context
+// block and a tool-schema field that only exist when the tool-settings
+// system has actually marked an MCP tool cacheable (opt-in, off by
+// default), the same way mcp_tool_discovery above is unconditional even
+// though MCP tools themselves may or may not be connected. Harmless to
+// describe when there's nothing to match: the model simply never sees a
+// "Resources already fetched this thread" block or a forceRefresh argument
+// in that case. See docs/superpowers/specs/2026-11-13-mcp-tool-result-caching-design.md.
+const MCP_TOOL_CACHE_SECTION = `If your workspace context includes a block headed "Resources already fetched this thread", each
+line there names a tool call you already made and where its result lives — a disk path, or a
+get_tool_key reference. Re-reading from there (or trusting the summary already in front of you) is
+faster than calling the tool again, and the harness already skips the real call for you on a repeat
+request with the same arguments — so calling it again "to be safe" buys you nothing extra, just the
+same wait a second time. A line marked stale means its cache window has passed; it's still the last
+known answer, not wrong by default, so keep using it unless this specific question needs the
+current state.
+
+Some tools that support this additionally accept a forceRefresh argument. Pass forceRefresh: true
+only when you have a concrete reason to believe the underlying data changed since that fetch — you
+or the user just wrote to it, for instance — not as a routine double-check. If nothing in the
+conversation suggests the data changed, omit it.`;
+
 // A second get_tool_key producer alongside web_fetch (see WEB_FETCH_SECTION
 // above) — gated on get_tool_key itself, not on web_fetch, since an
 // attachment can be offloaded in chat/workspace-chat/wiki-ingestion turns
@@ -2140,6 +2162,7 @@ const HARNESS_SECTIONS: HarnessSection[] = [
   { tag: 'wiki_navigation', content: WIKI_NAVIGATION_SECTION, requiresAnyOf: WIKI_TOOL_IDS },
   { tag: 'web_fetch', content: WEB_FETCH_SECTION, requiresAnyOf: ['web_fetch'] },
   { tag: 'attachment', content: ATTACHMENT_SECTION, requiresAnyOf: ['get_tool_key'] },
+  { tag: 'mcp_tool_cache', content: MCP_TOOL_CACHE_SECTION },
   {
     tag: 'wiki_ingest',
     content: WIKI_INGEST_SECTION,
