@@ -483,7 +483,10 @@ describe('agents/chat-agent', () => {
         const lc = mcpToolToLangChain(
           makeMcpTool({
             boundName: 'weird_schema_tool',
-            parameters: z.record(z.string(), z.unknown()) as unknown as RegisteredTool['parameters'],
+            parameters: z.record(
+              z.string(),
+              z.unknown(),
+            ) as unknown as RegisteredTool['parameters'],
             execute: async () => {
               callCount++;
               return 'result';
@@ -849,7 +852,8 @@ describe('buildWorkspaceContextBlock()', () => {
   it('renders the cachedResources block when non-empty (mcp-tool-cache design)', () => {
     const block = buildWorkspaceContextBlock(
       makeContext({
-        cachedResources: 'Resources already fetched this thread:\n- some_tool(x: 1) — fresh, at ...',
+        cachedResources:
+          'Resources already fetched this thread:\n- some_tool(x: 1) — fresh, at ...',
       }),
     );
 

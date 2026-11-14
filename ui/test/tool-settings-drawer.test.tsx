@@ -128,10 +128,10 @@ describe('ToolSettingsDrawer', () => {
     }
 
     it('renders the Cache results switch only for an MCP-category tool', () => {
-      render(
-        <ToolSettingsDrawer tool={mcpTool()} onSaved={jest.fn()} trigger={OPEN_TRIGGER} />,
-      );
-      expect(screen.getByLabelText('Enable result caching for get_workflow_details')).toBeInTheDocument();
+      render(<ToolSettingsDrawer tool={mcpTool()} onSaved={jest.fn()} trigger={OPEN_TRIGGER} />);
+      expect(
+        screen.getByLabelText('Enable result caching for get_workflow_details'),
+      ).toBeInTheDocument();
     });
 
     it('does not render Cache results for a non-MCP-category tool', () => {

@@ -25,7 +25,14 @@ describe('mcp-tool-cache', () => {
     });
 
     it('hits with identical args after an upsert [unit]', async () => {
-      await upsertCacheEntry('t-hit', 'n8n__get_workflow_details', { workflowId: 'abc' }, 'text', 60000, undefined);
+      await upsertCacheEntry(
+        't-hit',
+        'n8n__get_workflow_details',
+        { workflowId: 'abc' },
+        'text',
+        60000,
+        undefined,
+      );
       const hit = getCacheEntry('t-hit', 'n8n__get_workflow_details', { workflowId: 'abc' });
       expect(hit).to.not.equal(undefined);
       expect(hit!.toolName).to.equal('n8n__get_workflow_details');
@@ -68,7 +75,10 @@ describe('mcp-tool-cache', () => {
   describe('forceRefresh is excluded from the args hash', () => {
     it('identical args with/without forceRefresh resolve to the same cache entry [unit]', async () => {
       await upsertCacheEntry('t-force', 'tool', { workflowId: 'abc' }, 'v1', 60000, undefined);
-      const withFlagTrue = getCacheEntry('t-force', 'tool', { workflowId: 'abc', forceRefresh: true });
+      const withFlagTrue = getCacheEntry('t-force', 'tool', {
+        workflowId: 'abc',
+        forceRefresh: true,
+      });
       const withFlagFalse = getCacheEntry('t-force', 'tool', {
         workflowId: 'abc',
         forceRefresh: false,
@@ -90,8 +100,22 @@ describe('mcp-tool-cache', () => {
 
   describe('stable kvKey/diskPath across a refresh (the "stable identity" rule)', () => {
     it('a second upsert to the same (thread, tool, args) reuses the same kvKey, not a new one [unit]', async () => {
-      const first = await upsertCacheEntry('t-stable-kv', 'tool', { id: 1 }, 'v1', 60000, undefined);
-      const second = await upsertCacheEntry('t-stable-kv', 'tool', { id: 1 }, 'v2', 60000, undefined);
+      const first = await upsertCacheEntry(
+        't-stable-kv',
+        'tool',
+        { id: 1 },
+        'v1',
+        60000,
+        undefined,
+      );
+      const second = await upsertCacheEntry(
+        't-stable-kv',
+        'tool',
+        { id: 1 },
+        'v2',
+        60000,
+        undefined,
+      );
       expect(second.kvKey).to.equal(first.kvKey);
       // The underlying bytes behind that stable key do update, though.
       expect(getToolContent('t-stable-kv', first.kvKey)).to.equal('v2');
@@ -212,7 +236,14 @@ describe('mcp-tool-cache', () => {
 
     it('lists a fresh entry as "fresh" and a past-TTL entry as "stale", with its location [unit]', async () => {
       const threadId = 't-ledger-fresh-stale';
-      await upsertCacheEntry(threadId, 'n8n__get_workflow_details', { workflowId: 'x' }, 'v1', 10, undefined);
+      await upsertCacheEntry(
+        threadId,
+        'n8n__get_workflow_details',
+        { workflowId: 'x' },
+        'v1',
+        10,
+        undefined,
+      );
       await upsertCacheEntry(
         threadId,
         'n8n__search_workflows',

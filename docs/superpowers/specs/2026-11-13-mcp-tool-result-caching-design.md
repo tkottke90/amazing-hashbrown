@@ -47,7 +47,7 @@ Nothing in `api/src/agents/system-prompt.ts` instructs the model to check for an
 - Any invalidation scheme that tracks which mutating tool call affects which cached read's resource — deliberately rejected as too tool/server-specific to generalize (see Design §2).
 - Cross-thread or per-workspace cache sharing — the cache is strictly per-thread, matching `tool-content-store.ts`'s existing scoping.
 - Reading MCP `annotations.readOnlyHint` off the wire — confirmed not available: `fetchMcpTools`/`fromLangChain` (`lib/tools-manager/src/internal/mcp-client.ts:68-118`) build `RegisteredTool` from `@langchain/mcp-adapters`' `DynamicStructuredTool`, which does not surface the MCP spec's own tool annotations. Classification stays a manually-curated, opt-in setting.
-- Rendering the ledger for plain chat / task / wiki-ingestion threads that have no workspace context block at all (see §6's note on the three call sites that *do* already exist).
+- Rendering the ledger for plain chat / task / wiki-ingestion threads that have no workspace context block at all (see §6's note on the three call sites that _do_ already exist).
 
 ---
 
@@ -104,14 +104,14 @@ interface CacheEntry {
 const _cache = new Map<string, CacheEntry>();
 ```
 
-`argsHash` is a stable hash (sorted-key JSON stringify, then a short digest) of the tool's arguments **excluding** `forceRefresh` — `forceRefresh` is a meta-instruction about *this call*, not part of the resource's identity, so `{workflowId: X, forceRefresh: true}` and `{workflowId: X, forceRefresh: false}` must hash identically.
+`argsHash` is a stable hash (sorted-key JSON stringify, then a short digest) of the tool's arguments **excluding** `forceRefresh` — `forceRefresh` is a meta-instruction about _this call_, not part of the resource's identity, so `{workflowId: X, forceRefresh: true}` and `{workflowId: X, forceRefresh: false}` must hash identically.
 
 **Staleness is TTL-only, by design.** Round 1 of this design's discussion considered invalidating a cache entry whenever a mutating tool call touched "the same resource," and rejected it: every MCP server's argument shapes differ, there's no generic way to know that `n8n__update_workflow({id: X})` invalidates a cached `n8n__get_workflow_details({workflowId: X})` without hand-writing per-server, per-tool-pair knowledge — exactly the configuration-driven-abstraction trap `AGENTS.md`'s composition-over-customization section warns against. Instead:
 
 - Every cached, allowlisted tool call gets `ttlMs` from the tool's `cacheTtlMs` override (§1) or a new global default, `env.chat.mcpToolCache.ttlMs` (default **5 minutes**, matching `env.chat.mcpToolStub`'s existing config shape).
 - Every cacheable tool's schema is extended with an optional `forceRefresh: z.boolean().optional().describe(...)` field (see §3) so the model has an explicit, cheap way to bypass a stale-looking cache the moment it has reason to — e.g. immediately after being told a workflow was just published.
 
-**Stable identity across hits and refreshes.** On a cache hit, the *same* `kvKey` and `diskPath` already stored in the entry are returned — no new `kv_` key is minted, no new disk write happens. On a TTL-expired or `forceRefresh` fetch, the *same* entry object is updated in place (new bytes, new `fetchedAt`) rather than replaced — the model (and the ledger, §6) sees a stable reference to a given resource for the life of the thread, only its freshness and the byte content underneath it change.
+**Stable identity across hits and refreshes.** On a cache hit, the _same_ `kvKey` and `diskPath` already stored in the entry are returned — no new `kv_` key is minted, no new disk write happens. On a TTL-expired or `forceRefresh` fetch, the _same_ entry object is updated in place (new bytes, new `fetchedAt`) rather than replaced — the model (and the ledger, §6) sees a stable reference to a given resource for the life of the thread, only its freshness and the byte content underneath it change.
 
 **Eviction.** `env.chat.mcpToolCache.threadEntryCap` (default, e.g., 50) bounds entries per thread; insertion past the cap evicts the oldest-`fetchedAt` entry for that thread first. This is a backstop alongside TTL, not the primary staleness mechanism.
 
@@ -145,7 +145,14 @@ export function mcpToolToLangChain(
       const text = typeof result === 'string' ? result : JSON.stringify(result);
 
       if (cacheable && threadId) {
-        upsertCacheEntry(threadId, t.boundName, realArgs, text, ttlFor(t.boundName), workspaceLocation);
+        upsertCacheEntry(
+          threadId,
+          t.boundName,
+          realArgs,
+          text,
+          ttlFor(t.boundName),
+          workspaceLocation,
+        );
       }
 
       // existing >STUB_THRESHOLD_CHARS offload logic, unchanged for non-cacheable tools —
@@ -212,7 +219,7 @@ cachedResources: string; // pre-rendered by renderCacheLedger(threadId) at the c
 
 `buildWorkspaceContextBlock` (`chat-agent.ts:632-681`) appends it as one more conditional block, same pattern as `wikiDomain`/`systemPrompt` today — it stays a pure formatter; the actual cache lookup happens at the call site, which already knows its own `threadId`.
 
-**Note on scope:** `buildWorkspaceContextBlock` is called from three places today — `buildWorkspaceChatAgent` (chat-agent.ts:695), `buildTaskAgent` when a `workspaceScope` is present (chat-agent.ts:868), and `buildSubAgentAgent` likewise (chat-agent.ts:1096). The ledger therefore surfaces in all three, each scoped to *that call's own* `threadId` — a task run sees only its own run-thread's cache, never another thread's. This isn't an expansion beyond what was agreed (plain chat, non-workspace task runs, and wiki ingestion still call no such block and get no ledger) — it's the natural, correctly-scoped consequence of hooking into the one function that already exists for this purpose everywhere it already runs.
+**Note on scope:** `buildWorkspaceContextBlock` is called from three places today — `buildWorkspaceChatAgent` (chat-agent.ts:695), `buildTaskAgent` when a `workspaceScope` is present (chat-agent.ts:868), and `buildSubAgentAgent` likewise (chat-agent.ts:1096). The ledger therefore surfaces in all three, each scoped to _that call's own_ `threadId` — a task run sees only its own run-thread's cache, never another thread's. This isn't an expansion beyond what was agreed (plain chat, non-workspace task runs, and wiki ingestion still call no such block and get no ledger) — it's the natural, correctly-scoped consequence of hooking into the one function that already exists for this purpose everywhere it already runs.
 
 ### 7. Tool Settings UI
 
@@ -259,7 +266,7 @@ chat: {
 - **`tool-config.test.ts`** (updated): `cacheable`/`cacheTtlMs` resolution (stored override wins, default `false`/`null`), `getCacheableToolIds()` filtering to `category: 'mcp'` only.
 - **`chat-agent.test.ts`** (updated, orchestration-tagged): `mcpToolToLangChain` skips `t.execute` on a cache hit (spy-verified, not re-asserting cache internals), calls it on a miss/expiry/`forceRefresh`, and the non-`ZodObject`-schema degrade path logs and executes without caching.
 - **`tool-content-store.test.ts`** (updated): count-cap eviction, and an explicit regression test that an old-but-not-evicted entry is still readable arbitrarily "later" (no TTL check anywhere in this store).
-- **`tool-settings.handlers.test.ts`** (updated): `cacheable`/`cacheTtlMs` round-trip through PATCH, rejection of `cacheTtlMs` on a non-MCP-category tool is *not* special-cased at the handler layer (the UI hides it, but the API itself doesn't need to enforce it — matches how other generic fields already behave).
+- **`tool-settings.handlers.test.ts`** (updated): `cacheable`/`cacheTtlMs` round-trip through PATCH, rejection of `cacheTtlMs` on a non-MCP-category tool is _not_ special-cased at the handler layer (the UI hides it, but the API itself doesn't need to enforce it — matches how other generic fields already behave).
 - **UI (`tool-settings-drawer.test.tsx`, new/updated)**: Cacheable switch + TTL input render only for `category: 'mcp'` rows; submitting patches both fields; TTL input hidden when Cacheable is off.
 
 ## Evaluations

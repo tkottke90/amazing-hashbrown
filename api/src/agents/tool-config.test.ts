@@ -314,7 +314,10 @@ describe('agents/tool-config', () => {
             mcpServer: 'n8n',
           },
         ],
-        new Map([['playwright', 'connected'], ['n8n', 'connected']]),
+        new Map([
+          ['playwright', 'connected'],
+          ['n8n', 'connected'],
+        ]),
       );
       const toolsConfig: Record<string, ToolEntry> = {
         'playwright:browser_click': { cacheable: true },

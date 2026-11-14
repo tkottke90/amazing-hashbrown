@@ -328,10 +328,7 @@ function extendWithForceRefresh(parameters: z.ZodType): { schema: z.ZodType; ok:
   return { schema, ok: true };
 }
 
-function renderCacheHitMessage(hit: {
-  diskPath: string | null;
-  kvKey: string;
-}): string {
+function renderCacheHitMessage(hit: { diskPath: string | null; kvKey: string }): string {
   const where = hit.diskPath ?? `get_tool_key with this threadId and toolKey "${hit.kvKey}"`;
   return (
     `Already have this result (not past its cache window) — see ${where} instead of ` +
