@@ -179,7 +179,9 @@ export const AnyProviderSchema = z.union([
   OpenAiCompatibleProviderSchema,
 ]);
 export type AnyProviderConfig =
-  ProviderConfig | AzureOpenAiProviderConfig | OpenAiCompatibleProviderConfig;
+  | ProviderConfig
+  | AzureOpenAiProviderConfig
+  | OpenAiCompatibleProviderConfig;
 
 // A user-pinned provider/model pair, surfaced at the top of the chat
 // Provider menu (issue #137). An ordered list rather than a Record — a
@@ -388,7 +390,11 @@ export const McpToolStubSchema = z.object({
 // thread, independent of each other.
 export const McpToolCacheSchema = z.object({
   enabled: z.boolean().default(true),
-  ttlMs: z.number().int().positive().default(5 * 60 * 1000),
+  ttlMs: z
+    .number()
+    .int()
+    .positive()
+    .default(5 * 60 * 1000),
   threadEntryCap: z.number().int().positive().default(50),
   ledgerCap: z.number().int().positive().default(10),
 });
