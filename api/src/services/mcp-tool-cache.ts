@@ -1,6 +1,7 @@
 import { randomBytes, createHash } from 'node:crypto';
 import path from 'node:path';
 import { env } from '../config/env.js';
+import { logger } from '../config/logger.js';
 import { storeToolContent } from './tool-content-store.js';
 import { writeToolKeyFile } from '../agents/tools/get-tool-key.tool.js';
 import { STUB_THRESHOLD_CHARS } from '../agents/tools/tool-stub.js';
@@ -128,8 +129,21 @@ export async function upsertCacheEntry(
   let diskPath = existing?.diskPath ?? null;
   if (text.length > STUB_THRESHOLD_CHARS && workspaceLocation) {
     const filename = diskPath ? path.basename(diskPath) : `${boundName}_${hash}.json`;
-    await writeToolKeyFile(workspaceLocation, filename, text);
-    diskPath = path.join('.hashbrown', 'tool-key', filename);
+    const writeResult = await writeToolKeyFile(workspaceLocation, filename, text);
+    // writeToolKeyFile never throws — a failure (permission, disk space)
+    // comes back as a "Failed to write ..." string instead (see its own
+    // comment). Only claim the path on an actual success: the ledger tells
+    // the model a resource is "at" this path, and that would be actively
+    // wrong — worse than no path at all — if the write never happened.
+    if (!writeResult.startsWith('Failed to write ')) {
+      diskPath = path.join('.hashbrown', 'tool-key', filename);
+    } else {
+      logger.warn('mcp-tool-cache: disk write failed, falling back to KV-only for this entry', {
+        boundName,
+        threadId,
+        writeResult,
+      });
+    }
   }
 
   const entry: CacheEntry = {

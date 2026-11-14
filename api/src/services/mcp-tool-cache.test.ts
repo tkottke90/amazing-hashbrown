@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect } from 'chai';
@@ -132,6 +132,32 @@ describe('mcp-tool-cache', () => {
       const entry = await upsertCacheEntry('t-no-workspace', 'tool', {}, big, 60000, undefined);
       expect(entry.diskPath).to.equal(null);
       expect(getToolContent('t-no-workspace', entry.kvKey)).to.equal(big);
+    });
+
+    it('does not claim a diskPath when the disk write actually fails — stays KV-only instead [unit]', async () => {
+      // writeToolKeyFile never throws; a failed mkdir/writeFile comes back
+      // as a "Failed to write ..." string. Force that by pointing
+      // workspaceLocation at a plain FILE, not a directory — mkdir(join(it,
+      // '.hashbrown', 'tool-key')) then fails with ENOTDIR.
+      const dir = mkdtempSync(join(tmpdir(), 'mcp-tool-cache-fail-test-'));
+      const notADirectory = join(dir, 'not-a-directory.txt');
+      try {
+        writeFileSync(notADirectory, 'not a directory', 'utf8');
+        const big = 'a'.repeat(STUB_THRESHOLD_CHARS + 10);
+        const entry = await upsertCacheEntry(
+          't-disk-fail',
+          'n8n__get_workflow_details',
+          { workflowId: 'x' },
+          big,
+          60000,
+          notADirectory,
+        );
+        expect(entry.diskPath).to.equal(null);
+        // The KV side still succeeds independently of the disk write.
+        expect(getToolContent('t-disk-fail', entry.kvKey)).to.equal(big);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     });
   });
 

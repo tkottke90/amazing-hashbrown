@@ -474,12 +474,16 @@ describe('agents/chat-agent', () => {
 
       it('degrades gracefully (executes, does not cache) when the configured tool has no extendable schema', async () => {
         let callCount = 0;
-        // A non-ZodObject top-level schema — nothing with .extend().
+        // A non-ZodObject top-level schema — nothing with .extend() — but
+        // still one {} validates against, so invoking with {} below
+        // exercises the degrade path itself rather than failing on Zod
+        // input validation before the handler even runs (z.string() would
+        // reject {} as not a string, which isn't what this test is about).
         const cacheable = new Map([['weird_schema_tool', 60000]]);
         const lc = mcpToolToLangChain(
           makeMcpTool({
             boundName: 'weird_schema_tool',
-            parameters: z.string() as unknown as RegisteredTool['parameters'],
+            parameters: z.record(z.string(), z.unknown()) as unknown as RegisteredTool['parameters'],
             execute: async () => {
               callCount++;
               return 'result';
