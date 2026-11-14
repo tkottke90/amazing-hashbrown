@@ -28,4 +28,15 @@ jobs:
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      # TEMPORARY DEBUG STEP — remove before merge. The sandbox this PR was
+      # authored in has no working npm install (private registry 401), so
+      # this prints exactly what the real pinned Prettier wants for the one
+      # file still failing --check, without guessing from a different local
+      # Prettier version.
+      - name: debug-prettier-diff
+        run: |
+          npx prettier --write api/src/config/env.ts
+          git diff --no-color api/src/config/env.ts || true
+          git checkout -- api/src/config/env.ts
+
       - run: npx prettier --check .
