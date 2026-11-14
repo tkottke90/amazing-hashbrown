@@ -37,8 +37,9 @@ scenarios:
           "invoice processing".
       - tool: search_mcp_tools
         args: { keyword: 'workflow' }
-        result: >
-          [{"toolId":"n8n:workflow_search","name":"workflow_search","description":"Search n8n workflows by keyword"}]
+        result:
+          text: >
+            [{"toolId":"n8n:workflow_search","name":"workflow_search","description":"Search n8n workflows by keyword"}]
     tool: use_mcp_tools
 
   - id: mtd-002-unrelated-request-does-not-speculatively-grant
