@@ -72,12 +72,12 @@ Skill Invocation & Runtime Access, ADR-0019):
 - **Skill-Gated Tools** (`skill-gated-tools.middleware.ts`, 51 lines) — the
   "composition over customization" example named in root `AGENTS.md`.
   `createSkillGatedToolsMiddleware(registrations)` takes `{ skillCommand,
-  toolNames }` entries (`GATED_SKILL_REGISTRATIONS`) and strips a gated tool
+toolNames }` entries (`GATED_SKILL_REGISTRATIONS`) and strips a gated tool
   unless the active skill is its registered owner (lines 38-49). Ties one
   tool set to one named skill — the pre-existing shape issue #334 says it is
   not re-deciding.
 - **Skill-Scoped Tools** (`skill-scoped-tools.middleware.ts`) — a different
-  shape: `read_skill_reference`/`run_skill_script` are visible whenever *any*
+  shape: `read_skill_reference`/`run_skill_script` are visible whenever _any_
   skill is active, resolving "which skill" from state at call time rather
   than a registration (lines 11-24), and injecting the real `activeSkill`
   into `toolCall.args` server-side via a `.passthrough()` schema the model
@@ -92,7 +92,7 @@ Skill Invocation & Runtime Access, ADR-0019):
 
 **Reach:** the closest existing precedent to "teach the agent how to use a
 capability only once it becomes relevant" — but scoped entirely to skills a
-*human* invoked via `/command` (`skill-expansion.middleware.ts:30-76`); the
+_human_ invoked via `/command` (`skill-expansion.middleware.ts:30-76`); the
 agent cannot decide on its own to pull one in. That gap is exactly what
 issue #334's `invoke_skill` tool targets.
 
@@ -120,8 +120,8 @@ Two instances of one shape, at different scopes:
 
 **Reach:** the strongest in-repo analog to MCP's own Resources split (§4.1)
 and Anthropic's Tool Search Tool (§4.4) — a cheap always-on pointer plus an
-on-demand body, model-initiated. But it's scoped to *tool catalogs*, not
-*documentation about the harness*. Issue #408 explicitly carves the
+on-demand body, model-initiated. But it's scoped to _tool catalogs_, not
+_documentation about the harness_. Issue #408 explicitly carves the
 recurring/named-workflow case out to a separate mechanism (#409) rather than
 solving it here.
 
@@ -162,12 +162,12 @@ every agent surface, no on-demand machinery required.
 
 ### 2.6 Coverage summary
 
-| Mechanism | Teaches the agent... | Model-initiated? | Harness-docs? |
-|---|---|---|---|
-| `filterHarnessSections` | nothing new (subtractive only) | N/A | No |
-| Skill-Gated/Scoped Tools + Artifact Index | a specific skill's tools/files, once invoked | No — human types `/command` | No |
-| `search_skills` / MCP Tool Discovery | which skill/MCP tool exists | Yes | No (catalog, not docs) |
-| LLM Wiki / RLM | wiki content / a supplied corpus | Yes | Excluded by design (#333) |
+| Mechanism                                 | Teaches the agent...                         | Model-initiated?            | Harness-docs?             |
+| ----------------------------------------- | -------------------------------------------- | --------------------------- | ------------------------- |
+| `filterHarnessSections`                   | nothing new (subtractive only)               | N/A                         | No                        |
+| Skill-Gated/Scoped Tools + Artifact Index | a specific skill's tools/files, once invoked | No — human types `/command` | No                        |
+| `search_skills` / MCP Tool Discovery      | which skill/MCP tool exists                  | Yes                         | No (catalog, not docs)    |
+| LLM Wiki / RLM                            | wiki content / a supplied corpus             | Yes                         | Excluded by design (#333) |
 
 No existing mechanism gives the agent model-initiated access to
 documentation of the harness itself — exactly what issue #334 names, and it
@@ -190,7 +190,7 @@ implementation)." Fixed points from the issue body:
 - Claims the mechanism shape is "already decided — see ADR 0011" and that
   terms are pinned in `lib/skills-manager/GLOSSARY.md`. **Both links are
   stale as given**: no `0011-agent-invocable-skills-separate-flag-from-
-  tool-gating.md` exists (the real ADR-0011 files are
+tool-gating.md` exists (the real ADR-0011 files are
   `0011-ghost-cell-occupancy-computed-client-side.md` and
   `0011-system-widgets-computed-live-never-persisted.md`, unrelated), and
   `GLOSSARY.md` lives at the repo root, not under `lib/skills-manager/`.
@@ -207,8 +207,9 @@ implementation)." Fixed points from the issue body:
   `search_skills` already solves that audience's discoverability.
 
 Any proposal here fits inside this already-scoped mechanism (Skill property
-+ `invoke_skill` + `Agent-Exposable` flag) or explicitly justifies departing
-from it — the issue treats the shape as settled, only the scoping as open.
+
+- `invoke_skill` + `Agent-Exposable` flag) or explicitly justifies departing
+  from it — the issue treats the shape as settled, only the scoping as open.
 
 ### 3.2 Issue #410 — the audit this research pass partly answers
 
@@ -282,7 +283,7 @@ do better."
 
 **Relevance:** gives the rationale (reduce prefill, avoid selection
 ambiguity, build context incrementally) but is model-agnostic guidance, not
-a mechanism — it doesn't prescribe *how* a harness should expose
+a mechanism — it doesn't prescribe _how_ a harness should expose
 documentation about itself.
 
 ### 4.3 Claude Code's own Skills mechanism — the directly analogous system
@@ -317,7 +318,7 @@ suppress model-initiated loading. One structural difference from this
 repo's own pattern (§2.3): Claude Code puts every skill's description in
 context unconditionally, while this repo's `search_skills` makes even that
 listing an on-demand call — one level stricter, likely because this repo
-also wants to bound the *count* of always-on descriptions, not just body
+also wants to bound the _count_ of always-on descriptions, not just body
 size.
 
 ### 4.4 Anthropic tool-use docs — definitions vs. results, and the Tool Search Tool
@@ -329,8 +330,8 @@ Baseline split: `name`/`description`/`input_schema` is sent every call
 regardless of use; `tool_result` only once a tool is actually invoked.
 `define-tools` names description quality, not brevity, as "by far the most
 important factor in tool performance... Aim for at least 3–4 sentences" —
-directly in tension with minimizing always-on cost, which is why *scaling
-the tool count*, not shrinking each description, is where Anthropic's newer
+directly in tension with minimizing always-on cost, which is why _scaling
+the tool count_, not shrinking each description, is where Anthropic's newer
 mechanism intervenes.
 
 The **Tool Search Tool** (`tool_search_tool_regex_20251119` /
@@ -388,7 +389,7 @@ treat local-model self-initiative as needing spelled-out guidance, not
 something to assume works out of the box.
 
 **(b) No system-prompt growth, per issue #334's acceptance bar.** Any
-pointer-and-expand mechanism modeled on §4.1 or §4.3 still needs *some*
+pointer-and-expand mechanism modeled on §4.1 or §4.3 still needs _some_
 always-on text teaching the model the new capability exists — exactly the
 pattern `SEARCH_SKILLS_SECTION`/`MCP_TOOL_DISCOVERY_SECTION` already
 demonstrate at a few sentences each, not a documentation dump. That fixed,
@@ -398,7 +399,7 @@ reachable behind it.
 **(c) `defer_loading` and MCP's priority annotations are not portable.**
 Anthropic's Tool Search Tool is a server-side Claude-API feature with no
 equivalent request field for a local backend; this repo's MCP Tool Discovery
-necessarily reimplements the same *shape* by hand, in the application layer,
+necessarily reimplements the same _shape_ by hand, in the application layer,
 because the underlying protocol feature doesn't exist for a self-hosted
 model. Likewise, MCP's `annotations.priority`/`annotations.audience` are
 client-side curation metadata nothing in this repo today reads or sets — any

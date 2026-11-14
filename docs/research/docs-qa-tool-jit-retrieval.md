@@ -41,7 +41,7 @@ fixed. The Zod schema's own description says the model must "Obtain from
 wiki_read_page with truncate: false, or from any other large text source such
 as web_fetch" (`rlm-query.tool.ts:18-24`). So today, asking a question "about
 the harness" through this tool requires the model to first fetch the full
-harness-docs text through some *other* tool call, then pass it as `corpus` —
+harness-docs text through some _other_ tool call, then pass it as `corpus` —
 a two-hop dance, not the one-call "ask and get an answer" shape the question
 describes. There is no fixed, pre-selected harness-documentation corpus
 `rlm_query` (or anything else) points at.
@@ -65,7 +65,7 @@ baseline.** Two pieces, both gated on the tool actually being bound
 So today's "cost of one Q&A-shaped tool" is roughly 550 tokens of combined
 always-on text (by the rough estimate above) whenever it's bound — small
 relative to the 9,423–11,900-token baseline issue #410 measured
-(prior document §3.2), but not zero, and it buys *zero* harness-doc content
+(prior document §3.2), but not zero, and it buys _zero_ harness-doc content
 living in the prompt as the trade.
 
 **Why `RLM_SECTION` is this long and this specific, and what that implies
@@ -82,7 +82,7 @@ accumulated cost of making a Q&A-shaped tool's triggering condition reliable
 on real local models, and a new corpus would likely need a comparably-sized
 section of its own, not a trivial one-liner.
 
-## 3. What changes if a tool pointed at a *fixed* harness-docs corpus instead
+## 3. What changes if a tool pointed at a _fixed_ harness-docs corpus instead
 
 **The round trip removed:** today's `rlm_query` needs the calling model to
 fetch the full corpus itself first (§2). A tool bound to a fixed corpus —
@@ -102,7 +102,7 @@ a plain string. What text goes in it, and how it's concatenated, is your
 responsibility" (`lib/rlm/README.md:23`). A fixed-corpus variant needs a new
 assembly layer (which files, concatenated how, kept in sync with what) that
 doesn't exist yet and isn't RLM's job to provide — RLM's own list of what it
-explicitly does *not* do already rules this out as a library-level concern
+explicitly does _not_ do already rules this out as a library-level concern
 (`lib/rlm/README.md:20-26`).
 
 **What it costs at call time, every time it's actually used — this is the
@@ -115,7 +115,7 @@ through whatever provider `env.rlm` resolves to — and per
 `rlm-query.tool.ts:152-154`, that provider/model is independently
 configurable from the main chat model via `createProvider(rlmConfig.provider,
 resolvedModel)`. PR #414 ("Add provider/model picker UI for rlm_query tool
-settings", commit `fda9e25`) added a UI specifically for choosing a *different*
+settings", commit `fda9e25`) added a UI specifically for choosing a _different_
 provider/model for `rlm_query`'s internal loop than whatever is driving the
 main chat turn (`git show fda9e25 -- ui/src/components/tool-settings-drawer.tsx`
 adds a `useProviderModelPicker` picker wired to `patch.provider`/`patch.model`
@@ -137,10 +137,10 @@ Non-Overlapping Domains** (accepted 2026-08-04).
 
 ADR-001's own tripartite table (`docs/ADR.md:50-58`):
 
-| Text category | Correct retrieval strategy |
-|---|---|
-| Wiki pages (structured, distilled) | Wiki tools: `wiki_search`, `wiki_read_page`, cross-link graph |
-| Small-to-medium external text (fits in context) | Direct context: read it whole, answer directly |
+| Text category                                   | Correct retrieval strategy                                     |
+| ----------------------------------------------- | -------------------------------------------------------------- |
+| Wiki pages (structured, distilled)              | Wiki tools: `wiki_search`, `wiki_read_page`, cross-link graph  |
+| Small-to-medium external text (fits in context) | Direct context: read it whole, answer directly                 |
 | Large unstructured external text (does not fit) | **RLM**: `web_fetch` results, uploaded documents, data exports |
 
 Its stated rationale: "The wiki is already distilled. Wiki pages are
@@ -162,22 +162,22 @@ ADR's own stated logic, the same category error it already ruled out for
 wiki pages — doing retrieval-by-corpus-search over content that is already
 organized, cross-linked, and could instead be served through a structured
 lookup. This doesn't mean the idea is wrong; it means the ADR's own
-reasoning points toward extending the *wiki-tools/search-then-grant* shape
+reasoning points toward extending the _wiki-tools/search-then-grant_ shape
 (prior document §2.3: `search_skills`, MCP Tool Discovery) rather than the
-*RLM* shape for this specific content category — which is exactly the shape
+_RLM_ shape for this specific content category — which is exactly the shape
 issue #334 (§5 below) already proposes.
 
 One caveat on reusing ADR-001's eval findings directly: ADR-001's
 ceiling-flagged finding — models answering from a corpus already visible in
 context instead of delegating to `rlm_query` (`docs/ADR.md:31-38`) — assumes
 the corpus is already present in the conversation. A fixed harness-docs
-corpus bound server-side would *never* be in context by default (that's the
+corpus bound server-side would _never_ be in context by default (that's the
 entire point of keeping it out of the system prompt), so that specific
 failure mode cannot occur the same way here. But a related, arguably worse
 failure mode can: with no competing visible text to answer from, a model
-that skips the tool doesn't fall back to a *correct* answer it can already
+that skips the tool doesn't fall back to a _correct_ answer it can already
 see (ADR-001's finding was that the model's unprompted behavior was actually
-fine) — it falls back to an *unfounded* one, i.e. it may answer a question
+fine) — it falls back to an _unfounded_ one, i.e. it may answer a question
 about the harness from training-data assumptions or stale memory instead of
 asking. ADR-001's finding that "the ceiling is architectural, not a
 calibration issue" (`docs/ADR.md:38`) doesn't straightforwardly transfer; the
@@ -191,7 +191,7 @@ Anthropic's own docs (`platform.claude.com/docs/en/agents-and-tools/tool-use/def
 modes: `auto` (default — the model decides), `any` ("must use one of the
 provided tools, but doesn't force a particular tool"), `tool` ("forces Claude
 to always use a particular tool"), `none`. This is the actual mechanism for
-*compelling* a specific tool call before a reply, as distinct from describing
+_compelling_ a specific tool call before a reply, as distinct from describing
 a tool and hoping the model reaches for it.
 
 **That mechanism is not universally available, including on current Claude
@@ -244,8 +244,8 @@ document §2.3, §5a).
 behavior without forced tool-choice.** `docs/Design/RLM.md` documents the
 exact "model skips the step it should take" failure this proposal risks, and
 how it was addressed — not through an API-level forcing mechanism (which, as
-above, doesn't exist for this repo's providers), but through *structural
-tool design*: "Structural refusal (`not_found` tool) is the single
+above, doesn't exist for this repo's providers), but through _structural
+tool design_: "Structural refusal (`not_found` tool) is the single
 highest-leverage honesty mechanism: restores 10/10 honesty on qwen3:8b
 without retrieval cost. Refusal must be a first-class tool, not a prompt
 instruction." (`docs/Design/RLM.md:41`). Elaborated later in the same
@@ -266,7 +266,7 @@ precedent for how the "ask first" risk gets managed in practice here, and it
 predates (and doesn't depend on) this specific proposal.
 
 **How this interacts with the optional-vs-forced framing in the brief.** A
-model that is merely *invited* to call a Q&A tool (the realistic option,
+model that is merely _invited_ to call a Q&A tool (the realistic option,
 given §5's provider findings) can skip it two ways: correctly (it already
 knows the answer and the tool would be redundant — the benign case ADR-001's
 own eval findings describe, §4) or incorrectly (it answers from a wrong
@@ -289,13 +289,13 @@ is that `system-prompt.ts` does not grow.
 
 This proposal — a tool that answers a question against a fixed harness-docs
 corpus — is not a duplicate of #334's mechanism, but per §4's ADR-001
-analysis, it targets the *same content category* (structured, system-owned
+analysis, it targets the _same content category_ (structured, system-owned
 documentation) that #334 already claims, via a different retrieval shape
 (answer-synthesis-over-raw-text-search, §2) rather than #334's
 (inject-the-skill's-own-instructions-verbatim). Three ways this could relate,
 without this document picking among them:
 
-1. **A retrieval strategy *underneath* `invoke_skill`, not a competing
+1. **A retrieval strategy _underneath_ `invoke_skill`, not a competing
    mechanism.** If #334 ships `invoke_skill`, nothing about its spec commits
    it to injecting a Skill's full body verbatim — it could instead run an
    RLM-style loop over that Skill's documentation and return a synthesized
@@ -304,7 +304,7 @@ without this document picking among them:
    (`Agent-Exposable` flag, the tool itself) and only changes what happens
    inside it for long reference bodies — closer to "complement" than
    "alternative."
-2. **A narrower, cheaper step that could land *before* #334**, since it
+2. **A narrower, cheaper step that could land _before_ #334**, since it
    needs none of #334's new machinery (no new Skill property, no
    `Agent-Exposable` flag, no `invoke_skill` tool) — just one new bound tool
    over one fixed, assembled corpus. Simpler to build, but per §4, it's the

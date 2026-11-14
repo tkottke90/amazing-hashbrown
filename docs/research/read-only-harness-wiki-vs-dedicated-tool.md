@@ -21,7 +21,7 @@ cross-referenced rather than repeated here:
 ## 1. The question, restated precisely
 
 The user's own framing: during a conversation, either the user or the agent
-may have a question *about the harness itself* ("What is a `Widget`?",
+may have a question _about the harness itself_ ("What is a `Widget`?",
 "When should I use `spawn_sub_agent`?", "What is the `Self` wiki?"). Would it
 be better to answer these with a dedicated tool/skill (per docs 1–2's
 findings), or to lean on the existing LLM Wiki and publish a new, read-only,
@@ -53,13 +53,13 @@ anywhere in the write or persistence path — only Write Scope narrows which
 Wiki Domains a given write may target."
 
 The proposal's own example question — "What is the `Self` wiki?" — is
-therefore itself a *meta*-question about the wiki system's domain structure,
+therefore itself a _meta_-question about the wiki system's domain structure,
 not a question the `self` domain's own content could ever answer (nothing
-written into `self` by the agent would explain what `self` *is for*
+written into `self` by the agent would explain what `self` _is for_
 systemically). This is exactly the kind of harness self-knowledge no existing
 mechanism provides (doc 1 §2.6's coverage table), and it's worth being
 precise about: a harness-docs wiki domain answering "what is the Self wiki"
-would need to document the *wiki system itself*, which is a different
+would need to document the _wiki system itself_, which is a different
 content category from what `self` or `user` ever hold today — closer to
 "documentation about the knowledge-base feature" than to "a third knowledge
 domain alongside the other two."
@@ -105,7 +105,7 @@ this all-domain search. `lib/llm-wiki/src/registry.ts:93-109`'s `resolve()`
 scores every active wiki's id/domain/tag/routing-note hits against free text
 and returns either a single match, an `ambiguous` tie, or `noMatch` — i.e.
 the scored-resolution step that §3.1's eval history was already tuning is a
-single call across the *entire* registry, not domain-by-domain. Adding a
+single call across the _entire_ registry, not domain-by-domain. Adding a
 third domain doesn't create a new side-channel of ambiguity; it adds one
 more candidate into the exact scored-tie mechanism that `wnav-004`/`wnav-009`
 already show this repo struggling to keep reliable with two.
@@ -123,11 +123,11 @@ The issue's own first comment (2026-10-18T23:15:31Z) root-causes this
 precisely, and the diagnosis matters for this proposal:
 
 > "The guardrail is doing exactly what #79/#202 spec'd: it stops a workspace
-> from stealing another workspace's *bound* domain. It was never designed to
-> stop an *unbound* workspace from writing into any other unbound domain in
+> from stealing another workspace's _bound_ domain. It was never designed to
+> stop an _unbound_ workspace from writing into any other unbound domain in
 > the registry... The actual bug is one level up, in the `extract` step
 > itself... `classify` says `shouldWrite: true`, the pipeline is committed to
-> writing *somewhere*... with no way to say 'none of these actually fit.'"
+> writing _somewhere_... with no way to say 'none of these actually fit.'"
 
 This was fixed (ADR-0014, ADR-0015; design doc
 `docs/superpowers/specs/2026-10-18-afteragent-domain-fit-gate-design.md`;
@@ -140,20 +140,20 @@ no-op) — but **only under Open Scope** (`after-agent.ts:533-538`:
 band is always `'write'`, since the one Bound Wiki is the only candidate).
 
 **What this means for the proposal, precisely, and why the fix doesn't close
-the risk it might seem to:** the Fit Gate stops a *weak or uncertain* match
+the risk it might seem to:** the Fit Gate stops a _weak or uncertain_ match
 from auto-committing (the exact shape of the original incident — a
 software-infra fact with no genuinely on-topic unbound domain available). It
-does **not** stop a *strong, confident, but still wrong* match — that still
+does **not** stop a _strong, confident, but still wrong_ match — that still
 lands in the Write Band and commits with no human review. A harness-docs
-domain, being a domain whose `domain`/tags/routing-notes are *literally about
-this application*, is an unusually good textual match for exactly the class
+domain, being a domain whose `domain`/tags/routing-notes are _literally about
+this application_, is an unusually good textual match for exactly the class
 of content that produced the original incident (generic infrastructure/
 system facts an unbound thread surfaces) — i.e. the one domain in the
 registry most likely to score an honest 8–10 "fit" for miscellaneous
 "this is a fact about the system" content is precisely a dedicated
 harness-docs domain, which is the opposite of what a domain meant to hold
 curated, versioned documentation should be absorbing. The Fit Gate that
-closed the *original* #333 shape (`ext-007-fit-score-low-for-poor-match`,
+closed the _original_ #333 shape (`ext-007-fit-score-low-for-poor-match`,
 named explicitly in the design doc as "the regression scenario for #333
 itself") was never designed to, and doesn't, protect a domain from being a
 too-good semantic magnet. (Note: issue #333 is still open on GitHub as of
@@ -175,7 +175,7 @@ harness-docs domain, by construction, wouldn't.
 `api/src/services/wiki-write-scope.ts:19-26`, the `WikiWriteDenial` union:
 `'locked' | 'owned-by-another-workspace' | 'unresolved'`. There is no fourth
 reason meaning "this domain is permanently read-only" — every denial reason
-that exists today is about *which workspace* owns a domain, never about a
+that exists today is about _which workspace_ owns a domain, never about a
 domain being unwritable in principle. `GLOSSARY.md:116` states the same
 thing from the other direction: "No Wiki Domain, including `self`, is
 special-cased anywhere in the write or persistence path."
@@ -185,7 +185,7 @@ domain — owning no workspace — would always fall under for any writer):
 `checkWikiWrite`'s `'open'` branch
 (`wiki-write-scope.ts:94-97`) allows a write to any `wikiId` **not** in
 `excludedWikiIds`, and `excludedWikiIds` is populated only from
-`store.listBoundWikiIds()` — domains bound to *some other* workspace. A
+`store.listBoundWikiIds()` — domains bound to _some other_ workspace. A
 harness-docs domain, owning no workspace, is never in that excluded set, so
 `wiki_create_page`/`wiki_update_page` would accept a write to it from any
 unbound thread today, exactly as they would for `user` or `self`. **Making
@@ -198,7 +198,7 @@ a property the existing design hands you by registering one more domain.**
 `lib/llm-wiki/src/registry.ts:143-200` shows a wiki domain's on-disk location
 is configurable per entry: `create()`'s `CreateWikiInput.path` may be an
 absolute path (`path.isAbsolute(relPath) ? relPath : path.join(this.wikiRoot, relPath)`,
-line 145), and `register()` can register an *already-existing* on-disk
+line 145), and `register()` can register an _already-existing_ on-disk
 directory anywhere, reading its domain from that directory's own
 `SCHEMA.md` (lines 174-199). Mechanically, nothing stops a harness-docs
 domain's content from being checked-in markdown living under e.g.
@@ -208,7 +208,7 @@ PRs, present even in the Docker image) rather than under the gitignored
 `./config/kb` — itself under the gitignored `config/` directory per root
 `AGENTS.md`).
 
-But this only changes *where the bytes start* and *how they're authored*; it
+But this only changes _where the bytes start_ and _how they're authored_; it
 does not by itself close the write path described in §4.1. The write-guard
 layer has no concept of "this domain's files happen to live in the repo, not
 `config/`" — `wiki_create_page`/`wiki_update_page` would still accept a
@@ -220,9 +220,9 @@ check §4.1 says is missing (applied regardless of file location), **or** an
 operational control outside this application's own design (e.g. a read-only
 container filesystem layer in the Docker image) that `npm run dev`'s local
 checkout would not have, making it an inconsistent protection at best, not a
-design-level guarantee. Checked-in files solve the *provenance/versioning*
+design-level guarantee. Checked-in files solve the _provenance/versioning_
 half of "read-only, app-published" cleanly; they do not solve the
-*enforcement* half, which is the part issue #333's history (§3.3) shows
+_enforcement_ half, which is the part issue #333's history (§3.3) shows
 actually matters.
 
 ## 5. Is there a genuine zero-marginal-system-prompt-cost advantage? — yes, specifically, and more precisely than the brief's framing assumed
@@ -233,10 +233,10 @@ actually matters.
 text actually sent to the model, names no domain IDs. Every worked example
 ("What's my favorite color?", "I need to generate a new NPM token for my
 Verdaccio instance", "What have you noticed about growth lately?") teaches a
-*procedure* for resolving an unknown domain, never a fixed list. The one
+_procedure_ for resolving an unknown domain, never a fixed list. The one
 place `user`/`self` appear verbatim inside the prompt text itself
 (lines 1593-1595) is a single illustrative example of how to translate a
-*tool result* into plain language ("Available domains: user, self." becomes
+_tool result_ into plain language ("Available domains: user, self." becomes
 'I don't have anything on that'") — an example, not an enumeration that would
 need editing when a third domain is added.
 
@@ -276,16 +276,16 @@ aren't": `search_skills` only ever returns a pointer (name/slash-command/
 description, doc 1 §2.3) — a human still has to type `/command` to load a
 skill's body, so it doesn't close the mid-conversation self-answering gap
 this proposal is about. Issue #334's `invoke_skill` is the mechanism that
-*would* close that gap for skills, but it is a **net-new tool that doesn't
+_would_ close that gap for skills, but it is a **net-new tool that doesn't
 exist yet** — its first binding would cost a new tool schema (sent every
 turn it's bound) plus a new always-on section of comparable size to
 `SEARCH_SKILLS_SECTION`/`MCP_TOOL_DISCOVERY_SECTION` (doc 2 §2 measured
 `RLM_SECTION` plus its tool schema at roughly 550 tokens combined, by a
 chars÷4 estimate, as the closest comparable "new Q&A-shaped tool" cost). The
-wiki route pays none of that *additional* cost specifically because its
+wiki route pays none of that _additional_ cost specifically because its
 body-read tools (`wiki_search`, `wiki_read_page`) are already bound,
 already-described, always-on tools today — the saving is real, but it's a
-saving on *reusing infrastructure already paid for*, not a property
+saving on _reusing infrastructure already paid for_, not a property
 intrinsic to "being a wiki" that a dedicated tool could never also have if
 it, too, rode on an existing always-on tool rather than introducing a new
 one.
@@ -341,8 +341,8 @@ tension:
    default all-domain ranking (§3.2) run identically over a read-only domain
    as over any other registered one — nothing in the write-guard layer
    touches `resolve()` or `semanticSearch()`. So read-only status would
-   neutralize #334's stated *write-trust* concern (conditionally, per point
-   2), while leaving the *routing/ambiguity* concern — the one this repo's
+   neutralize #334's stated _write-trust_ concern (conditionally, per point
+   2), while leaving the _routing/ambiguity_ concern — the one this repo's
    own 15-round `wnav-*` eval history (§3.1) shows is real with only two
    domains — completely untouched.
 
