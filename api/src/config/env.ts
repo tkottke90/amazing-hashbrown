@@ -179,9 +179,7 @@ export const AnyProviderSchema = z.union([
   OpenAiCompatibleProviderSchema,
 ]);
 export type AnyProviderConfig =
-  | ProviderConfig
-  | AzureOpenAiProviderConfig
-  | OpenAiCompatibleProviderConfig;
+  ProviderConfig | AzureOpenAiProviderConfig | OpenAiCompatibleProviderConfig;
 
 // A user-pinned provider/model pair, surfaced at the top of the chat
 // Provider menu (issue #137). An ordered list rather than a Record — a
