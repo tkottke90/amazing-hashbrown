@@ -48,7 +48,7 @@ import { buildTaskContextBlock } from '../api/src/agents/task-context.js';
 import { buildWorkspaceContextBlock } from '../api/src/agents/chat-agent.js';
 import { buildSystemPrompt } from '../api/src/agents/system-prompt.js';
 import { buildAmbientContext } from '../api/src/agents/ambient-context.js';
-import { fakeGenerateImageTool } from './eval-fixtures.js';
+import { fakeGenerateImageTool, fakeN8nGetWorkflowDetailsTool } from './eval-fixtures.js';
 import type { Suite } from '../lib/evaluations/src/index.js';
 
 // Shared by bin/eval.ts and bin/eval-stream-trace.ts so the trace script sends
@@ -59,8 +59,9 @@ import type { Suite } from '../lib/evaluations/src/index.js';
 // api/src/agents/chat-agent.ts) — used to give tool-call eval scenarios the
 // same choices the real agent has. MCP tools are excluded: they're
 // dynamic/live-server-dependent, which would make the eval non-deterministic
-// to run. fakeGenerateImageTool is an eval-only fixture (see
-// eval-fixtures.ts) — never part of the production agent's tool set.
+// to run. fakeGenerateImageTool and fakeN8nGetWorkflowDetailsTool are
+// eval-only fixtures (see eval-fixtures.ts) — never part of the production
+// agent's tool set.
 export const evalTools = [
   askUserTool,
   // Safe to bind here even though it can run real commands: tool-call and
@@ -218,6 +219,11 @@ export const evalTools = [
   scheduleWakeupTool,
   cancelWakeupTool,
   fakeGenerateImageTool,
+  // Eval-only fixture for suites/mcp-tool-cache.yaml — see its comment in
+  // eval-fixtures.ts. Real MCP tools are excluded from this list (comment
+  // above), but that suite needs a deterministic tool bound under this
+  // exact boundName to test forceRefresh judgment against.
+  fakeN8nGetWorkflowDetailsTool,
 ];
 
 // Builds the system prompt a suite's scenarios are run under: the harness
