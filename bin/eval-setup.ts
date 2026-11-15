@@ -15,6 +15,8 @@ import { wikiRegisterDomainTool } from '../api/src/agents/tools/wiki-register-do
 import { webFetchTool } from '../api/src/agents/tools/web-fetch.tool.js';
 import { makeGetToolKeyTool } from '../api/src/agents/tools/get-tool-key.tool.js';
 import { searchSkillsTool } from '../api/src/agents/tools/search-skills.tool.js';
+import { makeSearchMcpToolsTool } from '../api/src/agents/tools/search-mcp-tools.tool.js';
+import { makeUseMcpToolsTool } from '../api/src/agents/tools/use-mcp-tools.tool.js';
 import { makeCreateWorkspaceTool } from '../api/src/agents/tools/create-workspace.tool.js';
 import { makeCreateProjectTool } from '../api/src/agents/tools/create-project.tool.js';
 import { makeCreateTasksTool } from '../api/src/agents/tools/create-tasks.tool.js';
@@ -217,6 +219,20 @@ export const evalTools = [
   // executed here, so no wake-up store or registry is needed.
   scheduleWakeupTool,
   cancelWakeupTool,
+  // search_mcp_tools/use_mcp_tools (#408, ADR-0067) are bound alongside
+  // STATIC_CHAT_TOOLS at all three of chat-agent.ts's agent-builder call
+  // sites (buildChatAgent, buildWorkspaceChatAgent, buildTaskAgent) — unlike
+  // the actual MCP tools they discover/grant, which the comment above
+  // evalTools excludes for being dynamic/live-server-dependent, these two
+  // are static, always-bound production tools with no live-server
+  // dependency of their own (they read the local tool-config catalog, never
+  // executed here per every other tool's reasoning in this list). Missing
+  // here meant suites/mcp-tool-discovery.yaml's mtd-001/mtd-002 could never
+  // actually pass — use_mcp_tools wasn't an offered option for the model to
+  // call, and search_mcp_tools wasn't offered for mtd-002 to assert it
+  // ISN'T followed by use_mcp_tools.
+  makeSearchMcpToolsTool(),
+  makeUseMcpToolsTool(),
   fakeGenerateImageTool,
 ];
 
