@@ -318,11 +318,14 @@ function extendWithForceRefresh(parameters: z.ZodType): { schema: z.ZodType; ok:
       .boolean()
       .optional()
       .describe(
-        'Bypass the cached result for this exact call and fetch fresh. Use only when you have ' +
-          'concrete reason to believe the underlying data changed since the last fetch — you or ' +
-          'the user just wrote to it — not as a default. A resource already listed in your ' +
-          'workspace context as fresh does not need this; one marked stale there is still worth ' +
-          'reusing unless this call specifically needs current data.',
+        'Bypass the cached result for this exact call and fetch fresh. Without this set to ' +
+          'true, calling this tool again with the same arguments is served from cache, not ' +
+          'actually re-run — deciding to "check again" and then repeating the call with this ' +
+          'omitted accomplishes nothing. Use it only when you have concrete reason to believe ' +
+          'the underlying data changed since the last fetch — you or the user just wrote to it ' +
+          '— not as a default. A resource already listed in your workspace context as fresh ' +
+          'does not need this; one marked stale there is still worth reusing unless this call ' +
+          'specifically needs current data.',
       ),
   });
   return { schema, ok: true };

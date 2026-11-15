@@ -1057,10 +1057,12 @@ same wait a second time. A line marked stale means its cache window has passed; 
 known answer, not wrong by default, so keep using it unless this specific question needs the
 current state.
 
-Some tools that support this additionally accept a forceRefresh argument. Pass forceRefresh: true
-only when you have a concrete reason to believe the underlying data changed since that fetch — you
-or the user just wrote to it, for instance — not as a routine double-check. If nothing in the
-conversation suggests the data changed, omit it.`;
+Some tools that support this additionally accept a forceRefresh argument. When you do have a
+concrete reason to re-fetch — you or the user just wrote to the resource, for instance — calling
+the tool again with the same arguments is not enough by itself: the same cache-skip described above
+still applies, so you will just get the stale result back again unless you also pass
+forceRefresh: true on that call. Reserve it for that case, not as a routine double-check — if
+nothing in the conversation suggests the data changed, omit it.`;
 
 // A second get_tool_key producer alongside web_fetch (see WEB_FETCH_SECTION
 // above) — gated on get_tool_key itself, not on web_fetch, since an
