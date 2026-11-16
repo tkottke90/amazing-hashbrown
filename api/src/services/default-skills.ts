@@ -270,15 +270,63 @@ Step 1 (always first, before anything else): determine which path applies below.
 5. If the fix touches scripts or reference files, use update_skill_artifact for an existing file (or create_skill_artifact for a new one) after the SKILL.md edit succeeds. For any script artifact, immediately call #test_skill_artifact to dry-run it and show the result before finishing — a direct tool call, not a prose question asking whether the user wants it tested.
 6. Wrap up with a brief confirmation of what changed. For a workspace-scope write, say plainly that the file is on disk but not committed — the user reviews and commits it through the workspace's own normal git flow, the same as any other change there.`,
   },
-  // First draft, structurally complete against the design
-  // (docs/superpowers/specs/2026-11-16-ingest-document-skill-design.md) but not
-  // yet eval-tightened against a real run — expect this to need the same kind
-  // of iterative tightening the four entries above needed, once
-  // suites/ingest-document.yaml has been run against real models. Deliberately
-  // not registered in GATED_SKILL_REGISTRATIONS (gated-skill-registrations.ts)
-  // — wiki_create_page/wiki_update_page/etc. must stay globally visible, not
-  // disappear whenever a different skill is active. See the design doc's
-  // Decisions table, "Tool gating" row, for why.
+  // Deliberately not registered in GATED_SKILL_REGISTRATIONS
+  // (gated-skill-registrations.ts) — wiki_create_page/wiki_update_page/etc.
+  // must stay globally visible, not disappear whenever a different skill is
+  // active. See the design doc's Decisions table, "Tool gating" row, for why.
+  //
+  // First tightening, added after a real eval run (suites/ingest-document.yaml,
+  // 2026-11-16) against four providers:
+  // - local: 5/7 (71.4%), Lemonade: 2/7 (28.6%), Ornith: 5/7 (71.4%),
+  //   Digital Ocean: 4/7 (57.1%).
+  // idoc-005 (revise plan after "No") failed for all four providers, 0/4 — the
+  // single worst result in the suite. All four skip the required second
+  // ask_user gate and go straight to execution once the user gives concrete
+  // revision feedback. Digital Ocean's own reasoning states the
+  // rationalization verbatim: "The user already approved proceeding with just
+  // the expense page, so no more ask_user." Step 6's existing exception-closing
+  // sentence only covers an opening message that already reads like a
+  // go-ahead; step 7 creates an equivalent but previously uncovered loophole
+  // by handing the model fresh, specific feedback right before it's supposed
+  // to loop back to the gate. Added a sentence to step 7 naming this exact
+  // rationalization and closing it.
+  // idoc-004 (sourceText on write) failed for three of four providers
+  // (Lemonade, Ornith, Digital Ocean — only local passed). All three built the
+  // page body correctly from the seeded document text but never included
+  // sourceText in the wiki_create_page call at all — not malformed, not
+  // empty, simply absent every time. The prior wording ("This is an easy
+  // optional param to drop") read as a warning/aside rather than an
+  // instruction to act on. Rewrote step 8 to name corpus/content and
+  // sourceText as two separate required fields filled from the same excerpt,
+  // and added an explicit pre-call self-check for the key's presence.
+  // idoc-001 (single-topic one-item plan) failed for local only (among the
+  // providers where this was a skill-wording issue — see below for Lemonade's
+  // separate failure on this same scenario). local never reached the plan step
+  // at all: it got stuck re-querying wiki_search with rephrased terms, trying
+  // to resolve its own uncertainty about topic boundaries, and the judge
+  // noted "a rambling, exploratory internal monologue" with no plan ever
+  // presented. Step 4 had no boundary telling the model the overlap-check is
+  // a finite step. Added a sentence bounding it to one search per candidate
+  // topic before moving on to step 5.
+  // Flagged, not fixed — not skill-wording gaps:
+  // - Lemonade failed idoc-001/idoc-002/idoc-006 (3 of its 5 failures) the
+  //   identical way each time: it reasoned correctly, even stated in its own
+  //   reasoning that it would call ask_user, then emitted the question as
+  //   plain prose ending in "?" instead of an actual tool call (the harness's
+  //   prose_question flag, which fired exactly twice in its run). This is a
+  //   model/transport formatting reliability issue — no amount of wording
+  //   changes whether a model that already decided correctly successfully
+  //   encodes that decision as a tool call. Left untouched; if it recurs next
+  //   run, that points at a Lemonade-specific transport issue, not another
+  //   wording round.
+  // - Digital Ocean failed idoc-006 with a genuine hallucination: it
+  //   fabricated an entire fake meeting transcript (invented speakers, a fake
+  //   product deprecation timeline, fake pricing) in direct contradiction of
+  //   step 3's existing, already-explicit sentence forbidding exactly that.
+  //   The correct instruction is already there in the exact words needed —
+  //   this reads as a capability ceiling for this model under this harness,
+  //   not a closable wording gap. Flagged to verify on the next run rather
+  //   than assumed fixed by anything in this round.
   {
     name: 'ingest-document',
     description:
@@ -299,7 +347,7 @@ Steps:
 3. Read and segment. Read the document — it's either pasted directly as this skill's command args, or surfaced as an attachment by the existing attachment-handling middleware. Identify the distinct entities, concepts, comparisons, or Q&A pairs that clear *this* domain's Page Threshold from wiki_orient's schema — not a generic "is this big enough to matter" instinct. Passing mentions and minor supporting details don't get their own entry; fold them into whatever topic they support.
    - No document actually provided (empty command args, no attachment) → stop here and ask what to ingest with a free_text ask_user call. Do not invent a placeholder document, example content, or a plan for "typical" content just so you have something to show — there is nothing to plan yet.
 
-4. Check for overlap. For each candidate topic from step 3, call wiki_search (scoped to the resolved wikiId) and wiki_read_page on anything that looks relevant, to check whether it already has a home in the wiki. Skipping this and treating every candidate as brand-new is exactly the mistake step 5's "append" option exists to avoid — a document that updates or extends existing content is common, not the exception.
+4. Check for overlap. For each candidate topic from step 3, call wiki_search (scoped to the resolved wikiId) and wiki_read_page on anything that looks relevant, to check whether it already has a home in the wiki. Skipping this and treating every candidate as brand-new is exactly the mistake step 5's "append" option exists to avoid — a document that updates or extends existing content is common, not the exception. One wiki_search per candidate topic (plus wiki_read_page only on an actual hit) is enough to decide new-vs-append — don't keep re-querying with rephrased search terms to resolve your own uncertainty about where a topic's boundaries sit. Move on to step 5 once each candidate has had its one search.
 
 5. Build the plan. One line per candidate topic: new page (title + section type) / append to an existing page (which page, what's being added) / skip (why it doesn't clear the threshold). A short, single-topic document can produce a one-item plan — don't manufacture extra splits across several pages just to look thorough, and don't force every passing mention into its own line either; both are the same mistake in opposite directions.
 
@@ -307,9 +355,9 @@ Steps:
 
 7. Branch on the answer, and only on this specific exchange:
    - "Yes, proceed" → continue to step 8 immediately, with exactly the plan you just confirmed. Don't re-derive it, don't re-run wiki_search, and don't re-read the document first — that work already happened before the gate.
-   - "No — I'll explain what to change" → stop the turn entirely. Don't guess at what might be wrong and silently adjust the plan on your own reasoning, and don't ask a follow-up question either ("what would you like changed?") — the choice label itself already told the user their next message is where that goes. Wait for their next message, revise the plan using their actual feedback, restate the revised plan as a new numbered list, and run the same ask_user gate again (back to step 6). A restated plan that comes back unchanged after "No" — same titles, same splits, same skips as before — means the feedback wasn't actually applied; something has to change, however small.
+   - "No — I'll explain what to change" → stop the turn entirely. Don't guess at what might be wrong and silently adjust the plan on your own reasoning, and don't ask a follow-up question either ("what would you like changed?") — the choice label itself already told the user their next message is where that goes. Wait for their next message, revise the plan using their actual feedback, restate the revised plan as a new numbered list, and run the same ask_user gate again (back to step 6). Giving concrete, specific feedback (e.g. "drop the VPN page, just keep expense policy") is not the same as approving the revised plan — it's the input the revision is built from, and it still has to clear the same ask_user gate the first draft did. Don't treat the detail or specificity of the feedback as implicit sign-off that lets you skip straight to step 8; "the user already told me what they want, so there's no need to ask again" is exactly the rationalization this step exists to close. A restated plan that comes back unchanged after "No" — same titles, same splits, same skips as before — means the feedback wasn't actually applied; something has to change, however small.
 
-8. Execute. For each confirmed plan item, call wiki_create_page or wiki_update_page (append or replace, matching what that plan line said) with sourceText set to the actual excerpt of the original document that page's content came from — the real text, not a paraphrase or your own summary of it. This is an easy optional param to drop; it's what keeps the original document traceable as a raw source once its content is split across pages.
+8. Execute. For each confirmed plan item, call wiki_create_page or wiki_update_page (append or replace, matching what that plan line said). Every one of these calls fills two separate content fields from the same source excerpt, not one: corpus/content holds your organized page body, and sourceText holds the untouched original passage, copied verbatim from the document — even though this duplicates text you already used for corpus/content. Before sending the call, check the arguments you're about to submit for a sourceText key; if it isn't there, add it now. Treating sourceText as optional-and-skippable is the single most common mistake here — it's listed as an optional parameter in the tool's own schema, but this skill requires it on every call in this step; omitting it is not a smaller, acceptable version of this step, it's leaving the step half-done.
 
 9. Cross-link. Call wiki_add_cross_link between pages touched this turn that are genuinely related to each other. Don't force a link between two pages just because they came from the same source document — the relationship has to be real content-level overlap, not shared provenance.
 
