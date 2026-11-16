@@ -18,12 +18,12 @@ function setMessage(
 describe('WikiOrientationMessage', () => {
   it('renders the wiki id and description for action: set', () => {
     render(<WikiOrientationMessage message={setMessage()} />);
-    expect(screen.getByText('user')).toBeInTheDocument();
-    expect(
-      screen.getByText((_, node) =>
-        (node?.textContent ?? '').includes('user preferences, personal context, and biography'),
-      ),
-    ).toBeInTheDocument();
+    // Scoped to the card's own text content rather than screen.getByText —
+    // "user" legitimately appears twice (the badge and the sentence), which
+    // makes an exact-text query ambiguous.
+    const card = screen.getByTestId('wiki-orientation-card');
+    expect(card.textContent).toContain('user');
+    expect(card.textContent).toContain('user preferences, personal context, and biography');
   });
 
   it('renders the muted cleared-state line for action: cleared', () => {
@@ -37,8 +37,9 @@ describe('WikiOrientationMessage', () => {
 
   it('never renders anything resembling schema/index/log content', () => {
     render(<WikiOrientationMessage message={setMessage()} />);
-    expect(screen.queryByText(/## Schema/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/## Index/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/## Recent Log/)).not.toBeInTheDocument();
+    const card = screen.getByTestId('wiki-orientation-card');
+    expect(card.textContent).not.toMatch(/## Schema/);
+    expect(card.textContent).not.toMatch(/## Index/);
+    expect(card.textContent).not.toMatch(/## Recent Log/);
   });
 });
