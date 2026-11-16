@@ -116,6 +116,123 @@ describe('ToolSettingsDrawer', () => {
     expect(screen.queryByLabelText('Timeout (ms)')).not.toBeInTheDocument();
   });
 
+  describe('cacheable/cacheTtlMs (mcp-tool-cache design)', () => {
+    function mcpTool(overrides: Partial<ToolSettingItem> = {}): ToolSettingItem {
+      return tool({
+        toolId: 'n8n:get_workflow_details',
+        name: 'get_workflow_details',
+        category: 'mcp',
+        mcpServer: 'n8n',
+        ...overrides,
+      });
+    }
+
+    it('renders the Cache results switch only for an MCP-category tool', () => {
+      render(<ToolSettingsDrawer tool={mcpTool()} onSaved={jest.fn()} trigger={OPEN_TRIGGER} />);
+      expect(
+        screen.getByLabelText('Enable result caching for get_workflow_details'),
+      ).toBeInTheDocument();
+    });
+
+    it('does not render Cache results for a non-MCP-category tool', () => {
+      render(
+        <ToolSettingsDrawer
+          tool={tool({ toolId: 'web_fetch', category: 'built-in' })}
+          onSaved={jest.fn()}
+          trigger={OPEN_TRIGGER}
+        />,
+      );
+      expect(
+        screen.queryByLabelText('Enable result caching for Web Fetch'),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Cache TTL (ms)')).not.toBeInTheDocument();
+    });
+
+    it('hides the Cache TTL input until Cache results is on', () => {
+      render(
+        <ToolSettingsDrawer
+          tool={mcpTool({ cacheable: false })}
+          onSaved={jest.fn()}
+          trigger={OPEN_TRIGGER}
+        />,
+      );
+      expect(screen.queryByLabelText('Cache TTL (ms)')).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByLabelText('Enable result caching for get_workflow_details'));
+
+      expect(screen.getByLabelText('Cache TTL (ms)')).toBeInTheDocument();
+    });
+
+    it('pre-fills the Cache TTL input from the tool', () => {
+      render(
+        <ToolSettingsDrawer
+          tool={mcpTool({ cacheable: true, cacheTtlMs: 60000 })}
+          onSaved={jest.fn()}
+          trigger={OPEN_TRIGGER}
+        />,
+      );
+      expect(screen.getByLabelText('Cache TTL (ms)')).toHaveValue(60000);
+    });
+
+    it('Save sends cacheable: true and the entered cacheTtlMs', async () => {
+      mockPatch.mockResolvedValue(mcpTool({ cacheable: true, cacheTtlMs: 120000 }));
+      render(
+        <ToolSettingsDrawer
+          tool={mcpTool({ cacheable: false })}
+          onSaved={jest.fn()}
+          trigger={OPEN_TRIGGER}
+        />,
+      );
+      fireEvent.click(screen.getByLabelText('Enable result caching for get_workflow_details'));
+      fireEvent.input(screen.getByLabelText('Cache TTL (ms)'), { target: { value: '120000' } });
+      fireEvent.click(screen.getByText('Save'));
+
+      await waitFor(() => expect(mockPatch).toHaveBeenCalled());
+      expect(mockPatch).toHaveBeenCalledWith(
+        'n8n:get_workflow_details',
+        expect.objectContaining({ cacheable: true, cacheTtlMs: 120000 }),
+      );
+    });
+
+    it('Save sends cacheTtlMs: null when the TTL field is cleared back to blank (use the global default, caching stays on)', async () => {
+      mockPatch.mockResolvedValue(mcpTool({ cacheable: true, cacheTtlMs: null }));
+      render(
+        <ToolSettingsDrawer
+          tool={mcpTool({ cacheable: true, cacheTtlMs: 60000 })}
+          onSaved={jest.fn()}
+          trigger={OPEN_TRIGGER}
+        />,
+      );
+      fireEvent.input(screen.getByLabelText('Cache TTL (ms)'), { target: { value: '' } });
+      fireEvent.click(screen.getByText('Save'));
+
+      await waitFor(() => expect(mockPatch).toHaveBeenCalled());
+      expect(mockPatch).toHaveBeenCalledWith(
+        'n8n:get_workflow_details',
+        expect.objectContaining({ cacheable: true, cacheTtlMs: null }),
+      );
+    });
+
+    it('Save sends cacheable: false and leaves a previously-set TTL untouched in the signal (turning caching back on later keeps it)', async () => {
+      mockPatch.mockResolvedValue(mcpTool({ cacheable: false, cacheTtlMs: 60000 }));
+      render(
+        <ToolSettingsDrawer
+          tool={mcpTool({ cacheable: true, cacheTtlMs: 60000 })}
+          onSaved={jest.fn()}
+          trigger={OPEN_TRIGGER}
+        />,
+      );
+      fireEvent.click(screen.getByLabelText('Enable result caching for get_workflow_details'));
+      fireEvent.click(screen.getByText('Save'));
+
+      await waitFor(() => expect(mockPatch).toHaveBeenCalled());
+      expect(mockPatch).toHaveBeenCalledWith(
+        'n8n:get_workflow_details',
+        expect.objectContaining({ cacheable: false, cacheTtlMs: 60000 }),
+      );
+    });
+  });
+
   describe('rlm_query provider/model picker', () => {
     function rlmTool(overrides: Partial<ToolSettingItem> = {}): ToolSettingItem {
       return tool({ toolId: 'rlm_query', ...overrides });

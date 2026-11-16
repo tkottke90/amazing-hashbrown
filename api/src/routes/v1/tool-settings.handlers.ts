@@ -128,12 +128,16 @@ const DefaultIncludePatchSchema = z.object({
 // The generic fields every tool shares, plus a catchall for the handful of
 // tool-specific extra fields (web_fetch/rlm_query/shell_exec) — validated
 // against their own typed schema below, only when the toolId matches.
+// cacheable/cacheTtlMs are generic too (any MCP tool, not one specific
+// tool), so they live here rather than in EXTRA_FIELD_SCHEMAS below.
 const PatchToolSettingSchema = z
   .object({
     enabled: z.boolean().optional(),
     defaultInclude: DefaultIncludePatchSchema.optional(),
     description: z.string().optional(),
     instructions: z.string().optional(),
+    cacheable: z.boolean().optional(),
+    cacheTtlMs: z.number().int().positive().nullable().optional(),
   })
   .catchall(z.unknown());
 
@@ -146,7 +150,14 @@ const EXTRA_FIELD_SCHEMAS: Record<string, z.ZodTypeAny> = {
   shell_exec: ShellExecutorConfigSchema.partial().strict(),
 };
 
-const GENERIC_FIELD_NAMES = new Set(['enabled', 'defaultInclude', 'description', 'instructions']);
+const GENERIC_FIELD_NAMES = new Set([
+  'enabled',
+  'defaultInclude',
+  'description',
+  'instructions',
+  'cacheable',
+  'cacheTtlMs',
+]);
 
 // ---- Handlers ----------------------------------------------------------------
 
@@ -203,7 +214,8 @@ export function patchToolSettingHandler(
   if (!parsed.success) {
     return badRequest(parsed.error.issues.map((i) => i.message).join('; '));
   }
-  const { enabled, defaultInclude, description, instructions, ...extra } = parsed.data;
+  const { enabled, defaultInclude, description, instructions, cacheable, cacheTtlMs, ...extra } =
+    parsed.data;
 
   if (existing.alwaysOn && (enabled !== undefined || defaultInclude !== undefined)) {
     return badRequest(`Tool "${toolId}" is always on — enabled/defaultInclude cannot be changed`);
@@ -253,6 +265,11 @@ export function patchToolSettingHandler(
   }
   if (description !== undefined) mergedEntry['description'] = description;
   if (instructions !== undefined) mergedEntry['instructions'] = instructions;
+  // cacheTtlMs: null is a real value (explicitly clear the per-tool
+  // override, fall back to the global default) — check !== undefined, not
+  // truthiness, same reasoning as every other optional field here.
+  if (cacheable !== undefined) mergedEntry['cacheable'] = cacheable;
+  if (cacheTtlMs !== undefined) mergedEntry['cacheTtlMs'] = cacheTtlMs;
 
   const updatedTools = { ...currentTools, [toolId]: mergedEntry };
   mergeConfigYaml(configDir, { tools: updatedTools });

@@ -118,6 +118,11 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
   const includeSubAgent = useSignal(tool.defaultInclude.subAgent);
   const includeAutonomous = useSignal(tool.defaultInclude.autonomous);
 
+  // Generic — any MCP tool, not tied to one specific toolId (see
+  // isMcp below and the handleSave block that uses these).
+  const cacheable = useSignal(tool.cacheable ?? false);
+  const cacheTtlMs = useSignal(tool.cacheTtlMs != null ? String(tool.cacheTtlMs) : '');
+
   // Tool-specific extra fields — only ever read for their matching toolId.
   const timeoutMs = useSignal(tool.timeoutMs ?? 10000);
   const respectRobotsTxt = useSignal(tool.respectRobotsTxt ?? true);
@@ -144,6 +149,7 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
 
   const isAlwaysOn = tool.alwaysOn;
   const isSkillGated = tool.category === 'skill-gated' || tool.category === 'skill-scoped';
+  const isMcp = tool.category === 'mcp';
 
   // Dialog children stay mounted between opens (see mcp-server-drawer.tsx's
   // identical comment) — reset local form state every time this specific
@@ -156,6 +162,8 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
     includeChat.value = tool.defaultInclude.chat;
     includeSubAgent.value = tool.defaultInclude.subAgent;
     includeAutonomous.value = tool.defaultInclude.autonomous;
+    cacheable.value = tool.cacheable ?? false;
+    cacheTtlMs.value = tool.cacheTtlMs != null ? String(tool.cacheTtlMs) : '';
     timeoutMs.value = tool.timeoutMs ?? 10000;
     respectRobotsTxt.value = tool.respectRobotsTxt ?? true;
     provider.value = tool.provider ?? '';
@@ -265,6 +273,14 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
           subAgent: includeSubAgent.value,
           autonomous: includeAutonomous.value,
         };
+      }
+      if (isMcp) {
+        patch.cacheable = cacheable.value;
+        // '' means "use the global default" — sent as null, same
+        // "explicit clear" convention cacheTtlMs: null already means
+        // server-side, not omitted (omitting would silently keep a stale
+        // prior override, same reasoning as rlm_query's fields above).
+        patch.cacheTtlMs = cacheTtlMs.value === '' ? null : Number(cacheTtlMs.value);
       }
       if (tool.toolId === 'web_fetch') {
         patch.timeoutMs = timeoutMs.value;
@@ -405,6 +421,31 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
               )}
             </div>
           </>
+        )}
+
+        {isMcp && (
+          <div class="space-y-3 rounded-md border border-border p-3">
+            <div class="flex items-center justify-between gap-2">
+              <Label>Cache results</Label>
+              <Switch
+                checked={cacheable.value}
+                onCheckedChange={(v) => (cacheable.value = v)}
+                aria-label={`Enable result caching for ${tool.name}`}
+              />
+            </div>
+            {cacheable.value && (
+              <div class="space-y-1.5">
+                <Label htmlFor="tool-settings-cache-ttl">Cache TTL (ms)</Label>
+                <Input
+                  id="tool-settings-cache-ttl"
+                  type="number"
+                  placeholder="Use default"
+                  value={cacheTtlMs.value}
+                  onInput={(e) => (cacheTtlMs.value = (e.target as HTMLInputElement).value)}
+                />
+              </div>
+            )}
+          </div>
         )}
 
         {tool.toolId === 'web_fetch' && (

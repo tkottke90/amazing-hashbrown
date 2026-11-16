@@ -63,7 +63,15 @@ import {
   getSubAgentToolIds,
   toBoundMatchKeys,
   getExplicitlySubAgentExcludedIds,
+  getCacheableToolIds,
+  listResolvedToolSettings,
 } from './tool-config.js';
+import {
+  getCacheEntry,
+  isExpired,
+  upsertCacheEntry,
+  isMcpToolCacheEnabled,
+} from '../services/mcp-tool-cache.js';
 import { syncMcpToolStatus } from './mcp-tool-status.js';
 import { getToolSettingsStore } from '../services/tool-settings-store.js';
 import { makeCreateWorkspaceTool } from './tools/create-workspace.tool.js';
@@ -287,20 +295,126 @@ export function createContextWindowMiddleware(cfg?: ContextWindowConfig) {
 
 const skillGatedToolsMiddleware = createSkillGatedToolsMiddleware(GATED_SKILL_REGISTRATIONS);
 
+// RegisteredTool.parameters is typed z.ZodType, not ZodObject — most MCP
+// tools' top-level schema happens to be an object schema, but nothing
+// guarantees it. Checks for `.extend` at runtime (duck-typed, not
+// `instanceof z.ZodObject`: @langchain/mcp-adapters produces a zod v3
+// schema at runtime, structurally cast to this file's zod v4 ZodType — see
+// mcp-client.ts's own comment on that cast — so an instanceof check against
+// this file's v4 ZodObject class would not reliably match a v3-constructed
+// instance). A tool whose schema isn't extendable this way is never
+// treated as cacheable at runtime, even if cacheable: true is configured
+// for it — a cache with no forceRefresh bypass lever would be strictly
+// worse than today's unconditional-execute behavior, so this logs and
+// declines rather than caching it unsafely.
+function extendWithForceRefresh(parameters: z.ZodType): { schema: z.ZodType; ok: boolean } {
+  const maybeObject = parameters as unknown as {
+    extend?: (shape: Record<string, z.ZodType>) => z.ZodType;
+  };
+  if (typeof maybeObject.extend !== 'function') {
+    return { schema: parameters, ok: false };
+  }
+  const schema = maybeObject.extend({
+    forceRefresh: z
+      .boolean()
+      .optional()
+      .describe(
+        'Bypass the cached result for this exact call and fetch fresh. Without this set to ' +
+          'true, calling this tool again with the same arguments is served from cache, not ' +
+          'actually re-run — deciding to "check again" and then repeating the call with this ' +
+          'omitted accomplishes nothing. Use it only when you have concrete reason to believe ' +
+          'the underlying data changed since the last fetch — you or the user just wrote to it ' +
+          '— not as a default. A resource already listed in your workspace context as fresh ' +
+          'does not need this; one marked stale there is still worth reusing unless this call ' +
+          'specifically needs current data.',
+      ),
+  });
+  return { schema, ok: true };
+}
+
+function renderCacheHitMessage(hit: { diskPath: string | null; kvKey: string }): string {
+  const where = hit.diskPath ?? `get_tool_key with this threadId and toolKey "${hit.kvKey}"`;
+  return (
+    `Already have this result (not past its cache window) — see ${where} instead of ` +
+    `re-fetching. Pass forceRefresh: true if you specifically need a fresh copy.`
+  );
+}
+
 // Binds by boundName, not name — name is bare and not guaranteed unique
 // across MCP servers (two servers can expose an identically-named tool);
 // boundName is the server-qualified form (see @tkottke90/tools-manager's
 // RegisteredTool) that's actually safe to give the model as a tool name.
-export function mcpToolToLangChain(t: RegisteredTool) {
+//
+// cacheTtlByBoundName (boundName -> resolved ttlMs) is this tool's sole
+// cacheable gate: presence means tool-config.ts's getCacheableToolIds()
+// marked this tool cacheable and resolved its TTL (per-tool override or
+// the env.chat.mcpToolCache.ttlMs default); absence means "not cacheable" —
+// see loadMcpTools()'s buildMcpCacheTtlMap(), which builds this map once
+// per agent build rather than resolving tool settings on every call.
+export function mcpToolToLangChain(
+  t: RegisteredTool,
+  cacheTtlByBoundName: Map<string, number>,
+  workspaceLocation?: string,
+) {
+  const configuredTtlMs = cacheTtlByBoundName.get(t.boundName);
+  let cacheable = false;
+  let schema: z.ZodType = t.parameters;
+
+  if (configuredTtlMs !== undefined) {
+    const extended = extendWithForceRefresh(t.parameters);
+    if (extended.ok) {
+      schema = extended.schema;
+      cacheable = true;
+    } else {
+      logger.warn(
+        'mcpToolToLangChain: tool is configured cacheable but its parameter schema cannot be ' +
+          'extended with forceRefresh — caching skipped for this tool',
+        { boundName: t.boundName },
+      );
+    }
+  }
+
   return tool(
     async (args: Record<string, unknown>, config) => {
-      const result = await t.execute(args);
+      const threadId = config?.configurable?.thread_id as string | undefined;
+      const { forceRefresh, ...realArgs } = args as { forceRefresh?: boolean } & Record<
+        string,
+        unknown
+      >;
+
+      if (cacheable && threadId && !forceRefresh && isMcpToolCacheEnabled()) {
+        const hit = getCacheEntry(threadId, t.boundName, realArgs);
+        if (hit && !isExpired(hit)) {
+          return renderCacheHitMessage(hit);
+        }
+      }
+
+      const result = await t.execute(realArgs);
       const text = typeof result === 'string' ? result : JSON.stringify(result);
+
+      if (cacheable && threadId && isMcpToolCacheEnabled()) {
+        const entry = await upsertCacheEntry(
+          threadId,
+          t.boundName,
+          realArgs,
+          text,
+          configuredTtlMs!,
+          workspaceLocation,
+        );
+        if (text.length > STUB_THRESHOLD_CHARS) {
+          return toolStub(text, { tool: t.boundName, key: entry.kvKey, threadId }, [
+            { name: 'preview', content: text.slice(0, 1000) },
+          ]);
+        }
+        return text;
+      }
 
       // Same offload treatment web_fetch.tool.ts already gives its own
       // oversized results — large MCP tool output (a full page fetch, a
       // JSON dump) shouldn't sit in message history uncapped. See #354.
-      const threadId = config?.configurable?.thread_id as string | undefined;
+      // Untouched for non-cacheable tools; a cacheable tool's offload is
+      // handled above via the cache's own stable kvKey instead of minting
+      // a fresh one here.
       if (
         env.chat?.mcpToolStub?.enabled !== false &&
         text.length > STUB_THRESHOLD_CHARS &&
@@ -318,7 +432,7 @@ export function mcpToolToLangChain(t: RegisteredTool) {
     {
       name: t.boundName,
       description: t.description,
-      schema: t.parameters,
+      schema,
     },
   );
 }
@@ -498,7 +612,34 @@ export function buildWikiWriteTools() {
   ];
 }
 
-async function loadMcpTools() {
+// boundName -> resolved ttlMs for every tool-settings-marked-cacheable MCP
+// tool (category: 'mcp' && cacheable: true — see tool-config.ts's
+// getCacheableToolIds()). Built once per loadMcpTools() call rather than
+// resolved per tool-call, since tool settings don't change mid-build.
+// Absence from the returned map is mcpToolToLangChain's sole "not
+// cacheable" signal.
+function buildMcpCacheTtlMap(): Map<string, number> {
+  const cacheableIds = getCacheableToolIds();
+  const map = new Map<string, number>();
+  if (cacheableIds.size === 0) return map;
+
+  const defaultTtlMs = env.chat?.mcpToolCache?.ttlMs ?? 5 * 60 * 1000;
+  for (const item of listResolvedToolSettings()) {
+    if (!cacheableIds.has(item.toolId)) continue;
+    const [boundName] = toBoundMatchKeys(new Set([item.toolId]));
+    if (boundName) map.set(boundName, item.cacheTtlMs ?? defaultTtlMs);
+  }
+  return map;
+}
+
+// workspaceLocation is undefined for plain chat (buildChatAgent, which has
+// no workspace) and set for every workspace-bearing builder
+// (buildWorkspaceChatAgent, buildTaskAgent/buildSubAgentAgent when a
+// workspaceScope is present) — threaded through to mcpToolToLangChain so a
+// cacheable tool's oversized result can be written to
+// .hashbrown/tool-key/ the same way get_tool_key already does, instead of
+// staying KV-only.
+async function loadMcpTools(workspaceLocation?: string) {
   // Trigger MCP initialization so mcpTools are populated
   await toolsManager.getTools().catch((err: unknown) => {
     const message = err instanceof Error ? err.message : String(err);
@@ -512,10 +653,12 @@ async function loadMcpTools() {
   // entirely until an unrelated refresh happened to run first.
   syncMcpToolStatus(toolsManager, getToolSettingsStore());
 
+  const cacheTtlByBoundName = buildMcpCacheTtlMap();
+
   const mcpTools = toolsManager
     .list()
     .filter((t) => t.source === 'mcp')
-    .map(mcpToolToLangChain);
+    .map((t) => mcpToolToLangChain(t, cacheTtlByBoundName, workspaceLocation));
 
   if (mcpTools.length > 0) {
     logger.info(`Loaded ${mcpTools.length} MCP tool(s)`, {
@@ -629,6 +772,13 @@ export interface WorkspaceChatContext {
   // applies). Flows into tool construction only — never rendered into the
   // system prompt text below.
   autoApproveShell: boolean;
+  // Pre-rendered by mcp-tool-cache.ts's renderCacheLedger(threadId) at each
+  // call site below — '' when there's nothing cached yet. Deliberately a
+  // plain string computed by the caller, not something this function
+  // resolves itself: buildWorkspaceContextBlock stays a pure formatter, and
+  // the cache lookup needs this specific call's own threadId, which only
+  // the caller (already minting/holding it for the checkpointer) has.
+  cachedResources: string;
 }
 
 export function buildWorkspaceContextBlock(ctx: WorkspaceChatContext): string {
@@ -679,6 +829,9 @@ export function buildWorkspaceContextBlock(ctx: WorkspaceChatContext): string {
         '.hashbrown/tasks/<file> only when the user asks about that specific task.',
     );
   }
+  if (ctx.cachedResources) {
+    lines.push('', ctx.cachedResources);
+  }
   return lines.join('\n');
 }
 
@@ -689,7 +842,7 @@ async function buildWorkspaceChatAgent(
   model?: string,
 ) {
   const llm = createProvider(provider, model);
-  const mcpTools = await loadMcpTools();
+  const mcpTools = await loadMcpTools(workspaceContext.location);
   const skills = workspaceSkills(workspaceId);
 
   const systemPrompt = buildSystemPrompt(
@@ -858,7 +1011,7 @@ export async function buildTaskAgent(
   taskFile?: UpdatePlanTaskFile,
 ): Promise<{ agent: ChatAgent; systemPrompt: string }> {
   const llm = createProvider(provider, model);
-  const mcpTools = await loadMcpTools();
+  const mcpTools = await loadMcpTools(workspaceScope?.workspaceContext.location);
 
   const taskBlock = buildTaskContextBlock({
     title: task.title,
@@ -1117,7 +1270,7 @@ export async function buildSubAgentAgent(
   // getExplicitlySubAgentExcludedIds() is the one remaining place that's
   // checked for them, since they no longer go through getSubAgentToolIds()'s
   // normal allow-by-default check at all.
-  const mcpTools = await loadMcpTools();
+  const mcpTools = await loadMcpTools(workspaceScope?.workspaceContext.location);
   const candidatePool = buildSubAgentToolCandidates(task, workspaceScope, mcpTools);
   const allowedBoundNames = toBoundMatchKeys(getSubAgentToolIds());
   const excludedMcpBoundNames = toBoundMatchKeys(getExplicitlySubAgentExcludedIds());

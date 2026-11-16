@@ -13,6 +13,7 @@ import {
   getGlobalDefaultToolIds,
   getGloballyEnabledToolIds,
   getSubAgentToolIds,
+  getCacheableToolIds,
   getToolInstructions,
   getExplicitlySubAgentExcludedIds,
   listDiscoverableMcpTools,
@@ -145,6 +146,36 @@ describe('agents/tool-config', () => {
       const resolved = resolveToolSettings(MCP_BASE, toolsConfig);
       expect(resolved.defaultInclude.chat).to.equal(true);
     });
+
+    it('defaults cacheable to false and cacheTtlMs to null when nothing is stored', () => {
+      const resolved = resolveToolSettings(MCP_BASE, {});
+      expect(resolved.cacheable).to.equal(false);
+      expect(resolved.cacheTtlMs).to.equal(null);
+    });
+
+    it('a stored cacheable/cacheTtlMs override wins, and both resolve as first-class fields, not extras', () => {
+      const toolsConfig: Record<string, ToolEntry> = {
+        'n8n:workflow_search': { cacheable: true, cacheTtlMs: 60000 },
+      };
+      const resolved = resolveToolSettings(MCP_BASE, toolsConfig);
+      expect(resolved.cacheable).to.equal(true);
+      expect(resolved.cacheTtlMs).to.equal(60000);
+      // Regression guard: cacheable/cacheTtlMs must be excluded from
+      // KNOWN_FIELDS' complement — if they weren't, they'd also show up
+      // spread in via the extra-fields passthrough, which is harmless here
+      // (same value either way) but would be a sign the KNOWN_FIELDS set
+      // fell out of sync with the named fields above.
+      expect(Object.keys(resolved)).to.include('cacheable');
+      expect(Object.keys(resolved)).to.include('cacheTtlMs');
+    });
+
+    it('a stored cacheTtlMs: null explicitly clears any catalog-level expectation, same as unset', () => {
+      const toolsConfig: Record<string, ToolEntry> = {
+        'n8n:workflow_search': { cacheable: true, cacheTtlMs: null },
+      };
+      const resolved = resolveToolSettings(MCP_BASE, toolsConfig);
+      expect(resolved.cacheTtlMs).to.equal(null);
+    });
   });
 
   describe('getExplicitlySubAgentExcludedIds() (issue #408)', () => {
@@ -265,6 +296,44 @@ describe('agents/tool-config', () => {
         'playwright:browser_click': { defaultInclude: { subAgent: true } },
       };
       expect(getSubAgentToolIds(toolsConfig).has('playwright:browser_click')).to.equal(true);
+    });
+
+    it('getCacheableToolIds() includes only MCP-category tools with cacheable: true stored', () => {
+      getToolSettingsStore().recordMcpDiscoveryResult(
+        [
+          {
+            toolId: 'playwright:browser_click',
+            name: 'browser_click',
+            description: 'd',
+            mcpServer: 'playwright',
+          },
+          {
+            toolId: 'n8n:get_workflow_details',
+            name: 'get_workflow_details',
+            description: 'd',
+            mcpServer: 'n8n',
+          },
+        ],
+        new Map([
+          ['playwright', 'connected'],
+          ['n8n', 'connected'],
+        ]),
+      );
+      const toolsConfig: Record<string, ToolEntry> = {
+        'playwright:browser_click': { cacheable: true },
+      };
+      const ids = getCacheableToolIds(toolsConfig);
+      expect(ids.has('playwright:browser_click')).to.equal(true);
+      expect(ids.has('n8n:get_workflow_details')).to.equal(false);
+    });
+
+    it('getCacheableToolIds() excludes a non-MCP tool even if cacheable: true is hand-set in config.yaml', () => {
+      getToolSettingsStore().seedCatalogDefaults(TOOL_CATALOG);
+      const toolsConfig: Record<string, ToolEntry> = {
+        web_fetch: { cacheable: true },
+      };
+      const ids = getCacheableToolIds(toolsConfig);
+      expect(ids.has('web_fetch')).to.equal(false);
     });
 
     // Reproduces the exact SUB_AGENT_TOOLS membership this file's

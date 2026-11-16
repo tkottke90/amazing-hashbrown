@@ -15,6 +15,8 @@ import { wikiRegisterDomainTool } from '../api/src/agents/tools/wiki-register-do
 import { webFetchTool } from '../api/src/agents/tools/web-fetch.tool.js';
 import { makeGetToolKeyTool } from '../api/src/agents/tools/get-tool-key.tool.js';
 import { searchSkillsTool } from '../api/src/agents/tools/search-skills.tool.js';
+import { makeSearchMcpToolsTool } from '../api/src/agents/tools/search-mcp-tools.tool.js';
+import { makeUseMcpToolsTool } from '../api/src/agents/tools/use-mcp-tools.tool.js';
 import { makeCreateWorkspaceTool } from '../api/src/agents/tools/create-workspace.tool.js';
 import { makeCreateProjectTool } from '../api/src/agents/tools/create-project.tool.js';
 import { makeCreateTasksTool } from '../api/src/agents/tools/create-tasks.tool.js';
@@ -48,7 +50,7 @@ import { buildTaskContextBlock } from '../api/src/agents/task-context.js';
 import { buildWorkspaceContextBlock } from '../api/src/agents/chat-agent.js';
 import { buildSystemPrompt } from '../api/src/agents/system-prompt.js';
 import { buildAmbientContext } from '../api/src/agents/ambient-context.js';
-import { fakeGenerateImageTool } from './eval-fixtures.js';
+import { fakeGenerateImageTool, fakeN8nGetWorkflowDetailsTool } from './eval-fixtures.js';
 import type { Suite } from '../lib/evaluations/src/index.js';
 
 // Shared by bin/eval.ts and bin/eval-stream-trace.ts so the trace script sends
@@ -59,8 +61,9 @@ import type { Suite } from '../lib/evaluations/src/index.js';
 // api/src/agents/chat-agent.ts) — used to give tool-call eval scenarios the
 // same choices the real agent has. MCP tools are excluded: they're
 // dynamic/live-server-dependent, which would make the eval non-deterministic
-// to run. fakeGenerateImageTool is an eval-only fixture (see
-// eval-fixtures.ts) — never part of the production agent's tool set.
+// to run. fakeGenerateImageTool and fakeN8nGetWorkflowDetailsTool are
+// eval-only fixtures (see eval-fixtures.ts) — never part of the production
+// agent's tool set.
 export const evalTools = [
   askUserTool,
   // Safe to bind here even though it can run real commands: tool-call and
@@ -217,7 +220,26 @@ export const evalTools = [
   // executed here, so no wake-up store or registry is needed.
   scheduleWakeupTool,
   cancelWakeupTool,
+  // search_mcp_tools/use_mcp_tools (#408, ADR-0067) are bound alongside
+  // STATIC_CHAT_TOOLS at all three of chat-agent.ts's agent-builder call
+  // sites (buildChatAgent, buildWorkspaceChatAgent, buildTaskAgent) — unlike
+  // the actual MCP tools they discover/grant, which the comment above
+  // evalTools excludes for being dynamic/live-server-dependent, these two
+  // are static, always-bound production tools with no live-server
+  // dependency of their own (they read the local tool-config catalog, never
+  // executed here per every other tool's reasoning in this list). Missing
+  // here meant suites/mcp-tool-discovery.yaml's mtd-001/mtd-002 could never
+  // actually pass — use_mcp_tools wasn't an offered option for the model to
+  // call, and search_mcp_tools wasn't offered for mtd-002 to assert it
+  // ISN'T followed by use_mcp_tools.
+  makeSearchMcpToolsTool(),
+  makeUseMcpToolsTool(),
   fakeGenerateImageTool,
+  // Eval-only fixture for suites/mcp-tool-cache.yaml — see its comment in
+  // eval-fixtures.ts. Real MCP tools are excluded from this list (comment
+  // above), but that suite needs a deterministic tool bound under this
+  // exact boundName to test forceRefresh judgment against.
+  fakeN8nGetWorkflowDetailsTool,
 ];
 
 // Builds the system prompt a suite's scenarios are run under: the harness
