@@ -48,6 +48,11 @@ const LEGACY_SUB_AGENT_TOOL_IDS = new Set([
   // through this membership check like everything else here.
   'search_mcp_tools',
   'use_mcp_tools',
+  // alwaysOn forces defaultInclude.chat/.autonomous but not .subAgent — added
+  // explicitly so a sub-agent gets the same self-knowledge lookup a parent
+  // chat does. Pure read, zero side effects, fits a sub-agent's read-only
+  // tool constraint cleanly (issue #416).
+  'search_harness_docs',
 ]);
 
 // Tools that are structurally incompatible with a sub-agent run, not just

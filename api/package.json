@@ -5,8 +5,8 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/scripts/build-harness-docs-index.ts && tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json && node dist/scripts/build-harness-docs-index.js",
     "start": "node dist/index.js",
     "test": "c8 mocha"
   },
