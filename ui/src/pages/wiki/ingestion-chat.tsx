@@ -17,6 +17,7 @@ import {
   wikiIsStreaming,
   wikiPendingHitlId,
   wikiThreadId,
+  wikiOrientedTo,
   sendWikiMessage,
   submitWikiHitlAnswer,
   stopWikiGeneration,
@@ -24,7 +25,11 @@ import {
   newWikiThread,
   activeWikiModel,
   setWikiModel,
+  orientWikiThreadTo,
+  clearWikiThreadOrientation,
 } from '@/pages/wiki/use-wiki-ingestion';
+import { domains } from '@/pages/wiki/use-wiki';
+import type { WikiDomain } from '@/services/wiki-api';
 import {
   providers,
   favoriteModels,
@@ -58,6 +63,10 @@ function ChatComposer({
   activeModel,
   onModelSelect,
   threadId,
+  wikiDomains,
+  activeWikiId,
+  onOrientToWiki,
+  onClearWikiOrientation,
 }: {
   inputValue: Signal<string>;
   stagedAttachments: Signal<StagedAttachment[]>;
@@ -72,6 +81,10 @@ function ChatComposer({
   activeModel?: string;
   onModelSelect: (provider: string, model: string) => void;
   threadId: string;
+  wikiDomains: WikiDomain[];
+  activeWikiId: string | null;
+  onOrientToWiki: (wikiId: string) => void;
+  onClearWikiOrientation: () => void;
 }) {
   return (
     <ChatInput
@@ -98,6 +111,10 @@ function ChatComposer({
       onWikiReferencesChange={(next) => {
         stagedWikiReferences.value = next;
       }}
+      wikiDomains={wikiDomains}
+      activeWikiId={activeWikiId}
+      onOrientToWiki={onOrientToWiki}
+      onClearWikiOrientation={onClearWikiOrientation}
     />
   );
 }
@@ -250,6 +267,10 @@ export function IngestionChat({ chatInputRef }: Props) {
           activeModel={resolvedModel}
           onModelSelect={setWikiModel}
           threadId={wikiThreadId.value}
+          wikiDomains={domains.value}
+          activeWikiId={wikiOrientedTo.value}
+          onOrientToWiki={orientWikiThreadTo}
+          onClearWikiOrientation={clearWikiThreadOrientation}
         />
       </div>
     </div>

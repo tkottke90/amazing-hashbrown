@@ -30,6 +30,11 @@ export interface ThreadSummary {
   // the sidebar and read-only (chat/retry/fork/hitl-answer all reject with
   // 409). NULL = active. See GLOSSARY.md "Archived Thread".
   archivedAt: string | null;
+  // The Wiki Domain id this thread is currently mechanically oriented to
+  // (see GLOSSARY.md "Wiki Orientation"), or NULL. Set/cleared only via the
+  // chat-input "Orient to wiki" menu (setActiveWikiId below) — the agent's
+  // own self-triggered wiki_orient tool calls never touch this field.
+  activeWikiId: string | null;
 }
 
 export interface ThreadMessageRecord {
@@ -86,6 +91,7 @@ interface RawThreadRow {
   model: string | null;
   tools_customized_at: string | null;
   archived_at: string | null;
+  active_wiki_id: string | null;
 }
 
 interface RawMessageRow {
@@ -120,6 +126,7 @@ function mapThreadRow(row: RawThreadRow): ThreadSummary {
     model: row.model,
     toolsCustomizedAt: row.tools_customized_at,
     archivedAt: row.archived_at,
+    activeWikiId: row.active_wiki_id,
   };
 }
 
@@ -163,6 +170,9 @@ function mapMessageRow(row: RawMessageRow): ThreadMessageRecord {
 // (lib/evaluations/src/store.ts).
 // 43=threads (archived_at column — thread archiving, see
 // docs/superpowers/specs/2026-10-20-thread-archiving-sidebar-retention-design.md).
+// 44-46=WorkspaceStore. 47=threads (active_wiki_id column — mechanical wiki
+// orientation, see
+// docs/superpowers/specs/2026-11-16-chat-wiki-orientation-menu-design.md).
 // Check every store's MIGRATIONS array before adding a new one here — a
 // colliding version silently no-ops instead of erroring (BaseStore.runMigrations
 // skips any version already recorded).
@@ -279,6 +289,12 @@ const MIGRATIONS: DbMigration[] = [
     // even though the Archive/Unarchive actions are only ever exposed for
     // 'chat' threads (see the design doc's D1).
     sql: `ALTER TABLE threads ADD COLUMN archived_at TEXT`,
+  },
+  {
+    version: 47,
+    // Nullable, no backfill — NULL means not oriented to any wiki. See
+    // docs/superpowers/specs/2026-11-16-chat-wiki-orientation-menu-design.md.
+    sql: `ALTER TABLE threads ADD COLUMN active_wiki_id TEXT`,
   },
 ];
 
@@ -665,6 +681,15 @@ export class ThreadStore extends BaseStore {
   // ToolSettingsStore.resetThreadTools, which clears the thread_tools rows.
   resetThreadToolsCustomization(threadId: string): void {
     this.db.prepare(`UPDATE threads SET tools_customized_at = NULL WHERE id = ?`).run(threadId);
+  }
+
+  // Sets (or, with wikiId: null, clears) the thread's mechanical wiki
+  // orientation. Deliberately does not bump updated_at — orienting to a
+  // wiki isn't conversation activity any more than a tool-selection change
+  // is (see markThreadToolsCustomized above), so it shouldn't reorder the
+  // thread in the sidebar.
+  setActiveWikiId(threadId: string, wikiId: string | null): void {
+    this.db.prepare(`UPDATE threads SET active_wiki_id = ? WHERE id = ?`).run(wikiId, threadId);
   }
 
   // Archiving/unarchiving is not conversation activity (same reasoning as

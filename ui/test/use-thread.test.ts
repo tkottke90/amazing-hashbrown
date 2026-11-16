@@ -494,6 +494,52 @@ describe('use-thread — wiki_updated handling', () => {
   });
 });
 
+describe('use-thread — activeWikiId', () => {
+  it('seeds activeWikiId from the hydrate() response', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ messages: [], activeWikiId: 'user' }),
+    }) as unknown as typeof fetch;
+
+    const thread = newThread('t15');
+    await thread.hydrate();
+
+    expect(thread.activeWikiId.value).toBe('user');
+  });
+
+  it('defaults activeWikiId to null when the thread has none', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ messages: [] }),
+    }) as unknown as typeof fetch;
+
+    const thread = newThread('t16');
+    await thread.hydrate();
+
+    expect(thread.activeWikiId.value).toBeNull();
+  });
+
+  it('tracks a live self-triggered wiki_oriented SSE event, regardless of source', async () => {
+    respondWith([
+      { type: 'wiki_oriented', wikiId: 'self', wikiName: 'self' },
+      { type: 'stream_done', durationMs: 10 },
+    ]);
+
+    const thread = newThread('t17');
+    await thread.sendMessage('Orient to self.');
+
+    expect(thread.activeWikiId.value).toBe('self');
+  });
+
+  it('setActiveWikiId updates the signal directly, for the mechanical menu path', () => {
+    const thread = newThread('t18');
+    thread.setActiveWikiId('user');
+    expect(thread.activeWikiId.value).toBe('user');
+    thread.setActiveWikiId(null);
+    expect(thread.activeWikiId.value).toBeNull();
+  });
+});
+
 describe('use-thread — hydrate pendingHitlId', () => {
   // Regression test: a task-originated pause writes a task_run_marker
   // ("waiting on you") *after* its hitl_prompt row, so the last message in

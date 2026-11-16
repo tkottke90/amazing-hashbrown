@@ -28,6 +28,8 @@ import {
   putThreadToolsHandler,
   deleteThreadToolsHandler,
   pendingWakeupHandler,
+  setWikiOrientationHandler,
+  clearWikiOrientationHandler,
 } from './threads.handlers.js';
 
 // Minimal fake satisfying the .withStructuredOutput().withRetry().invoke()
@@ -346,6 +348,74 @@ describe('routes/v1/threads.handlers', () => {
       const result = unarchiveThreadHandler(store, 't1');
       expect(result.ok).to.equal(true);
       if (result.ok) expect(result.data.archivedAt).to.equal(null);
+    });
+  });
+
+  // A stub satisfying only the WikiRegistry methods these handlers actually
+  // call (list) — same rationale as stubCheckpointer above.
+  function stubRegistry(entries: { id: string; domain: string }[]) {
+    return {
+      list: () => entries.map((e) => ({ ...e, path: e.id, tags: [], status: 'active' as const })),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any;
+  }
+
+  describe('setWikiOrientationHandler / clearWikiOrientationHandler', () => {
+    let store: ThreadStore;
+    let dir: string;
+
+    before(() => ({ store, dir } = makeStore()));
+    after(() => {
+      store.close();
+      rmSync(dir, { recursive: true });
+    });
+
+    it('returns 404 setting orientation on an unknown thread', () => {
+      const registry = stubRegistry([{ id: 'user', domain: 'user preferences' }]);
+      const result = setWikiOrientationHandler(store, registry, 'no-such-thread', 'user');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
+    });
+
+    it('returns 404 for an unknown wiki id', () => {
+      store.upsertThreadOnFirstMessage('t1', 'Hello');
+      const registry = stubRegistry([{ id: 'user', domain: 'user preferences' }]);
+      const result = setWikiOrientationHandler(store, registry, 't1', 'no-such-wiki');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
+      // Must not have persisted anything for an unknown wiki.
+      expect(store.getThreadMeta('t1')!.activeWikiId).to.equal(null);
+    });
+
+    it('persists active_wiki_id and returns a set record on success', () => {
+      const registry = stubRegistry([{ id: 'user', domain: 'user preferences and biography' }]);
+      const result = setWikiOrientationHandler(store, registry, 't1', 'user');
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(result.data.kind).to.equal('wiki_orientation');
+        expect(result.data.payload).to.deep.equal({
+          action: 'set',
+          wikiId: 'user',
+          wikiDescription: 'user preferences and biography',
+        });
+      }
+      expect(store.getThreadMeta('t1')!.activeWikiId).to.equal('user');
+    });
+
+    it('returns 404 clearing orientation on an unknown thread', () => {
+      const result = clearWikiOrientationHandler(store, 'no-such-thread');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
+    });
+
+    it('nulls active_wiki_id and returns a cleared record on success', () => {
+      const result = clearWikiOrientationHandler(store, 't1');
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(result.data.kind).to.equal('wiki_orientation');
+        expect(result.data.payload).to.deep.equal({ action: 'cleared' });
+      }
+      expect(store.getThreadMeta('t1')!.activeWikiId).to.equal(null);
     });
   });
 

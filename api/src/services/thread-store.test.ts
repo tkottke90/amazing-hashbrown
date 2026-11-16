@@ -161,6 +161,40 @@ describe('services/thread-store', () => {
     });
   });
 
+  describe('setActiveWikiId', () => {
+    let store: ThreadStore;
+    let dir: string;
+
+    before(() => ({ store, dir } = makeStore()));
+    after(() => {
+      store.close();
+      rmSync(dir, { recursive: true });
+    });
+
+    it('persists the wiki id, readable back via getThreadMeta', () => {
+      store.upsertThreadOnFirstMessage('t1', 'Original');
+      store.setActiveWikiId('t1', 'user');
+      expect(store.getThreadMeta('t1')!.activeWikiId).to.equal('user');
+    });
+
+    it('clears it back to null', () => {
+      store.setActiveWikiId('t1', null);
+      expect(store.getThreadMeta('t1')!.activeWikiId).to.equal(null);
+    });
+
+    it('does not change updated_at', async () => {
+      const before = store.getThreadMeta('t1')!.updatedAt;
+      await new Promise((r) => setTimeout(r, 5));
+      store.setActiveWikiId('t1', 'self');
+      const after = store.getThreadMeta('t1')!.updatedAt;
+      expect(after).to.equal(before);
+    });
+
+    it('is a silent no-op on an unknown thread', () => {
+      expect(() => store.setActiveWikiId('no-such-thread', 'user')).to.not.throw();
+    });
+  });
+
   describe('deleteThread', () => {
     let store: ThreadStore;
     let dir: string;
@@ -588,6 +622,23 @@ describe('services/thread-store', () => {
         db.prepare('SELECT version FROM schema_migrations').all() as Array<{ version: number }>
       ).map((r) => r.version);
       expect(versions).to.include(4);
+
+      store.close();
+      rmSync(dir, { recursive: true });
+    });
+
+    it('records version 47 and leaves active_wiki_id null on existing rows', () => {
+      const dir = mkdtempSync(join(tmpdir(), 'thread-store-migration-test-'));
+      const db = openDatabase(join(dir, 'test.db'));
+      const store = new ThreadStore(db);
+
+      const versions = (
+        db.prepare('SELECT version FROM schema_migrations').all() as Array<{ version: number }>
+      ).map((r) => r.version);
+      expect(versions).to.include(47);
+
+      store.upsertThreadOnFirstMessage('t1', 'Hello');
+      expect(store.getThreadMeta('t1')!.activeWikiId).to.equal(null);
 
       store.close();
       rmSync(dir, { recursive: true });

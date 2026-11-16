@@ -14,6 +14,11 @@ jest.mock('@/hooks/use-providers', () => ({
   fetchProviders: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('@/hooks/use-wiki-domains', () => ({
+  wikiDomains: signal([{ id: 'user', domain: 'user preferences', tags: [] }]),
+  fetchWikiDomains: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('@/hooks/use-workspaces', () => ({
   patchWorkspace: jest.fn().mockResolvedValue(undefined),
   refreshWorkspaces: jest.fn().mockResolvedValue(undefined),
@@ -28,6 +33,14 @@ import type { Workspace } from '@/services/workspaces-api';
 // own helper of the same name, needed here to open the add-content menu.
 function firePointerDown(element: Element) {
   fireEvent(element, new MouseEvent('PointerDown', { bubbles: true, cancelable: true, button: 0 }));
+}
+
+// Mirrors chat-input.test.tsx's own helper of the same name, needed to open
+// the nested "Orient to wiki" DropdownMenuSub.
+function openSubmenu(element: HTMLElement) {
+  element.focus();
+  fireEvent.click(element);
+  fireEvent.keyDown(element, { key: 'ArrowRight' });
 }
 
 function stubThreadInstance(): ThreadInstance {
@@ -45,8 +58,10 @@ function stubThreadInstance(): ThreadInstance {
     threadType: signal(null),
     taskRun: signal(null),
     backgroundTurnActive: signal(false),
+    activeWikiId: signal(null),
     markBackgroundTurn: jest.fn(),
     setThreadModel: jest.fn(),
+    setActiveWikiId: jest.fn(),
     hydrate: jest.fn().mockResolvedValue(undefined),
     sendMessage: jest.fn().mockResolvedValue(undefined),
     submitHitlAnswer: jest.fn().mockResolvedValue(undefined),
@@ -218,6 +233,77 @@ describe('WorkspaceChatTab', () => {
       await waitFor(() => expect(global.fetch).toHaveBeenCalled());
       expect(applyThreadReplacement).not.toHaveBeenCalled();
       expect(screen.getByText('Replace this thread?')).toBeInTheDocument();
+    });
+  });
+
+  describe('Orient to wiki', () => {
+    const originalFetch = global.fetch;
+
+    afterEach(() => {
+      global.fetch = originalFetch;
+    });
+
+    it('posts to the wiki-orientation endpoint, appends the returned card, and updates activeWikiId [unit]', async () => {
+      const message = { id: 'o1', kind: 'wiki_orientation', action: 'set', wikiId: 'user' };
+      global.fetch = jest
+        .fn()
+        .mockResolvedValue({ ok: true, json: async () => message }) as unknown as typeof fetch;
+      const thread = stubThreadInstance();
+      mockUseThreadInstance.mockReturnValue(thread);
+
+      render(<WorkspaceChatTab workspace={baseWorkspace()} />);
+      firePointerDown(screen.getByRole('button', { name: 'Add to message' }));
+      openSubmenu(screen.getByRole('menuitem', { name: 'Orient to wiki' }));
+      fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'user' }));
+
+      await waitFor(() =>
+        expect(global.fetch).toHaveBeenCalledWith(
+          '/api/v1/threads/thread-1/wiki-orientation',
+          expect.objectContaining({ method: 'POST', body: JSON.stringify({ wikiId: 'user' }) }),
+        ),
+      );
+      await waitFor(() => expect(thread.messages.value).toEqual([message]));
+      expect(thread.setActiveWikiId).toHaveBeenCalledWith('user');
+    });
+
+    it('posts to the clear endpoint and resets activeWikiId [unit]', async () => {
+      const message = { id: 'o2', kind: 'wiki_orientation', action: 'cleared' };
+      global.fetch = jest
+        .fn()
+        .mockResolvedValue({ ok: true, json: async () => message }) as unknown as typeof fetch;
+      const thread = stubThreadInstance();
+      thread.activeWikiId.value = 'user';
+      mockUseThreadInstance.mockReturnValue(thread);
+
+      render(<WorkspaceChatTab workspace={baseWorkspace()} />);
+      firePointerDown(screen.getByRole('button', { name: 'Add to message' }));
+      openSubmenu(screen.getByRole('menuitem', { name: 'Orient to wiki' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Clear wiki orientation' }));
+
+      await waitFor(() =>
+        expect(global.fetch).toHaveBeenCalledWith(
+          '/api/v1/threads/thread-1/wiki-orientation/clear',
+          expect.objectContaining({ method: 'POST' }),
+        ),
+      );
+      await waitFor(() => expect(thread.setActiveWikiId).toHaveBeenCalledWith(null));
+    });
+
+    it('does not append a message or update activeWikiId when the request fails [unit]', async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValue({ ok: false, json: async () => ({}) }) as unknown as typeof fetch;
+      const thread = stubThreadInstance();
+      mockUseThreadInstance.mockReturnValue(thread);
+
+      render(<WorkspaceChatTab workspace={baseWorkspace()} />);
+      firePointerDown(screen.getByRole('button', { name: 'Add to message' }));
+      openSubmenu(screen.getByRole('menuitem', { name: 'Orient to wiki' }));
+      fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'user' }));
+
+      await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+      expect(thread.setActiveWikiId).not.toHaveBeenCalled();
+      expect(thread.messages.value).toEqual([]);
     });
   });
 });

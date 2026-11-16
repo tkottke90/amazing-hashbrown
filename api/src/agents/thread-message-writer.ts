@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { ThreadStore } from '../services/thread-store.js';
+import type { ThreadMessageRecord, ThreadStore } from '../services/thread-store.js';
 import type { TriggerSource } from '../services/workspace-store.js';
 import { logger, serializeError } from '../config/logger.js';
 import type { ChatErrorCategory } from '@tkottke90/llm-common-types/chat';
@@ -351,6 +351,34 @@ export function recordResourceCard(
       kind: 'resource_card',
       payload: { resourceType, name, ...(goal ? { goal } : {}), location, workspaceId },
     }).seq;
+  });
+}
+
+// Records a mechanical (non-LLM) wiki orientation change — see
+// GLOSSARY.md's "Wiki Orientation" section and
+// docs/superpowers/specs/2026-11-16-chat-wiki-orientation-menu-design.md.
+// `wikiId`/`wikiDescription` are passed only for action: 'set'.
+//
+// Deliberately returns the full ThreadMessageRecord, not just `seq` like
+// every other record* helper above — this is written from a plain REST
+// handler (setWikiOrientationHandler/clearWikiOrientationHandler in
+// threads.handlers.ts), not a live SSE turn, so there's no separate event
+// the caller already knows every other field from. The HTTP response is the
+// only place this message's shape reaches the client.
+export function recordWikiOrientation(
+  store: ThreadStore,
+  threadId: string,
+  id: string,
+  action: 'set' | 'cleared',
+  wikiId: string | null,
+  wikiDescription: string | null,
+): ThreadMessageRecord | null {
+  return safe(threadId, 'recordWikiOrientation', () => {
+    return store.insertMessage(threadId, {
+      id,
+      kind: 'wiki_orientation',
+      payload: { action, ...(wikiId ? { wikiId, wikiDescription } : {}) },
+    });
   });
 }
 

@@ -1128,6 +1128,73 @@ describe('ChatInput — workspace shell auto-approve', () => {
   });
 });
 
+const WIKI_DOMAINS = [
+  { id: 'user', domain: 'user preferences, personal context, and biography', tags: [] },
+  { id: 'self', domain: 'agent identity, values, decisions, and reflection', tags: [] },
+];
+
+describe('ChatInput — Orient to wiki sub-menu', () => {
+  it('does not show the sub-menu when wikiDomains is empty/undefined', () => {
+    render(<ControlledChatInput />);
+    firePointerDown(screen.getByRole('button', { name: 'Add to message' }));
+    expect(screen.queryByRole('menuitem', { name: 'Orient to wiki' })).not.toBeInTheDocument();
+  });
+
+  it('lists one item per domain, unchecked when none is active', () => {
+    render(<ControlledChatInput wikiDomains={WIKI_DOMAINS} />);
+    firePointerDown(screen.getByRole('button', { name: 'Add to message' }));
+    openSubmenu(screen.getByRole('menuitem', { name: 'Orient to wiki' }));
+
+    const user = screen.getByRole('menuitemcheckbox', { name: 'user' });
+    const self = screen.getByRole('menuitemcheckbox', { name: 'self' });
+    expect(user).toHaveAttribute('aria-checked', 'false');
+    expect(self).toHaveAttribute('aria-checked', 'false');
+    expect(screen.queryByRole('menuitem', { name: 'Clear wiki orientation' })).not.toBeInTheDocument();
+  });
+
+  it('shows the active domain as checked', () => {
+    render(<ControlledChatInput wikiDomains={WIKI_DOMAINS} activeWikiId="self" />);
+    firePointerDown(screen.getByRole('button', { name: 'Add to message' }));
+    openSubmenu(screen.getByRole('menuitem', { name: 'Orient to wiki' }));
+
+    expect(screen.getByRole('menuitemcheckbox', { name: 'user' })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    );
+    expect(screen.getByRole('menuitemcheckbox', { name: 'self' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+  });
+
+  it('calls onOrientToWiki with the selected domain id', () => {
+    const onOrientToWiki = jest.fn();
+    render(<ControlledChatInput wikiDomains={WIKI_DOMAINS} onOrientToWiki={onOrientToWiki} />);
+    firePointerDown(screen.getByRole('button', { name: 'Add to message' }));
+    openSubmenu(screen.getByRole('menuitem', { name: 'Orient to wiki' }));
+
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'user' }));
+    expect(onOrientToWiki).toHaveBeenCalledWith('user');
+  });
+
+  it('shows "Clear wiki orientation" only when activeWikiId is set, and calls onClearWikiOrientation', () => {
+    const onClearWikiOrientation = jest.fn();
+    render(
+      <ControlledChatInput
+        wikiDomains={WIKI_DOMAINS}
+        activeWikiId="user"
+        onClearWikiOrientation={onClearWikiOrientation}
+      />,
+    );
+    firePointerDown(screen.getByRole('button', { name: 'Add to message' }));
+    openSubmenu(screen.getByRole('menuitem', { name: 'Orient to wiki' }));
+
+    const clearItem = screen.getByRole('menuitem', { name: 'Clear wiki orientation' });
+    fireEvent.click(clearItem);
+    expect(onClearWikiOrientation).toHaveBeenCalledTimes(1);
+  });
+});
+
 // Enter-key send/newline behavior for issue #396. jsdom does not run the
 // browser's native newline-insertion default on a synthetic keyDown, so
 // these tests assert only what jsdom can actually prove: whether onSend

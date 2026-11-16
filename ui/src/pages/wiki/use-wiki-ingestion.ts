@@ -102,7 +102,48 @@ export function setWikiModel(provider: string, model: string): void {
 }
 
 export async function hydrateWikiThread(id: string): Promise<void> {
-  await useThreadInstance(id, wikiThreadOpts(id)).hydrate();
+  const thread = useThreadInstance(id, wikiThreadOpts(id));
+  await thread.hydrate();
+  // Bridges the persisted orientation into wikiOrientedTo — without this,
+  // reopening a wiki thread would show no checkmark at all until the next
+  // live wiki_oriented event, even though the server-persisted state says
+  // otherwise. The other two chat surfaces get this for free by reading
+  // ThreadInstance.activeWikiId directly; this page keeps its own
+  // wikiOrientedTo signal instead, since orientation-badge.tsx and
+  // document-view.tsx already consume it.
+  wikiOrientedTo.value = thread.activeWikiId.value;
+}
+
+// Mechanical (non-LLM) wiki orientation — see GLOSSARY.md's "Wiki
+// Orientation" section and
+// docs/superpowers/specs/2026-11-16-chat-wiki-orientation-menu-design.md.
+// Plain REST calls, not SSE: there's no agent turn running when the user
+// clicks this menu item. The response already carries the persisted
+// message record, so it's appended directly rather than optimistically.
+export async function orientWikiThreadTo(wikiId: string): Promise<void> {
+  const threadId = wikiThreadId.value;
+  const res = await fetch(`/api/v1/threads/${threadId}/wiki-orientation`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ wikiId }),
+  });
+  if (!res.ok) return;
+  const message = await res.json();
+  const thread = currentWikiThread();
+  thread.messages.value = [...thread.messages.value, message];
+  wikiOrientedTo.value = wikiId;
+}
+
+export async function clearWikiThreadOrientation(): Promise<void> {
+  const threadId = wikiThreadId.value;
+  const res = await fetch(`/api/v1/threads/${threadId}/wiki-orientation/clear`, {
+    method: 'POST',
+  });
+  if (!res.ok) return;
+  const message = await res.json();
+  const thread = currentWikiThread();
+  thread.messages.value = [...thread.messages.value, message];
+  wikiOrientedTo.value = null;
 }
 
 export async function sendWikiMessage(

@@ -210,6 +210,18 @@ export type ThreadMessage =
       firedAt: string;
       lateByMs?: number;
       seq?: number;
+    }
+  | {
+      // A mechanical (non-LLM) wiki orientation change — see GLOSSARY.md's
+      // "Wiki Orientation" section. Never carries schema/index/log content,
+      // only the name + short description, by design. wikiId/wikiDescription
+      // are present only for action: 'set'.
+      kind: 'wiki_orientation';
+      id: string;
+      action: 'set' | 'cleared';
+      wikiId?: string;
+      wikiDescription?: string;
+      seq?: number;
     };
 
 export type WakeupState = 'pending' | 'fired' | 'cancelled';
@@ -228,3 +240,4 @@ export type TaskRunMarkerThreadMessage = Extract<ThreadMessage, { kind: 'task_ru
 export type SubAgentMarkerThreadMessage = Extract<ThreadMessage, { kind: 'sub_agent_marker' }>;
 export type WakeupThreadMessage = Extract<ThreadMessage, { kind: 'wakeup' }>;
 export type WakeupFiredThreadMessage = Extract<ThreadMessage, { kind: 'wakeup_fired' }>;
+export type WikiOrientationThreadMessage = Extract<ThreadMessage, { kind: 'wiki_orientation' }>;

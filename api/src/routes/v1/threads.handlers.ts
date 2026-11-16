@@ -23,6 +23,8 @@ import { resolveTurnModel, startTurnObservability } from '../../agents/turn-obse
 import { getObservabilityStore } from '../../services/observability.js';
 import { buildThreadReport, renderThreadReportHtml } from '@tkottke90/thread-reports';
 import { getAfterAgentState, type AfterAgentState } from '../../agents/after-agent.js';
+import { recordWikiOrientation } from '../../agents/thread-message-writer.js';
+import type { WikiRegistry } from '@tkottke90/llm-wiki';
 
 // The client-facing shape (ui/src/types/thread-message.ts's ThreadMessage
 // union): id/kind/seq/status live as their own DB columns in
@@ -32,7 +34,7 @@ import { getAfterAgentState, type AfterAgentState } from '../../agents/after-age
 // client expects — payload spread first so id/kind/seq/status (the
 // authoritative column values) always win over anything accidentally
 // duplicated inside payload itself.
-function toClientMessage(record: ThreadMessageRecord): Record<string, unknown> {
+export function toClientMessage(record: ThreadMessageRecord): Record<string, unknown> {
   const payload =
     record.payload && typeof record.payload === 'object'
       ? (record.payload as Record<string, unknown>)
@@ -190,6 +192,49 @@ export function unarchiveThreadHandler(
   const unarchived = store.unarchiveThread(id);
   if (!unarchived) return notFound(`Thread "${id}" not found`);
   return ok(unarchived);
+}
+
+// Mechanical (non-LLM) wiki orientation — see GLOSSARY.md's "Wiki
+// Orientation" section and
+// docs/superpowers/specs/2026-11-16-chat-wiki-orientation-menu-design.md.
+// registry.list() is used rather than registry.load(wikiId) — load()
+// returns an LlmWiki instance with no `domain` description field; the
+// short description this handler needs for the confirmation card only
+// exists on a WikiEntry from list().
+export function setWikiOrientationHandler(
+  store: ThreadStore,
+  registry: WikiRegistry,
+  threadId: string,
+  wikiId: string,
+): HandlerResult<ThreadMessageRecord> {
+  if (!store.getThreadMeta(threadId)) return notFound(`Thread "${threadId}" not found`);
+
+  const domain = registry.list().find((w) => w.id === wikiId);
+  if (!domain) return notFound(`Wiki "${wikiId}" not found`);
+
+  store.setActiveWikiId(threadId, wikiId);
+  const record = recordWikiOrientation(
+    store,
+    threadId,
+    crypto.randomUUID(),
+    'set',
+    wikiId,
+    domain.domain,
+  );
+  if (!record) return serverError('Failed to record wiki orientation');
+  return ok(record);
+}
+
+export function clearWikiOrientationHandler(
+  store: ThreadStore,
+  threadId: string,
+): HandlerResult<ThreadMessageRecord> {
+  if (!store.getThreadMeta(threadId)) return notFound(`Thread "${threadId}" not found`);
+
+  store.setActiveWikiId(threadId, null);
+  const record = recordWikiOrientation(store, threadId, crypto.randomUUID(), 'cleared', null, null);
+  if (!record) return serverError('Failed to record wiki orientation');
+  return ok(record);
 }
 
 export async function deleteThreadHandler(
