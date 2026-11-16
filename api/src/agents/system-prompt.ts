@@ -1693,51 +1693,20 @@ point; don't assume an earlier grant is still in effect.`;
 
 // Added for issue #416. Always-on, like MCP_TOOL_DISCOVERY_SECTION above:
 // search_harness_docs is itself always bound, so this section's own
-// applicability never needs gating. Deliberately scoped narrow: this tool
+// applicability never needs gating. Exact prose is an implementation-time
+// starting point, not yet validated via the auto-eval loop — no eval run
+// has exercised this wording yet. Deliberately scoped narrow: this tool
 // answers "what is X" questions from GLOSSARY.md/docs/App-Docs, not "when
 // should I use tool X" questions, which stay owned by each tool's own
 // section here — see docs/superpowers/specs/
 // 2026-11-13-harness-docs-tool-corpus-design.md for why that split exists.
-//
-// Round 1, from auto-eval round 1 of suites/tool-calling.yaml's
-// tools-006-search-harness-docs-trigger (2026-11-16, local/Lemonade/Ornith
-// fail, Digital Ocean pass, judge anthropic) against the first-draft
-// wording below the first paragraph alone had never been exercised before
-// this run. Same "what is a Widget in this app?" input, three different
-// failure shapes:
-// - local: calledTools: [] — answered directly, telling the user outright
-//   "The app's documentation doesn't define a term called 'Widget'" with
-//   no tool call at all. A confidently wrong claim about the documentation's
-//   contents stated as fact, never checked.
-// - Lemonade: called search_conversation instead (reasoningContent
-//   correctly identified this as a search_harness_docs-shaped question by
-//   name, then called the wrong tool anyway).
-// - Ornith: called search_mcp_tools instead (same shape — correctly named
-//   search_harness_docs in reasoning, then called a different tool).
-// Added: an explicit instruction against asserting the docs lack something
-// without having actually called the tool (targets local's failure), a
-// worked example using this exact scenario's wording (targets local
-// specifically, matching this file's own convention of anchoring with the
-// literal failing input rather than an abstract rule), and one explicit
-// contrastive paragraph naming both search_conversation and search_mcp_tools
-// by name as what this is NOT (targets Lemonade and Ornith, whose
-// reasoning shows they correctly recognized the question's shape but
-// reached for an adjacent, wrong tool regardless).
 const SEARCH_HARNESS_DOCS_SECTION = `search_harness_docs looks up a reference/terminology question about how this app itself works — what a
 term means, what a concept is, or how something is configured (e.g. "what is a Widget", "what is the
 Self wiki", "where do I configure MCP servers"). Reach for it when the user (or you, mid-task) has a
-factual question about the harness itself that you can't already answer with confidence — call it and
-read its actual answer before concluding the documentation doesn't cover something; that conclusion is
-search_harness_docs's to make, not yours to assume. For example, asked "what is a Widget in this app?"
-with no answer already in view, call search_harness_docs with that question directly — don't tell the
-user the documentation has no such term without having actually checked.
+factual question about the harness itself that you can't already answer with confidence, rather than
+guessing or saying nothing.
 
-It is not search_conversation (that searches this conversation's own earlier turns, not facts about the
-app) and not search_mcp_tools (that searches connected MCP servers' tool catalog, not harness
-terminology or configuration) — a question about what something IS or means in this app is
-search_harness_docs even when "search" is the word that comes to mind first.
-
-It does not answer "when should I use tool X" questions either — that guidance lives in each tool's own
+It does not answer "when should I use tool X" questions — that guidance lives in each tool's own
 section here, not in this lookup. If search_harness_docs has no answer, say so plainly rather than
 filling the gap with an assumption.`;
 
