@@ -101,3 +101,26 @@ scenarios:
       - path: mimeType
         match: equals
         value: 'image/png'
+
+  - id: tools-006-search-harness-docs-trigger
+    name: Agent calls search_harness_docs for a reference/terminology question about the app itself
+    purpose: >
+      Confirms the agent invokes search_harness_docs — rather than guessing
+      from training data or saying nothing — when asked a factual,
+      terminology-shaped question about how this app itself works. The tool
+      is the only authoritative source for this content (issue #416).
+    type: tool-call
+    input: >
+      What is a Widget in this app?
+    tool: search_harness_docs
+
+  - id: tools-007-search-harness-docs-no-trigger
+    name: An unrelated request does not call search_harness_docs
+    purpose: >
+      A request with no connection to this app's own terminology or
+      configuration must not result in a search_harness_docs call — confirms
+      the tool is reached for on-topic, not reflexively on every turn just
+      because it's always bound (issue #416).
+    type: tool-call
+    input: What's 17 times 24?
+    tool: '!search_harness_docs'
