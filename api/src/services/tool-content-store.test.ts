@@ -1,9 +1,11 @@
+import { describe, it, beforeEach } from 'mocha';
 import { expect } from 'chai';
 import {
   storeToolContent,
   getToolContent,
   storeBinaryToolContent,
   getToolContentEntry,
+  _resetToolContentStoreForTests,
 } from './tool-content-store.js';
 
 describe('tool-content-store', () => {
@@ -49,6 +51,53 @@ describe('tool-content-store', () => {
     expect(getToolContentEntry('thread-f', 'shared-key')).to.deep.equal({
       kind: 'binary',
       attachmentId: 'artifact-for-thread-f',
+    });
+  });
+
+  describe('count-cap eviction (no TTL — see this file for why)', () => {
+    // Eviction is global (not per-thread), so a capacity assertion needs a
+    // known-empty store — unlike every other test in this file, which only
+    // needs its own unique thread/key names to stay isolated.
+    beforeEach(() => {
+      _resetToolContentStoreForTests();
+    });
+
+    it('evicts the oldest-inserted entry once the store exceeds maxEntries [unit]', () => {
+      storeToolContent('thread-cap', 'key-1', 'v1', 2);
+      storeToolContent('thread-cap', 'key-2', 'v2', 2);
+      storeToolContent('thread-cap', 'key-3', 'v3', 2);
+
+      expect(getToolContent('thread-cap', 'key-1')).to.equal(undefined); // evicted — oldest
+      expect(getToolContent('thread-cap', 'key-2')).to.equal('v2');
+      expect(getToolContent('thread-cap', 'key-3')).to.equal('v3');
+    });
+
+    it('does not evict while at or under maxEntries [unit]', () => {
+      storeToolContent('thread-cap-ok', 'key-1', 'v1', 2);
+      storeToolContent('thread-cap-ok', 'key-2', 'v2', 2);
+
+      expect(getToolContent('thread-cap-ok', 'key-1')).to.equal('v1');
+      expect(getToolContent('thread-cap-ok', 'key-2')).to.equal('v2');
+    });
+
+    it('eviction applies across storeToolContent and storeBinaryToolContent — one shared cap [unit]', () => {
+      storeToolContent('thread-cap-mixed', 'key-1', 'v1', 1);
+      storeBinaryToolContent('thread-cap-mixed', 'key-2', 'artifact-1', 1);
+
+      expect(getToolContent('thread-cap-mixed', 'key-1')).to.equal(undefined); // evicted
+      expect(getToolContentEntry('thread-cap-mixed', 'key-2')).to.deep.equal({
+        kind: 'binary',
+        attachmentId: 'artifact-1',
+      });
+    });
+
+    // Regression guard: this store has no freshness concept, unlike
+    // mcp-tool-cache.ts's TTL-bounded cache — nothing here should ever
+    // expire an entry just because time passed.
+    it('never expires an entry by age alone, no matter how long ago it was stored [unit]', async () => {
+      storeToolContent('thread-no-ttl', 'key-1', 'still here', 500);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(getToolContent('thread-no-ttl', 'key-1')).to.equal('still here');
     });
   });
 });

@@ -76,6 +76,12 @@ export interface ResolvedToolSettingItem {
   enabled: boolean;
   defaultInclude: ResolvedDefaultInclude;
   instructions: string;
+  // Opt-in per-tool result caching — see getCacheableToolIds() below. No
+  // catalog-level default for either: MCP tools (the only tools this
+  // actually enforces for, today) never appear in TOOL_CATALOG, so there's
+  // nothing to default from beyond "not configured".
+  cacheable: boolean;
+  cacheTtlMs: number | null;
   // Tool-specific extra fields for web_fetch/rlm_query/shell_exec, carried
   // through as-is from config.yaml's catchall — everything else has none.
   [extra: string]: unknown;
@@ -137,7 +143,14 @@ export function resolveToolSettings(
     autonomous: base.alwaysOn ? true : (stored?.defaultInclude?.autonomous ?? true),
   };
 
-  const KNOWN_FIELDS = new Set(['enabled', 'defaultInclude', 'description', 'instructions']);
+  const KNOWN_FIELDS = new Set([
+    'enabled',
+    'defaultInclude',
+    'description',
+    'instructions',
+    'cacheable',
+    'cacheTtlMs',
+  ]);
   const extra = Object.fromEntries(
     Object.entries(stored ?? {}).filter(([key]) => !KNOWN_FIELDS.has(key)),
   );
@@ -155,6 +168,8 @@ export function resolveToolSettings(
     enabled,
     defaultInclude,
     instructions: stored?.instructions ?? '',
+    cacheable: stored?.cacheable ?? false,
+    cacheTtlMs: stored?.cacheTtlMs ?? null,
   };
 }
 
@@ -230,6 +245,23 @@ export function getGloballyEnabledToolIds(
   return new Set(
     listResolvedToolSettings(toolsConfig, store)
       .filter((t) => t.enabled)
+      .map((t) => t.toolId),
+  );
+}
+
+// The allowlist mcpToolToLangChain's per-thread result cache (chat-agent.ts,
+// mcp-tool-cache.ts) consults before caching an MCP tool's result.
+// category === 'mcp' is enforced here too, not just by the Tool Settings UI
+// hiding the control elsewhere — defense in depth against a stray
+// config.yaml edit enabling caching on a built-in tool, which has no
+// enforcement wrapper (see docs/superpowers/specs/2026-11-13-mcp-tool-result-caching-design.md).
+export function getCacheableToolIds(
+  toolsConfig: Record<string, ToolEntry> = env.tools,
+  store: ToolSettingsStore = getToolSettingsStore(),
+): Set<string> {
+  return new Set(
+    listResolvedToolSettings(toolsConfig, store)
+      .filter((t) => t.category === 'mcp' && t.cacheable)
       .map((t) => t.toolId),
   );
 }

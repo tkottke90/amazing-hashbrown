@@ -26,6 +26,12 @@ export interface ToolSettingItem {
   enabled: boolean;
   defaultInclude: ToolDefaultInclude;
   instructions: string;
+  // Opt-in per-tool result caching — generic (any MCP tool), not a
+  // tool-specific extra, so it's grouped with the fields above rather than
+  // the web_fetch/rlm_query/shell_exec ones below. See mcp-tool-cache
+  // design: docs/superpowers/specs/2026-11-13-mcp-tool-result-caching-design.md.
+  cacheable?: boolean;
+  cacheTtlMs?: number | null;
   // web_fetch
   timeoutMs?: number;
   respectRobotsTxt?: boolean;
@@ -42,7 +48,7 @@ export interface ToolSettingItem {
 }
 
 export type ToolSettingPatch = Partial<
-  Pick<ToolSettingItem, 'enabled' | 'description' | 'instructions'> & {
+  Pick<ToolSettingItem, 'enabled' | 'description' | 'instructions' | 'cacheable' | 'cacheTtlMs'> & {
     defaultInclude: Partial<ToolDefaultInclude>;
   } & Pick<
       ToolSettingItem,

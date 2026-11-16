@@ -862,6 +862,12 @@ describe('agents/workspace-chat-stream-handler — buildWorkspaceContext() summa
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it('defaults cachedResources to an empty string for a workspace with no chat thread yet', async () => {
+    expect(workspace.threadId).to.equal(null); // a freshly created workspace has none
+    const ctx = await buildWorkspaceContext(workspace);
+    expect(ctx.cachedResources).to.equal('');
+  });
+
   it('inlines the latest summary in full and manifests older ones', async () => {
     const summariesDir = join(workspace.location, '.hashbrown', 'summaries');
     await mkdir(summariesDir, { recursive: true });

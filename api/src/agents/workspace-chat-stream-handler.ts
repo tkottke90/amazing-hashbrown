@@ -26,6 +26,7 @@ import { getWikiRegistry } from '../services/wiki.js';
 import { createProvider, resolveProviderConfig } from '../services/provider-factory.js';
 import { getProviderQueue } from '../services/provider-queue.js';
 import { getWorkspaceStore, type Workspace } from '../services/workspace-store.js';
+import { renderCacheLedger } from '../services/mcp-tool-cache.js';
 import { resolveTurnModel, startTurnObservability } from './turn-observability.js';
 import { getObservabilityStore } from '../services/observability.js';
 import { maybeSummarizeWorkspace } from './workspace-summarizer.js';
@@ -124,6 +125,13 @@ export async function buildWorkspaceContext(workspace: Workspace): Promise<Works
     olderSummaries,
     taskFiles,
     autoApproveShell: workspace.autoApproveShell,
+    // Correct default for every workspace-chat call site, which always runs
+    // in workspace.threadId. task-execution.ts (the one caller that does
+    // NOT run in that thread — a task run gets its own per-run thread, see
+    // api/AGENTS.md's "never run a task in a shared thread") overrides this
+    // field itself, after its own threadId resolves, rather than this
+    // function guessing at a thread id it has no way to know.
+    cachedResources: workspace.threadId ? renderCacheLedger(workspace.threadId) : '',
   };
 }
 

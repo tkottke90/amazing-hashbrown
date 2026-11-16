@@ -6,7 +6,7 @@ import { expect } from 'chai';
 import yaml from 'yaml';
 import { openDatabase, type SqliteDatabase } from '@tkottke90/llm-common-types/db';
 import { ToolsManager } from '@tkottke90/tools-manager';
-import { bootToolSettingsStore } from '../../services/tool-settings-store.js';
+import { bootToolSettingsStore, getToolSettingsStore } from '../../services/tool-settings-store.js';
 import type { CatalogEntry } from '../../agents/tool-catalog.js';
 import {
   listToolSettingsHandler,
@@ -376,6 +376,72 @@ describe('routes/v1/tool-settings.handlers', () => {
         patchToolSettingHandler('web_fetch', { timeoutMs: 5000 }, configDir);
         const written = yaml.parse(readFileSync(join(configDir, 'config.yaml'), 'utf8'));
         expect(written.tools.web_fetch).to.deep.equal({ respectRobotsTxt: false, timeoutMs: 5000 });
+      });
+    });
+
+    // cacheable/cacheTtlMs (mcp-tool-cache design): generic fields validated
+    // on PatchToolSettingSchema's base object, not EXTRA_FIELD_SCHEMAS — the
+    // regression this guards against is them being left in `extra` and
+    // either silently dropped (GENERIC_FIELD_NAMES already excludes them
+    // from extraKeys) or, had GENERIC_FIELD_NAMES not been updated too,
+    // 400ing every MCP tool's cacheable PATCH via EXTRA_FIELD_SCHEMAS[toolId]
+    // having no entry for MCP tools.
+    describe('cacheable/cacheTtlMs (mcp-tool-cache design)', () => {
+      beforeEach(() => {
+        getToolSettingsStore().recordMcpDiscoveryResult(
+          [
+            {
+              toolId: 'n8n:get_workflow_details',
+              name: 'get_workflow_details',
+              description: 'd',
+              mcpServer: 'n8n',
+            },
+          ],
+          new Map([['n8n', 'connected']]),
+        );
+      });
+
+      it('round-trips cacheable/cacheTtlMs through PATCH for an MCP tool [unit]', () => {
+        const result = patchToolSettingHandler(
+          'n8n:get_workflow_details',
+          { cacheable: true, cacheTtlMs: 60000 },
+          configDir,
+        );
+        expect(result.ok).to.equal(true);
+        if (result.ok) {
+          expect(result.data.cacheable).to.equal(true);
+          expect(result.data.cacheTtlMs).to.equal(60000);
+        }
+        const written = yaml.parse(readFileSync(join(configDir, 'config.yaml'), 'utf8'));
+        expect(written.tools['n8n:get_workflow_details']).to.deep.equal({
+          cacheable: true,
+          cacheTtlMs: 60000,
+        });
+      });
+
+      it('does not 400 when PATCHing cacheable on an MCP tool (regression: must not fall through to EXTRA_FIELD_SCHEMAS) [unit]', () => {
+        const result = patchToolSettingHandler(
+          'n8n:get_workflow_details',
+          { cacheable: true },
+          configDir,
+        );
+        expect(result.ok).to.equal(true);
+      });
+
+      it('cacheTtlMs: null explicitly clears a stored override [unit]', () => {
+        writeConfig({ 'n8n:get_workflow_details': { cacheable: true, cacheTtlMs: 60000 } });
+        const result = patchToolSettingHandler(
+          'n8n:get_workflow_details',
+          { cacheTtlMs: null },
+          configDir,
+        );
+        expect(result.ok).to.equal(true);
+        if (result.ok) expect(result.data.cacheTtlMs).to.equal(null);
+      });
+
+      it('does not reject cacheable/cacheTtlMs on a non-MCP-category tool — the API does not enforce the UI-only category gate [unit]', () => {
+        const result = patchToolSettingHandler('web_fetch', { cacheable: true }, configDir);
+        expect(result.ok).to.equal(true);
       });
     });
   });
