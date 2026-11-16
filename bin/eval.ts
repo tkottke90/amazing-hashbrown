@@ -2,8 +2,11 @@
 import { parseArgs } from 'node:util';
 import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { OpenAIEmbeddings } from '@langchain/openai';
+import { SkillsManager } from '@tkottke90/skills-manager';
 import {
   runEval,
   bootEvaluations,
@@ -35,7 +38,7 @@ import { createSkillExpansionMiddleware } from '../api/src/agents/skill-expansio
 import { createSkillGatedToolsMiddleware } from '../api/src/agents/skill-gated-tools.middleware.js';
 import { createToolSyntaxMiddleware } from '../api/src/agents/middleware/tool-syntax.middleware.js';
 import { GATED_SKILL_REGISTRATIONS } from '../api/src/agents/gated-skill-registrations.js';
-import { bootSkillsManager } from '../api/src/services/skills-manager.js';
+import { DEFAULT_SKILLS } from '../api/src/services/default-skills.js';
 import { filterHarnessSections } from '../api/src/agents/system-prompt.js';
 import { extractRequestedToolIds, buildRequiredToolBlocks } from '../api/src/agents/tool-syntax.js';
 import { evalTools, buildEvalSystemPrompt } from './eval-setup.js';
@@ -204,20 +207,31 @@ try {
   console.warn('[eval] Warning: could not open SQLite database — results will be YAML-only');
 }
 
-// Seeds create-workspace/create-project (and any future default skills) if
-// missing — the same idempotent boot the production API server runs at
-// startup (see api/src/services/skills-manager.ts). Required so
-// skillExpansionMiddleware's real manager.lookup() below returns the live
-// default-skills.ts body instead of always hitting its not-found catch
-// branch. Safe to run unconditionally for every suite, not just
-// create-workspace-project.yaml — a no-op once already seeded.
-await bootSkillsManager();
+// Hermetic per-run skill seeding. bootSkillsManager()/seedDefaultSkills()
+// (api/src/services/skills-manager.ts) only create a DEFAULT_SKILLS entry
+// if it's missing by name from the real, persistent env.skillsRoot
+// directory — so once a skill has been seeded there once, later eval runs
+// silently keep serving that stale body forever, even after
+// default-skills.ts changes. Confirmed by a real eval round producing
+// byte-identical pass/fail results before and after a targeted wording
+// fix (see default-skills.ts's ingest-document comment history). Every
+// eval run must reflect the CURRENT default-skills.ts, so seed a fresh,
+// disposable SkillsManager into a brand-new temp directory every
+// invocation instead of reusing env.skillsRoot.
+const evalSkillsRoot = await mkdtemp(resolve(tmpdir(), 'amazing-hashbrown-eval-skills-'));
+const evalSkillsManager = new SkillsManager(evalSkillsRoot);
+await evalSkillsManager.boot();
+for (const input of DEFAULT_SKILLS) {
+  await evalSkillsManager.create(input);
+}
 
 // Real production middleware instances, built from the same registrations
 // chat-agent.ts uses — not a reimplementation. Passed into every runEval
 // call below; inert for suites whose scenarios never set `gatedSkill` (see
-// runner.ts's gatedSkill branch).
-const skillExpansionMiddleware = createSkillExpansionMiddleware();
+// runner.ts's gatedSkill branch). skillExpansionMiddleware is pointed at
+// the ephemeral manager above instead of the shared production singleton,
+// so every eval run always reflects the current source on disk.
+const skillExpansionMiddleware = createSkillExpansionMiddleware(async () => evalSkillsManager);
 const skillGatedToolsMiddleware = createSkillGatedToolsMiddleware(GATED_SKILL_REGISTRATIONS);
 // Same real-instance treatment as the two above — needs no registrations,
 // it only scans the latest human message for #tokens (see
