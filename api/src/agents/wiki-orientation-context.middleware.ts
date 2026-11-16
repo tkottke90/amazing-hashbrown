@@ -33,9 +33,7 @@ export function createWikiOrientationContextMiddleware(
     name: 'WikiOrientationContextMiddleware',
     wrapModelCall: async (request, handler) => {
       const threadId = request.runtime.configurable?.thread_id;
-      const activeWikiId = threadId
-        ? getThreadStore().getThreadMeta(threadId)?.activeWikiId
-        : null;
+      const activeWikiId = threadId ? getThreadStore().getThreadMeta(threadId)?.activeWikiId : null;
       if (!activeWikiId) return handler(request);
 
       try {

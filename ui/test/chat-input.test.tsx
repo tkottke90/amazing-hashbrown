@@ -1149,7 +1149,9 @@ describe('ChatInput — Orient to wiki sub-menu', () => {
     const self = screen.getByRole('menuitemcheckbox', { name: 'self' });
     expect(user).toHaveAttribute('aria-checked', 'false');
     expect(self).toHaveAttribute('aria-checked', 'false');
-    expect(screen.queryByRole('menuitem', { name: 'Clear wiki orientation' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('menuitem', { name: 'Clear wiki orientation' }),
+    ).not.toBeInTheDocument();
   });
 
   it('shows the active domain as checked', () => {
