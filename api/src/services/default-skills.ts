@@ -270,4 +270,51 @@ Step 1 (always first, before anything else): determine which path applies below.
 5. If the fix touches scripts or reference files, use update_skill_artifact for an existing file (or create_skill_artifact for a new one) after the SKILL.md edit succeeds. For any script artifact, immediately call #test_skill_artifact to dry-run it and show the result before finishing — a direct tool call, not a prose question asking whether the user wants it tested.
 6. Wrap up with a brief confirmation of what changed. For a workspace-scope write, say plainly that the file is on disk but not committed — the user reviews and commits it through the workspace's own normal git flow, the same as any other change there.`,
   },
+  // First draft, structurally complete against the design
+  // (docs/superpowers/specs/2026-11-16-ingest-document-skill-design.md) but not
+  // yet eval-tightened against a real run — expect this to need the same kind
+  // of iterative tightening the four entries above needed, once
+  // suites/ingest-document.yaml has been run against real models. Deliberately
+  // not registered in GATED_SKILL_REGISTRATIONS (gated-skill-registrations.ts)
+  // — wiki_create_page/wiki_update_page/etc. must stay globally visible, not
+  // disappear whenever a different skill is active. See the design doc's
+  // Decisions table, "Tool gating" row, for why.
+  {
+    name: 'ingest-document',
+    description:
+      'Decompose a pasted or attached document into wiki pages, planning the breakdown and ' +
+      'confirming it before writing anything — trigger on "ingest this document into the wiki", ' +
+      '"break this report into wiki pages", "turn these notes into wiki pages", or "file this doc ' +
+      'in the wiki", not just a literal mention of "ingest".',
+    body: `Guide the agent through decomposing a pasted or attached document into wiki pages — planning and confirming the breakdown before writing anything, rather than diving straight into wiki_create_page/wiki_update_page calls. This applies whenever the user pastes a document (meeting notes, a report, an email thread) as this skill's command args, or attaches a file and invokes this skill — not just when their own wording literally says "ingest."
+
+Scoped to documents that fit in the model's own context window. There is no chunking mechanism here — if the document looks too large to have been read in full, say so and stop rather than guessing from a truncated read.
+
+Steps:
+
+1. Resolve the domain. If this is a workspace chat with a bound wiki domain (see "Bound wiki domain" in the workspace context, if present), use it — don't ask which domain to use, and don't call wiki_locate "to double-check," when one is already bound. Otherwise, if the user named a domain in their own message, use that. Otherwise call wiki_locate: if it reports a single strong match, use it; if it reports ambiguous candidates, ask the user with ask_user (kind: "multiple_choice", the candidate ids as choices) before doing anything else.
+
+2. Orient. Call wiki_orient on the resolved domain before judging anything about the document. Its SCHEMA.md is this domain's own Page Thresholds and tag taxonomy — apply that domain's rules, not a generic rule of thumb from memory or from a different domain you've seen before. Do this even when you're confident you already know how this domain is organized from an earlier turn; wiki_orient is cheap and the schema may have changed since.
+
+3. Read and segment. Read the document — it's either pasted directly as this skill's command args, or surfaced as an attachment by the existing attachment-handling middleware. Identify the distinct entities, concepts, comparisons, or Q&A pairs that clear *this* domain's Page Threshold from wiki_orient's schema — not a generic "is this big enough to matter" instinct. Passing mentions and minor supporting details don't get their own entry; fold them into whatever topic they support.
+   - No document actually provided (empty command args, no attachment) → stop here and ask what to ingest with a free_text ask_user call. Do not invent a placeholder document, example content, or a plan for "typical" content just so you have something to show — there is nothing to plan yet.
+
+4. Check for overlap. For each candidate topic from step 3, call wiki_search (scoped to the resolved wikiId) and wiki_read_page on anything that looks relevant, to check whether it already has a home in the wiki. Skipping this and treating every candidate as brand-new is exactly the mistake step 5's "append" option exists to avoid — a document that updates or extends existing content is common, not the exception.
+
+5. Build the plan. One line per candidate topic: new page (title + section type) / append to an existing page (which page, what's being added) / skip (why it doesn't clear the threshold). A short, single-topic document can produce a one-item plan — don't manufacture extra splits across several pages just to look thorough, and don't force every passing mention into its own line either; both are the same mistake in opposite directions.
+
+6. Present and gate — in the same turn. State the plan as a numbered list in your reply text, then call ask_user with kind: "multiple_choice" and choices exactly ["Yes, proceed", "No — I'll explain what to change"]. The question text only needs to ask for approval of "the plan above" — don't repeat the list inside the question itself, it's already sitting in your reply. This gate applies even when the user's own message already reads like a go-ahead — "here's our onboarding doc, file it in the wiki" is a request to run this skill, not a substitute for the plan-then-confirm sequence; build and present the plan exactly as above, then still call ask_user. A document that looks obviously well-organized, or a plan with only one item, is not an exception to this gate either.
+
+7. Branch on the answer, and only on this specific exchange:
+   - "Yes, proceed" → continue to step 8 immediately, with exactly the plan you just confirmed. Don't re-derive it, don't re-run wiki_search, and don't re-read the document first — that work already happened before the gate.
+   - "No — I'll explain what to change" → stop the turn entirely. Don't guess at what might be wrong and silently adjust the plan on your own reasoning, and don't ask a follow-up question either ("what would you like changed?") — the choice label itself already told the user their next message is where that goes. Wait for their next message, revise the plan using their actual feedback, restate the revised plan as a new numbered list, and run the same ask_user gate again (back to step 6). A restated plan that comes back unchanged after "No" — same titles, same splits, same skips as before — means the feedback wasn't actually applied; something has to change, however small.
+
+8. Execute. For each confirmed plan item, call wiki_create_page or wiki_update_page (append or replace, matching what that plan line said) with sourceText set to the actual excerpt of the original document that page's content came from — the real text, not a paraphrase or your own summary of it. This is an easy optional param to drop; it's what keeps the original document traceable as a raw source once its content is split across pages.
+
+9. Cross-link. Call wiki_add_cross_link between pages touched this turn that are genuinely related to each other. Don't force a link between two pages just because they came from the same source document — the relationship has to be real content-level overlap, not shared provenance.
+
+10. Lint. Call wiki_lint on the domain and fix anything it surfaces before finishing — same norm the Wiki Chat ingestion agent already follows after a write batch. Don't finish the turn with known lint findings still open.
+
+11. Relay failures. If any wiki_create_page or wiki_update_page call in step 8 reports a conflict (e.g. "duplicate" despite the plan saying "new" — a stale search result or a race) or a validation error, relay the tool's own message to the user as-is and stop there — don't retry with a workaround, don't silently force past it, and don't continue executing the plan's remaining items as if nothing happened. The tool's own response already says what to do next (read the blocking page, append, or force with a distinguishing title); this skill doesn't duplicate that logic.`,
+  },
 ];
