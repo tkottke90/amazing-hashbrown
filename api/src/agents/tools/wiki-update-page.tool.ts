@@ -91,10 +91,12 @@ const WikiUpdatePageSchema = z.object({
     .string()
     .optional()
     .describe(
-      'The original source text this update came from (e.g. a conversation turn), saved as a ' +
-        'raw provenance snapshot alongside the page. Only set this when explicitly instructed ' +
-        'to preserve provenance for content that did not originate from your own direct ' +
-        'reasoning this turn.',
+      'The original source text this update came from (e.g. a conversation turn, or an excerpt ' +
+        'from a document being ingested), saved as a raw provenance snapshot alongside the ' +
+        'page. Set this whenever the update was derived from material you did not generate ' +
+        'yourself this turn — including whenever a skill or the user asks you to preserve ' +
+        'provenance. Omit it only when the content is genuinely your own synthesis with no ' +
+        'separate source text to preserve.',
     ),
 });
 

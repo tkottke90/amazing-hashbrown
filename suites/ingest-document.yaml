@@ -1,0 +1,351 @@
+suite:
+  id: ingest-document
+  name: Ingest Document Chat Skill
+  purpose: >
+    Verifies the chat agent follows the /ingest-document skill instructions:
+    resolves the wiki domain and orients on it before judging anything, checks
+    each candidate topic for overlap before deciding new-vs-append, builds and
+    states an explicit plan, gates on a single ask_user (multiple_choice,
+    "Yes, proceed" / "No — I'll explain what to change") in the same turn,
+    executes with sourceText provenance only after "Yes," and — after "No" —
+    chains a second ask_user (free_text) to collect the revision rather than
+    waiting for an ordinary chat reply (which would drop the skill body from
+    context — see idoc-005's purpose) and actually revises the plan from that
+    answer, not just re-presenting it unchanged. No scenario seeds a live
+    `user:` turn after a seeded ask_user result: answering a yes/no or
+    multiple_choice ask_user prompt in the real app resumes the interrupted
+    call and produces a tool result, never a new human message, and adding
+    one here would silently strip the skill body from every later turn's
+    context the same way a real free-standing reply would. Every scenario
+    here sets gatedSkill, so the runner routes it through the real
+    skillExpansionMiddleware/skillGatedToolsMiddleware pair rather than a
+    static tool list — true even though ingest-document deliberately has no
+    entry in GATED_SKILL_REGISTRATIONS: gatedSkill only tells the runner which
+    skill body to expand the slash command into, independent of that separate
+    tool-gating registry. No scenario simulates a workspace with a bound wiki
+    domain — SuiteSchema's simulatedWorkspace has no wikiDomain field yet — so
+    every scenario names its domain explicitly in the user's own message,
+    exercising step 1's "user named a domain" branch.
+  passingThreshold: 0.8
+
+scenarios:
+  - id: idoc-001-single-topic-one-item-plan-and-gate
+    name: Single-topic document produces a one-item plan and gates with ask_user
+    purpose: >
+      Given a short, single-topic document with the domain named explicitly,
+      domain resolution/orientation/overlap-check already done, confirms the
+      agent's next tool call is ask_user with kind "multiple_choice" (the
+      required gate) and that the plan stated in the reply text has exactly
+      one item — a focused document should not be split into extra pages just
+      to look thorough.
+    type: tool-sequence
+    gatedSkill: ingest-document
+    turns:
+      - user: |
+          /ingest-document into the "product-docs" wiki:
+
+          Onboarding Checklist
+
+          Every new hire gets a laptop, VPN access, and a Slack invite set up
+          before their first day. IT handles the laptop and VPN; the hiring
+          manager sends the Slack invite.
+      - tool: wiki_orient
+        args: { wikiId: product-docs }
+        result:
+          {
+            text: "# Wiki Orientation: product-docs\n\n## Schema\nPage Thresholds: a topic earns its own page when it recurs across more than one source or needs to be found independently later (a distinct process, policy, or decision). A supporting detail that only backs a larger topic does not get its own page.\n\nTag taxonomy: process, policy, onboarding, hr\n\n## Index\n(empty)\n\n## Recent Log\n(no log entries yet)",
+          }
+      - tool: wiki_search
+        args: { query: 'new hire onboarding checklist', wikiId: product-docs }
+        result: { text: 'No results found for the given query.' }
+    tool: ask_user
+    argChecks:
+      - path: kind
+        match: equals
+        value: multiple_choice
+    responseRubric: >
+      The reply should present a plan as a numbered list containing exactly
+      one item — a single new page (or an append, if it argues the content
+      belongs on an existing page) covering the onboarding checklist — not
+      split into multiple items for what is one short, single-topic document.
+    responseMinScore: 0.7
+
+  - id: idoc-002-messy-multitopic-plan
+    name: Messy multi-topic document produces multiple, correctly-typed plan items
+    purpose: >
+      Given a document covering two clearly distinct topics (domain named
+      explicitly, domain resolution/orientation already seeded, both
+      wiki_search calls already seeded with no hits), confirms the plan
+      presented before the ask_user gate lists multiple items, each typed
+      correctly as a new page — not collapsed into one page, and not split
+      into more items than the two real topics warrant.
+    type: tool-sequence
+    gatedSkill: ingest-document
+    turns:
+      - user: |
+          /ingest-document into the "product-docs" wiki:
+
+          Team Notes
+
+          Expense Policy: Reimbursements over $50 need manager approval before
+          submitting. Submit all receipts within 30 days.
+
+          On-Call Rotation: Engineers rotate on-call weekly, Monday to Monday.
+          The on-call engineer carries the pager and is first responder for
+          production incidents.
+      - tool: wiki_orient
+        args: { wikiId: product-docs }
+        result:
+          {
+            text: "# Wiki Orientation: product-docs\n\n## Schema\nPage Thresholds: a topic earns its own page when it recurs across more than one source or needs to be found independently later.\n\nTag taxonomy: process, policy, on-call, finance\n\n## Index\n(empty)\n\n## Recent Log\n(no log entries yet)",
+          }
+      - tool: wiki_search
+        args: { query: 'expense policy reimbursement approval', wikiId: product-docs }
+        result: { text: 'No results found for the given query.' }
+      - tool: wiki_search
+        args: { query: 'on-call rotation pager engineer', wikiId: product-docs }
+        result: { text: 'No results found for the given query.' }
+    tool: ask_user
+    argChecks:
+      - path: kind
+        match: equals
+        value: multiple_choice
+    responseRubric: >
+      The reply's numbered plan should list two separate new-page items — one
+      for the expense/reimbursement policy and one for the on-call rotation —
+      not merged into a single page and not split further into more than
+      these two genuinely distinct topics.
+    responseMinScore: 0.7
+
+  - id: idoc-003-overlap-appends-not-duplicates
+    name: Document overlapping existing content plans an append, not a new duplicate page
+    purpose: >
+      Given a document whose topic already has a matching page (seeded
+      wiki_search hit + wiki_read_page confirming it's the same topic),
+      confirms the plan presented before the ask_user gate proposes appending
+      to the existing page rather than creating a new, duplicate one — the
+      skill's step 4 overlap check must actually change the step 5 plan, not
+      just be performed and ignored.
+    type: tool-sequence
+    gatedSkill: ingest-document
+    turns:
+      - user: |
+          /ingest-document into the "product-docs" wiki:
+
+          Expense Policy Update
+
+          Reimbursements over $50 now need manager approval before submitting
+          (previously the threshold was $100). Receipts are still due within
+          30 days.
+      - tool: wiki_orient
+        args: { wikiId: product-docs }
+        result:
+          {
+            text: "# Wiki Orientation: product-docs\n\n## Schema\nPage Thresholds: a topic earns its own page when it recurs across more than one source.\n\nTag taxonomy: process, policy, finance\n\n## Index\n- policies/expense-policy.md — Expense Policy\n\n## Recent Log\n(no log entries yet)",
+          }
+      - tool: wiki_search
+        args: { query: 'expense policy reimbursement approval threshold', wikiId: product-docs }
+        result:
+          {
+            text: '[{"wikiId":"product-docs","path":"policies/expense-policy.md","title":"Expense Policy","score":0.91}]',
+          }
+      - tool: wiki_read_page
+        args: { wikiId: product-docs, path: 'policies/expense-policy.md' }
+        result:
+          {
+            text: "# Expense Policy\n\nType: concept\nTags: process, policy, finance\n\nReimbursements over $100 need manager approval before submitting. Submit all receipts within 30 days.",
+          }
+    tool: ask_user
+    argChecks:
+      - path: kind
+        match: equals
+        value: multiple_choice
+    responseRubric: >
+      The reply's plan should propose appending/updating the existing
+      "Expense Policy" page (policies/expense-policy.md) with the new $50
+      threshold — not creating a second, new page for the same topic.
+    responseMinScore: 0.7
+
+  - id: idoc-004-executes-with-sourcetext-after-yes
+    name: Agent writes the confirmed page with sourceText once the user says yes
+    purpose: >
+      Companion to idoc-001: given the plan was already presented and gated,
+      and the user answered "Yes, proceed," confirms the very next tool call
+      is wiki_create_page for the confirmed item, targeting the resolved
+      wikiId, and carrying sourceText — an easy optional param to drop, so
+      this scenario mechanically proves it's actually passed.
+    type: tool-sequence
+    gatedSkill: ingest-document
+    turns:
+      - user: |
+          /ingest-document into the "product-docs" wiki:
+
+          Onboarding Checklist
+
+          Every new hire gets a laptop, VPN access, and a Slack invite set up
+          before their first day. IT handles the laptop and VPN; the hiring
+          manager sends the Slack invite.
+      - tool: wiki_orient
+        args: { wikiId: product-docs }
+        result:
+          {
+            text: "# Wiki Orientation: product-docs\n\n## Schema\nPage Thresholds: a topic earns its own page when it recurs across more than one source or needs to be found independently later.\n\nTag taxonomy: process, policy, onboarding, hr\n\n## Index\n(empty)\n\n## Recent Log\n(no log entries yet)",
+          }
+      - tool: wiki_search
+        args: { query: 'new hire onboarding checklist', wikiId: product-docs }
+        result: { text: 'No results found for the given query.' }
+      - tool: ask_user
+        args:
+          {
+            question: 'Proceed with the plan above — one new page for the onboarding checklist?',
+            kind: 'multiple_choice',
+            choices: ['Yes, proceed', "No — I'll explain what to change"],
+          }
+        result: { text: 'User answered: Yes, proceed' }
+    tool: wiki_create_page
+    argChecks:
+      - path: wikiId
+        match: equals
+        value: product-docs
+      - path: title
+        match: contains
+        value: Onboarding
+      - path: sourceText
+        match: exists
+
+  - id: idoc-005-revises-plan-after-no
+    name: Agent actually revises the plan from feedback after "No — I'll explain what to change"
+    purpose: >
+      Given the plan was presented and gated, the user picked "No — I'll
+      explain what to change," confirms the agent immediately chains a
+      second ask_user (free_text) asking what to change — rather than
+      ending the turn to wait for an ordinary chat reply, which would drop
+      this skill's body from context (skill-expansion only re-injects it
+      while the original /ingest-document message is still the latest human
+      message; a free-standing reply would replace it) — and that once
+      given concrete feedback (drop one of the two planned items), the
+      agent's next tool call re-gates with ask_user (multiple_choice) again
+      with a restated plan that actually reflects the feedback, not a
+      guessed-at revision and not the original two-item plan unchanged.
+    type: tool-sequence
+    gatedSkill: ingest-document
+    turns:
+      - user: |
+          /ingest-document into the "product-docs" wiki:
+
+          Team Notes
+
+          Expense Policy: Reimbursements over $50 need manager approval before
+          submitting. Submit all receipts within 30 days.
+
+          VPN Setup: Connect to the office VPN using the client in the IT
+          folder; your credentials are the same as your email login.
+      - tool: wiki_orient
+        args: { wikiId: product-docs }
+        result:
+          {
+            text: "# Wiki Orientation: product-docs\n\n## Schema\nPage Thresholds: a topic earns its own page when it recurs across more than one source or needs to be found independently later; a one-off setup step does not.\n\nTag taxonomy: process, policy, onboarding, finance\n\n## Index\n(empty)\n\n## Recent Log\n(no log entries yet)",
+          }
+      - tool: wiki_search
+        args: { query: 'expense policy reimbursement approval', wikiId: product-docs }
+        result: { text: 'No results found for the given query.' }
+      - tool: wiki_search
+        args: { query: 'VPN setup credentials office', wikiId: product-docs }
+        result: { text: 'No results found for the given query.' }
+      - tool: ask_user
+        args:
+          {
+            question: 'Proceed with the plan above — two new pages?',
+            kind: 'multiple_choice',
+            choices: ['Yes, proceed', "No — I'll explain what to change"],
+          }
+        result: { text: "User answered: No — I'll explain what to change" }
+      - tool: ask_user
+        args: { question: 'What would you like to change about the plan?', kind: 'free_text' }
+        result:
+          {
+            text: "User answered: Actually drop the VPN setup page entirely — that's too minor to need its own page. Just keep the expense policy one.",
+          }
+    tool: ask_user
+    argChecks:
+      - path: kind
+        match: equals
+        value: multiple_choice
+    responseRubric: >
+      The restated plan in the reply should now contain only the expense
+      policy item — the VPN setup item must be dropped per the user's
+      feedback, not retained, and the agent must not have asked a further
+      clarifying question instead of acting on the feedback it was already
+      given.
+    responseMinScore: 0.7
+
+  - id: idoc-006-empty-input-asks-rather-than-invents
+    name: Agent asks what to ingest when no document was actually provided
+    purpose: >
+      Given the domain is already resolved and oriented on, but the user's
+      /ingest-document invocation carries no document text and no attachment,
+      confirms the agent asks what to ingest via a free_text ask_user call
+      rather than inventing placeholder content or a plan for "typical"
+      content.
+    type: tool-sequence
+    gatedSkill: ingest-document
+    turns:
+      - user: '/ingest-document into the "product-docs" wiki.'
+      - tool: wiki_orient
+        args: { wikiId: product-docs }
+        result:
+          {
+            text: "# Wiki Orientation: product-docs\n\n## Schema\nPage Thresholds: a topic earns its own page when it recurs across more than one source.\n\nTag taxonomy: process, policy\n\n## Index\n(empty)\n\n## Recent Log\n(no log entries yet)",
+          }
+    tool: ask_user
+    argChecks:
+      - path: kind
+        match: equals
+        value: free_text
+
+  - id: idoc-007-stops-after-write-conflict
+    name: Agent stops and relays a wiki_create_page conflict rather than retrying
+    purpose: >
+      Given the plan was confirmed and execution began, but wiki_create_page's
+      seeded result is a real duplicate-conflict message, confirms the agent
+      does not blindly retry wiki_create_page without new direction from the
+      user — mirrors step 11's "relay as-is and stop" rule.
+    type: tool-sequence
+    gatedSkill: ingest-document
+    turns:
+      - user: |
+          /ingest-document into the "product-docs" wiki:
+
+          Expense Policy Update
+
+          Reimbursements over $50 now need manager approval.
+      - tool: wiki_orient
+        args: { wikiId: product-docs }
+        result:
+          {
+            text: "# Wiki Orientation: product-docs\n\n## Schema\nPage Thresholds: a topic earns its own page when it recurs across more than one source.\n\nTag taxonomy: process, policy, finance\n\n## Index\n(empty)\n\n## Recent Log\n(no log entries yet)",
+          }
+      - tool: wiki_search
+        args: { query: 'expense policy reimbursement approval', wikiId: product-docs }
+        result: { text: 'No results found for the given query.' }
+      - tool: ask_user
+        args:
+          {
+            question: 'Proceed with the plan above — one new page for the expense policy update?',
+            kind: 'multiple_choice',
+            choices: ['Yes, proceed', "No — I'll explain what to change"],
+          }
+        result: { text: 'User answered: Yes, proceed' }
+      - tool: wiki_create_page
+        args: { wikiId: product-docs, title: 'Expense Policy Update' }
+        result:
+          {
+            text: 'A similar page already exists: "Expense Policy" at policies/expense-policy.md. Read it with wiki_read_page, then take one of these two actions:\n(1) Same topic — call wiki_update_page with mode:"append" and pass only the new sections as content. Do NOT rewrite the entire page.\n(2) Genuinely different document (different format, version, or use case) — retry wiki_create_page with force:true and include an additional distinguishing term in the title.\nDo NOT retry wiki_create_page without force:true, and do not vary the title to work around this check.',
+          }
+      - user: 'Hmm, okay.'
+    tool: '!wiki_create_page'
+    responseRubric: >
+      The reply should relay the conflict (an existing "Expense Policy" page
+      was found) rather than silently retrying or working around it, and
+      should not call wiki_create_page again without new direction.
+    responseMinScore: 0.6
