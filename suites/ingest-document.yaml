@@ -7,9 +7,17 @@ suite:
     each candidate topic for overlap before deciding new-vs-append, builds and
     states an explicit plan, gates on a single ask_user (multiple_choice,
     "Yes, proceed" / "No — I'll explain what to change") in the same turn,
-    executes with sourceText provenance only after "Yes," and actually revises
-    the plan — not just re-presents it — after "No." Every scenario here sets
-    gatedSkill, so the runner routes it through the real
+    executes with sourceText provenance only after "Yes," and — after "No" —
+    chains a second ask_user (free_text) to collect the revision rather than
+    waiting for an ordinary chat reply (which would drop the skill body from
+    context — see idoc-005's purpose) and actually revises the plan from that
+    answer, not just re-presenting it unchanged. No scenario seeds a live
+    `user:` turn after a seeded ask_user result: answering a yes/no or
+    multiple_choice ask_user prompt in the real app resumes the interrupted
+    call and produces a tool result, never a new human message, and adding
+    one here would silently strip the skill body from every later turn's
+    context the same way a real free-standing reply would. Every scenario
+    here sets gatedSkill, so the runner routes it through the real
     skillExpansionMiddleware/skillGatedToolsMiddleware pair rather than a
     static tool list — true even though ingest-document deliberately has no
     entry in GATED_SKILL_REGISTRATIONS: gatedSkill only tells the runner which
@@ -194,7 +202,6 @@ scenarios:
             choices: ['Yes, proceed', "No — I'll explain what to change"],
           }
         result: { text: 'User answered: Yes, proceed' }
-      - user: 'Yes, proceed.'
     tool: wiki_create_page
     argChecks:
       - path: wikiId
@@ -210,12 +217,16 @@ scenarios:
     name: Agent actually revises the plan from feedback after "No — I'll explain what to change"
     purpose: >
       Given the plan was presented and gated, the user picked "No — I'll
-      explain what to change," and then gave concrete feedback in their next
-      message (drop one of the two planned items), confirms the agent's next
-      tool call re-gates with ask_user again, and that the restated plan in
-      the reply text actually reflects the feedback — not a guessed-at
-      revision, not a follow-up clarifying question instead of waiting, and
-      not the original two-item plan presented unchanged.
+      explain what to change," confirms the agent immediately chains a
+      second ask_user (free_text) asking what to change — rather than
+      ending the turn to wait for an ordinary chat reply, which would drop
+      this skill's body from context (skill-expansion only re-injects it
+      while the original /ingest-document message is still the latest human
+      message; a free-standing reply would replace it) — and that once
+      given concrete feedback (drop one of the two planned items), the
+      agent's next tool call re-gates with ask_user (multiple_choice) again
+      with a restated plan that actually reflects the feedback, not a
+      guessed-at revision and not the original two-item plan unchanged.
     type: tool-sequence
     gatedSkill: ingest-document
     turns:
@@ -249,9 +260,12 @@ scenarios:
             choices: ['Yes, proceed', "No — I'll explain what to change"],
           }
         result: { text: "User answered: No — I'll explain what to change" }
-      - user: >
-          Actually drop the VPN setup page entirely — that's too minor to need
-          its own page. Just keep the expense policy one.
+      - tool: ask_user
+        args: { question: 'What would you like to change about the plan?', kind: 'free_text' }
+        result:
+          {
+            text: "User answered: Actually drop the VPN setup page entirely — that's too minor to need its own page. Just keep the expense policy one.",
+          }
     tool: ask_user
     argChecks:
       - path: kind
@@ -260,7 +274,7 @@ scenarios:
     responseRubric: >
       The restated plan in the reply should now contain only the expense
       policy item — the VPN setup item must be dropped per the user's
-      feedback, not retained, and the agent must not have asked a follow-up
+      feedback, not retained, and the agent must not have asked a further
       clarifying question instead of acting on the feedback it was already
       given.
     responseMinScore: 0.7

@@ -327,6 +327,65 @@ Step 1 (always first, before anything else): determine which path applies below.
   //   this reads as a capability ceiling for this model under this harness,
   //   not a closable wording gap. Flagged to verify on the next run rather
   //   than assumed fixed by anything in this round.
+  //
+  // Second tightening, added after a rerun of the first tightening above
+  // against bin/eval.ts's now-hermetic skill seeding (the first tightening's
+  // eval run had silently been testing the pre-tightening wording the whole
+  // time — a harness bug, fixed separately — so this is the first run that
+  // actually exercised this skill's current text):
+  // idoc-005 (revise plan after "No") still failed 0/4, byte-for-byte
+  // identical to the untested round for `local` despite the new sentence
+  // genuinely being present in the prompt this time (confirmed via the raw
+  // request transcript). Root cause turned out to be structural, not
+  // wording: this skill's step 7 told the model to "stop the turn and wait
+  // for the user's next message" — but skill-expansion only re-injects this
+  // skill's body while the original /ingest-document message remains the
+  // *latest* human message in the conversation (see
+  // skill-expansion.middleware.ts; historical slash-command messages are
+  // deliberately never re-expanded). A free-standing chat reply from the
+  // user becomes the new latest message and silently drops every one of
+  // this skill's steps from view — confirmed directly: Digital Ocean's own
+  // reasoning for this scenario falls back to the unrelated, always-on
+  // wiki_navigation rule ("the user has already decided, so create the page
+  // now") because nothing from this skill was in context at all. Rewrote
+  // step 7's "No" branch to collect the revision through a second, chained
+  // ask_user (free_text) call instead of waiting for an ordinary reply — the
+  // answer comes back as a tool result, not a new human message, so the
+  // original invocation stays current and every later step stays visible.
+  // idoc-004 (sourceText on write) was confounded by an unrelated bug in the
+  // eval scenario itself: it seeded an extra, unnecessary `user: "Yes,
+  // proceed."` turn after the ask_user confirmation, which — by the same
+  // mechanism above — also wiped the skill body from context. That seeded
+  // turn didn't reflect anything real: answering a yes/no ask_user prompt in
+  // the actual app resumes the interrupted call and produces a tool result,
+  // never a new human message, so the extra turn was never representative
+  // and has been removed from suites/ingest-document.yaml. Separately, and
+  // independent of that scenario bug, Digital Ocean's transcript for this
+  // same scenario surfaced a real, evidenced conflict: its reasoning quotes
+  // the sourceText parameter's own tool-schema description verbatim ("Only
+  // set this when explicitly instructed...") as its stated reason for
+  // omitting it — the tool schema was actively arguing against what this
+  // skill asks for. Reworded that description in both wiki-create-page.tool.ts
+  // and wiki-update-page.tool.ts to stop treating "set it" as the exception.
+  // idoc-001 (single-topic one-item plan) still failed for `local`, but the
+  // first tightening's step-4 fix demonstrably worked on its own terms — no
+  // more rephrased re-querying. The failure just moved one step earlier: the
+  // model now invents extra candidate topics out of one short checklist
+  // ("Laptop provisioning", "VPN access", "Slack invite" as three separate
+  // candidates from one onboarding checklist) and burns the turn deliberating
+  // between a one-page and three-page split, never reaching the gate. Added a
+  // sentence to step 3 naming this exact pattern — a connected checklist or
+  // process is one candidate, not one candidate per item it lists.
+  // Lemonade regressed from 2/7 to 1/7, with idoc-003 newly failing and its
+  // prose_question count rising from 2 to 3 — but the evidence points away
+  // from this round's edits: in every affected scenario the model's actual
+  // plan content scored a perfect 10/10 from the judge (including idoc-003's
+  // overlap/append judgment, exactly what the first tightening's step-4 fix
+  // targets), and it still failed purely because it phrased the
+  // confirmation question as plain prose ending in "?" instead of calling
+  // ask_user — the identical pre-existing issue already flagged above,
+  // recurring on one more scenario. No mechanism ties step 4/7/8's content to
+  // whether a model encodes a question as a tool call; left untouched.
   {
     name: 'ingest-document',
     description:
@@ -344,7 +403,7 @@ Steps:
 
 2. Orient. Call wiki_orient on the resolved domain before judging anything about the document. Its SCHEMA.md is this domain's own Page Thresholds and tag taxonomy — apply that domain's rules, not a generic rule of thumb from memory or from a different domain you've seen before. Do this even when you're confident you already know how this domain is organized from an earlier turn; wiki_orient is cheap and the schema may have changed since.
 
-3. Read and segment. Read the document — it's either pasted directly as this skill's command args, or surfaced as an attachment by the existing attachment-handling middleware. Identify the distinct entities, concepts, comparisons, or Q&A pairs that clear *this* domain's Page Threshold from wiki_orient's schema — not a generic "is this big enough to matter" instinct. Passing mentions and minor supporting details don't get their own entry; fold them into whatever topic they support.
+3. Read and segment. Read the document — it's either pasted directly as this skill's command args, or surfaced as an attachment by the existing attachment-handling middleware. Identify the distinct entities, concepts, comparisons, or Q&A pairs that clear *this* domain's Page Threshold from wiki_orient's schema — not a generic "is this big enough to matter" instinct. A single connected process, checklist, or policy is one candidate topic, not one candidate per item or step it lists — a checklist saying a new hire gets a laptop, VPN access, and a Slack invite is one "Onboarding Checklist" candidate, not three separate candidates for laptop, VPN, and Slack; don't manufacture extra candidates by treating a list's individual entries as topics in their own right. Passing mentions and minor supporting details don't get their own entry; fold them into whatever topic they support.
    - No document actually provided (empty command args, no attachment) → stop here and ask what to ingest with a free_text ask_user call. Do not invent a placeholder document, example content, or a plan for "typical" content just so you have something to show — there is nothing to plan yet.
 
 4. Check for overlap. For each candidate topic from step 3, call wiki_search (scoped to the resolved wikiId) and wiki_read_page on anything that looks relevant, to check whether it already has a home in the wiki. Skipping this and treating every candidate as brand-new is exactly the mistake step 5's "append" option exists to avoid — a document that updates or extends existing content is common, not the exception. One wiki_search per candidate topic (plus wiki_read_page only on an actual hit) is enough to decide new-vs-append — don't keep re-querying with rephrased search terms to resolve your own uncertainty about where a topic's boundaries sit. Move on to step 5 once each candidate has had its one search.
@@ -355,7 +414,7 @@ Steps:
 
 7. Branch on the answer, and only on this specific exchange:
    - "Yes, proceed" → continue to step 8 immediately, with exactly the plan you just confirmed. Don't re-derive it, don't re-run wiki_search, and don't re-read the document first — that work already happened before the gate.
-   - "No — I'll explain what to change" → stop the turn entirely. Don't guess at what might be wrong and silently adjust the plan on your own reasoning, and don't ask a follow-up question either ("what would you like changed?") — the choice label itself already told the user their next message is where that goes. Wait for their next message, revise the plan using their actual feedback, restate the revised plan as a new numbered list, and run the same ask_user gate again (back to step 6). Giving concrete, specific feedback (e.g. "drop the VPN page, just keep expense policy") is not the same as approving the revised plan — it's the input the revision is built from, and it still has to clear the same ask_user gate the first draft did. Don't treat the detail or specificity of the feedback as implicit sign-off that lets you skip straight to step 8; "the user already told me what they want, so there's no need to ask again" is exactly the rationalization this step exists to close. A restated plan that comes back unchanged after "No" — same titles, same splits, same skips as before — means the feedback wasn't actually applied; something has to change, however small.
+   - "No — I'll explain what to change" → immediately call ask_user again, in the same turn, with kind: "free_text" asking what they'd like changed (e.g. "What would you like to change about the plan?"). Do this right away — don't end the turn, and don't guess at what might be wrong on your own reasoning first. This has to happen through ask_user rather than by waiting for an ordinary chat reply: once this exchange ends without it, these instructions won't be back in view for whatever the user types next. Once you have their answer, revise the plan using it, restate the revised plan as a new numbered list, and run the same ask_user gate again (back to step 6). Giving concrete, specific feedback (e.g. "drop the VPN page, just keep expense policy") is not the same as approving the revised plan — it's the input the revision is built from, and it still has to clear the same gate the first draft did. Don't treat the detail or specificity of the feedback as implicit sign-off that lets you skip straight to step 8; "the user already told me what they want, so there's no need to ask again" is exactly the rationalization this step exists to close. A restated plan that comes back unchanged — same titles, same splits, same skips as before — means the feedback wasn't actually applied; something has to change, however small.
 
 8. Execute. For each confirmed plan item, call wiki_create_page or wiki_update_page (append or replace, matching what that plan line said). Every one of these calls fills two separate content fields from the same source excerpt, not one: corpus/content holds your organized page body, and sourceText holds the untouched original passage, copied verbatim from the document — even though this duplicates text you already used for corpus/content. Before sending the call, check the arguments you're about to submit for a sourceText key; if it isn't there, add it now. Treating sourceText as optional-and-skippable is the single most common mistake here — it's listed as an optional parameter in the tool's own schema, but this skill requires it on every call in this step; omitting it is not a smaller, acceptable version of this step, it's leaving the step half-done.
 
