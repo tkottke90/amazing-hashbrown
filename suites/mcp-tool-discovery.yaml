@@ -11,10 +11,14 @@ suite:
     real model behavior: does it search then explicitly grant an MCP tool
     before expecting to call it (mtd-001), and does an unrelated request
     leave the discovery/grant path untouched rather than speculatively
-    pulling something in (mtd-002). No local MCP server is reachable from
-    the environment this suite was authored in, so neither scenario has
-    been run yet — see the design doc's §8/the implementing PR for the
-    exact command to run it.
+    pulling something in (mtd-002). Neither scenario could actually pass
+    before now: bin/eval-setup.ts's evalTools fixture list omitted
+    search_mcp_tools and use_mcp_tools themselves (they're static,
+    always-bound production tools per chat-agent.ts, not the dynamic/live-
+    server-dependent MCP tools that list deliberately excludes), so neither
+    was ever offered to the model as a callable option. No real MCP server
+    is needed to run this suite — tool-call/tool-sequence scenarios only
+    inspect the model's proposed tool_calls and never execute a tool.
   passingThreshold: 0.85
 
 scenarios:
@@ -37,8 +41,9 @@ scenarios:
           "invoice processing".
       - tool: search_mcp_tools
         args: { keyword: 'workflow' }
-        result: >
-          [{"toolId":"n8n:workflow_search","name":"workflow_search","description":"Search n8n workflows by keyword"}]
+        result:
+          text: >
+            [{"toolId":"n8n:workflow_search","name":"workflow_search","description":"Search n8n workflows by keyword"}]
     tool: use_mcp_tools
 
   - id: mtd-002-unrelated-request-does-not-speculatively-grant
