@@ -240,6 +240,13 @@ export interface ThreadInstance {
   // which archived threads are deliberately excluded from.
   archivedAt: Signal<string | null>;
   title: Signal<string | null>;
+  // The Wiki Domain id this thread is currently oriented to (see
+  // GLOSSARY.md "Wiki Orientation"), or null. Seeded by hydrate() from the
+  // thread's persisted activeWikiId, kept live by the 'wiki_oriented' SSE
+  // case below (fires for a self-triggered wiki_orient tool call on any
+  // surface, not just wiki chat) and by setActiveWikiId (the mechanical
+  // "Orient to wiki" menu's REST handlers).
+  activeWikiId: Signal<string | null>;
   // True while a turn this tab is not streaming holds the thread — a timed
   // wake-up or sub-agent notification turn, or this tab's own turn after
   // its live stream dropped. Seeded from the server's `activeTurn` on
@@ -249,6 +256,7 @@ export interface ThreadInstance {
   backgroundTurnActive: Signal<boolean>;
   markBackgroundTurn: (active: boolean) => void;
   setThreadModel: (provider: string, model: string) => void;
+  setActiveWikiId: (wikiId: string | null) => void;
   hydrate: () => Promise<void>;
   sendMessage: (
     content: string,
@@ -312,6 +320,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
   const taskRun = signal<TaskRunInfo | null>(null);
   const archivedAt = signal<string | null>(null);
   const title = signal<string | null>(null);
+  const activeWikiId = signal<string | null>(null);
   const backgroundTurnActive = signal(false);
 
   let _currentAssistantId: string | null = null;
@@ -326,6 +335,14 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
 
   function setThreadModel(provider: string, model: string): void {
     activeThreadModel.value = { provider, model };
+  }
+
+  // Called by the mechanical "Orient to wiki" menu's REST handlers once the
+  // request succeeds — the response already carries the persisted state, so
+  // this just syncs the local display signal, same as the optimistic-append
+  // callers do for messages.value.
+  function setActiveWikiId(wikiId: string | null): void {
+    activeWikiId.value = wikiId;
   }
 
   // Auto-fills the model chip whenever this thread has no explicit model
@@ -358,6 +375,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
         activeTurn?: boolean;
         title?: string;
         archivedAt?: string | null;
+        activeWikiId?: string | null;
       };
       const hydrated = data.messages.map(reviveMessage);
       batch(() => {
@@ -366,6 +384,7 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
         taskRun.value = data.taskRun ?? null;
         archivedAt.value = data.archivedAt ?? null;
         title.value = data.title ?? null;
+        activeWikiId.value = data.activeWikiId ?? null;
         // A turn this tab is streaming itself is not a background turn.
         backgroundTurnActive.value = !isStreaming.value && (data.activeTurn ?? false);
         summaryPath.value = data.summaryPath ?? null;
@@ -548,8 +567,12 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
         break;
 
       case 'wiki_oriented':
-        // No message of its own — a pure side effect the wiki ingestion
-        // chat opts into via onWikiOriented; a no-op for every other caller.
+        // No message of its own. activeWikiId always tracks the latest
+        // orientation event regardless of caller (see its own doc comment);
+        // onWikiOriented is additionally still fired for callers (wiki
+        // ingestion chat) that bridge it into their own, separately-scoped
+        // display signal.
+        activeWikiId.value = evt.wikiId;
         opts.onWikiOriented?.(evt);
         break;
 
@@ -903,9 +926,11 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
     taskRun,
     archivedAt,
     title,
+    activeWikiId,
     backgroundTurnActive,
     markBackgroundTurn,
     setThreadModel,
+    setActiveWikiId,
     hydrate,
     sendMessage,
     submitHitlAnswer,

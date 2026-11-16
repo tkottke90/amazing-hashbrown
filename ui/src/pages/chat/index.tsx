@@ -16,6 +16,8 @@ import {
   type FavoriteModel,
   type ProviderInfo,
 } from '@/hooks/use-providers';
+import { fetchWikiDomains, wikiDomains } from '@/hooks/use-wiki-domains';
+import type { WikiDomain } from '@/services/wiki-api';
 import {
   activeThreadAfterAgentState,
   activeThreadId,
@@ -50,6 +52,10 @@ function ChatComposer({
   activeModel,
   onModelSelect,
   threadId,
+  wikiDomains,
+  activeWikiId,
+  onOrientToWiki,
+  onClearWikiOrientation,
 }: {
   inputValue: Signal<string>;
   stagedAttachments: Signal<StagedAttachment[]>;
@@ -64,6 +70,10 @@ function ChatComposer({
   activeModel?: string | null;
   onModelSelect: (provider: string, model: string) => void;
   threadId: string;
+  wikiDomains: WikiDomain[];
+  activeWikiId: string | null;
+  onOrientToWiki: (wikiId: string) => void;
+  onClearWikiOrientation: () => void;
 }) {
   return (
     <ChatInput
@@ -89,6 +99,10 @@ function ChatComposer({
       onWikiReferencesChange={(next) => {
         stagedWikiReferences.value = next;
       }}
+      wikiDomains={wikiDomains}
+      activeWikiId={activeWikiId}
+      onOrientToWiki={onOrientToWiki}
+      onClearWikiOrientation={onClearWikiOrientation}
     />
   );
 }
@@ -112,7 +126,36 @@ export function ThreadView() {
 
   useEffect(() => {
     void fetchProviders();
+    void fetchWikiDomains();
   }, []);
+
+  // Mechanical (non-LLM) wiki orientation — see GLOSSARY.md's "Wiki
+  // Orientation" section and
+  // docs/superpowers/specs/2026-11-16-chat-wiki-orientation-menu-design.md.
+  // Plain REST calls, not SSE: there's no agent turn running when the user
+  // clicks this menu item. The response already carries the persisted
+  // message record, so it's appended directly rather than optimistically.
+  async function handleOrientToWiki(wikiId: string) {
+    const res = await fetch(`/api/v1/threads/${activeThreadId.value}/wiki-orientation`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wikiId }),
+    });
+    if (!res.ok) return;
+    const message = await res.json();
+    thread.messages.value = [...thread.messages.value, message];
+    thread.setActiveWikiId(wikiId);
+  }
+
+  async function handleClearWikiOrientation() {
+    const res = await fetch(`/api/v1/threads/${activeThreadId.value}/wiki-orientation/clear`, {
+      method: 'POST',
+    });
+    if (!res.ok) return;
+    const message = await res.json();
+    thread.messages.value = [...thread.messages.value, message];
+    thread.setActiveWikiId(null);
+  }
 
   function handleSend() {
     const content = inputValue.value.trim();
@@ -209,6 +252,10 @@ export function ThreadView() {
           activeModel={thread.activeThreadModel.value?.model}
           onModelSelect={thread.setThreadModel}
           threadId={activeThreadId.value}
+          wikiDomains={wikiDomains.value}
+          activeWikiId={thread.activeWikiId.value}
+          onOrientToWiki={handleOrientToWiki}
+          onClearWikiOrientation={handleClearWikiOrientation}
         />
         <AfterAgentIndicator state={activeThreadAfterAgentState.value} showLabel className="mt-2" />
       </div>

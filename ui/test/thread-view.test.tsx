@@ -20,6 +20,11 @@ jest.mock('@/hooks/use-providers', () => ({
   fetchProviders: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('@/hooks/use-wiki-domains', () => ({
+  wikiDomains: signal([]),
+  fetchWikiDomains: jest.fn().mockResolvedValue(undefined),
+}));
+
 import { ThreadView } from '@/pages/chat';
 
 // Mirrors workspace-chat-tab.test.tsx's own stubThreadInstance() — this file
@@ -41,9 +46,11 @@ function stubThreadInstance(): ThreadInstance {
     taskRun: signal(null),
     archivedAt: signal(null),
     title: signal(null),
+    activeWikiId: signal(null),
     backgroundTurnActive: signal(false),
     markBackgroundTurn: jest.fn(),
     setThreadModel: jest.fn(),
+    setActiveWikiId: jest.fn(),
     hydrate: jest.fn().mockResolvedValue(undefined),
     sendMessage: jest.fn().mockResolvedValue(undefined),
     submitHitlAnswer: jest.fn().mockResolvedValue(undefined),

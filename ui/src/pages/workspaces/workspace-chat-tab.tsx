@@ -18,9 +18,11 @@ import {
   type FavoriteModel,
   type ProviderInfo,
 } from '@/hooks/use-providers';
+import { fetchWikiDomains, wikiDomains } from '@/hooks/use-wiki-domains';
 import { useThreadInstance } from '@/hooks/use-thread';
 import { applyThreadReplacement, patchWorkspace, refreshWorkspaces } from '@/hooks/use-workspaces';
 import type { Workspace } from '@/services/workspaces-api';
+import type { WikiDomain } from '@/services/wiki-api';
 import { randomUUID } from '@/lib/utils';
 
 // Its own subcomponent so a keystroke here (which only flips `inputValue`)
@@ -46,6 +48,10 @@ function ChatComposer({
   workspaceId,
   autoApproveShell,
   onToggleAutoApproveShell,
+  wikiDomains,
+  activeWikiId,
+  onOrientToWiki,
+  onClearWikiOrientation,
 }: {
   inputValue: Signal<string>;
   stagedAttachments: Signal<StagedAttachment[]>;
@@ -65,6 +71,10 @@ function ChatComposer({
   workspaceId: string;
   autoApproveShell?: boolean;
   onToggleAutoApproveShell: () => void;
+  wikiDomains: WikiDomain[];
+  activeWikiId: string | null;
+  onOrientToWiki: (wikiId: string) => void;
+  onClearWikiOrientation: () => void;
 }) {
   return (
     <ChatInput
@@ -95,6 +105,10 @@ function ChatComposer({
       onWikiReferencesChange={(next) => {
         stagedWikiReferences.value = next;
       }}
+      wikiDomains={wikiDomains}
+      activeWikiId={activeWikiId}
+      onOrientToWiki={onOrientToWiki}
+      onClearWikiOrientation={onClearWikiOrientation}
     />
   );
 }
@@ -132,6 +146,7 @@ export function WorkspaceChatTab({
 
   useEffect(() => {
     void fetchProviders();
+    void fetchWikiDomains();
   }, []);
 
   useEffect(() => {
@@ -172,6 +187,34 @@ export function WorkspaceChatTab({
       ref,
     );
     if (next) stagedWikiReferences.value = next;
+  }
+
+  // Mechanical (non-LLM) wiki orientation — see GLOSSARY.md's "Wiki
+  // Orientation" section and
+  // docs/superpowers/specs/2026-11-16-chat-wiki-orientation-menu-design.md.
+  // Plain REST calls, not SSE: there's no agent turn running when the user
+  // clicks this menu item. The response already carries the persisted
+  // message record, so it's appended directly rather than optimistically.
+  async function handleOrientToWiki(wikiId: string) {
+    const res = await fetch(`/api/v1/threads/${workspace.threadId}/wiki-orientation`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wikiId }),
+    });
+    if (!res.ok) return;
+    const message = await res.json();
+    thread.messages.value = [...thread.messages.value, message];
+    thread.setActiveWikiId(wikiId);
+  }
+
+  async function handleClearWikiOrientation() {
+    const res = await fetch(`/api/v1/threads/${workspace.threadId}/wiki-orientation/clear`, {
+      method: 'POST',
+    });
+    if (!res.ok) return;
+    const message = await res.json();
+    thread.messages.value = [...thread.messages.value, message];
+    thread.setActiveWikiId(null);
   }
 
   async function handleSummarizeClick() {
@@ -347,6 +390,10 @@ export function WorkspaceChatTab({
             onToggleAutoApproveShell={() =>
               void patchWorkspace(workspace.id, { autoApproveShell: !workspace.autoApproveShell })
             }
+            wikiDomains={wikiDomains.value}
+            activeWikiId={thread.activeWikiId.value}
+            onOrientToWiki={handleOrientToWiki}
+            onClearWikiOrientation={handleClearWikiOrientation}
           />
         </div>
       </div>

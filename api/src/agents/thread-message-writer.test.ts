@@ -16,6 +16,7 @@ import {
   recordHitlPrompt,
   resolveHitlPrompt,
   recordWikiUpdate,
+  recordWikiOrientation,
   recordResourceCard,
   recordTaskRunMarker,
   recordSubAgentMarker,
@@ -661,6 +662,50 @@ describe('agents/thread-message-writer', () => {
         location: '/tmp/projects/my-project',
         workspaceId: 'ws-2',
       });
+    });
+  });
+
+  describe('recordWikiOrientation', () => {
+    let store: ThreadStore;
+    let dir: string;
+
+    before(() => {
+      ({ store, dir } = makeStore());
+      store.upsertThreadOnFirstMessage('t1', 'Hello');
+    });
+    after(() => {
+      store.close();
+      rmSync(dir, { recursive: true });
+    });
+
+    it('inserts a wiki_orientation row with wikiId/wikiDescription for action: set', () => {
+      const record = recordWikiOrientation(
+        store,
+        't1',
+        'o1',
+        'set',
+        'user',
+        'user preferences, personal context, and biography',
+      );
+      expect(record).to.not.equal(null);
+      expect(record!.kind).to.equal('wiki_orientation');
+      expect(record!.payload).to.deep.equal({
+        action: 'set',
+        wikiId: 'user',
+        wikiDescription: 'user preferences, personal context, and biography',
+      });
+    });
+
+    it('omits wikiId/wikiDescription entirely (not just falsy) for action: cleared', () => {
+      const record = recordWikiOrientation(store, 't1', 'o2', 'cleared', null, null);
+      expect(record!.payload).to.deep.equal({ action: 'cleared' });
+    });
+
+    it('returns the full ThreadMessageRecord, not just a seq', () => {
+      const record = recordWikiOrientation(store, 't1', 'o3', 'set', 'self', 'agent identity');
+      expect(record!.id).to.equal('o3');
+      expect(record!.threadId).to.equal('t1');
+      expect(typeof record!.seq).to.equal('number');
     });
   });
 

@@ -11,6 +11,7 @@ import { TaskRunMarkerMessage } from './task-run-marker-message';
 import { SubAgentMarkerMessage } from './sub-agent-marker-message';
 import { WakeupCard } from './wakeup-card';
 import { WakeupFiredMarker } from './wakeup-fired-marker';
+import { WikiOrientationMessage } from './wiki-orientation-message';
 import type { ThreadMessage } from '../types/thread-message';
 
 interface ThreadMessageItemProps {
@@ -109,5 +110,8 @@ export function ThreadMessageItem({
 
     case 'wakeup_fired':
       return <WakeupFiredMarker message={message} />;
+
+    case 'wiki_orientation':
+      return <WikiOrientationMessage message={message} />;
   }
 }

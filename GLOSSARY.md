@@ -170,6 +170,16 @@ How a user explicitly carries an existing wiki page's content into a chat turn, 
 A `{Wiki Domain, path, title}` tuple a user explicitly stages on a chat message, naming an existing wiki page whose content should be read into that turn — distinct from a file attachment, and from the implicit, agent-inferred lookups `wiki_search`/`wiki_read_page` otherwise require. Resolved from the live page only once that turn is actually invoked, the same way a Skill's body is, rather than when it's staged (see ADR-0055); the persisted record never carries more than the tuple itself, never the page's content.
 _Avoid_: Wiki attachment, document reference, wiki citation
 
+# Wiki Orientation
+
+A mechanical, agent-independent way for a user to orient a conversation to a Wiki Domain from the chat input's "Orient to wiki" menu, instead of waiting on the agent to infer the need and call `wiki_orient` itself.
+
+## Language
+
+**Wiki Orientation**:
+A thread's single, currently-active Wiki Domain for ambient context, persisted as `threads.active_wiki_id`. Set (or cleared) only via the chat-input "Orient to wiki" menu — never by the agent's own self-triggered `wiki_orient` tool calls, which are a separate, untouched mechanism and don't write this field. Makes the domain's full orientation content (schema, index, recent log) part of the model's system prompt fresh on every subsequent model call (`wiki-orientation-context.middleware.ts`), without a tool call or an LLM turn, and surfaces only a small confirmation card in the chat timeline — the wiki's name and short description, never a generated summary.
+_Avoid_: Active wiki, bound wiki (that's a workspace's separate write-target binding), wiki context
+
 # Skill Invocation & Runtime Access
 
 How a running skill learns which skill is currently active, and reaches its own scripts and reference docs at runtime instead of only getting its body text injected once.

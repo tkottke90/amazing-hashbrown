@@ -58,6 +58,7 @@ import { toolSyntaxMiddleware } from './middleware/tool-syntax.middleware.js';
 import { GATED_SKILL_REGISTRATIONS } from './gated-skill-registrations.js';
 import { toolAccessMiddleware } from './tool-access.middleware.js';
 import { ambientContextMiddleware } from './ambient-context.middleware.js';
+import { wikiOrientationContextMiddleware } from './wiki-orientation-context.middleware.js';
 import { modelInputSnapshotMiddleware } from './model-input-snapshot.middleware.js';
 import {
   getSubAgentToolIds,
@@ -718,6 +719,7 @@ async function buildChatAgent(provider?: string, model?: string) {
       toolAccessMiddleware,
       createMcpToolDiscoveryMiddleware(mcpTools),
       ambientContextMiddleware,
+      wikiOrientationContextMiddleware,
       createContextWindowMiddleware(env.chat?.contextWindow),
       afterAgentMiddleware,
       // Innermost wrapModelCall — must stay last (see its header comment).
@@ -894,6 +896,7 @@ async function buildWorkspaceChatAgent(
       toolAccessMiddleware,
       createMcpToolDiscoveryMiddleware(mcpTools),
       ambientContextMiddleware,
+      wikiOrientationContextMiddleware,
       createContextWindowMiddleware(env.chat?.contextWindow),
       afterAgentMiddleware,
       // Innermost wrapModelCall — must stay last (see its header comment).
@@ -1095,6 +1098,7 @@ export async function buildTaskAgent(
       toolAccessMiddleware,
       createMcpToolDiscoveryMiddleware(mcpTools),
       ambientContextMiddleware,
+      wikiOrientationContextMiddleware,
       createContextWindowMiddleware(env.chat?.contextWindow),
       afterAgentMiddleware,
       // Innermost wrapModelCall — must stay last (see its header comment).

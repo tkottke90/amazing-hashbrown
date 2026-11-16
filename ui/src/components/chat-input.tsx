@@ -21,6 +21,7 @@ import {
 } from '@/services/artifacts-api';
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -35,6 +36,7 @@ import {
   whenMouse,
 } from '@/components/provider-model-picker';
 import type { FavoriteModel, ProviderInfo } from '@/hooks/use-providers';
+import type { WikiDomain } from '@/services/wiki-api';
 import { useIsCoarsePointer } from '@/hooks/use-is-coarse-pointer';
 import { FavoriteModelItems } from '@/components/favorite-model-items';
 import { openThreadToolsDrawer } from '@/hooks/use-thread-tools';
@@ -171,6 +173,19 @@ export interface ChatInputProps {
   autoApproveShell?: boolean;
   /** Toggles autoApproveShell — from both the add-menu item and the chip. */
   onToggleAutoApproveShell?: () => void;
+  /**
+   * Wiki Domains listed in the "Orient to wiki" submenu — omit (or pass an
+   * empty array) to hide the submenu entirely. See GLOSSARY.md's "Wiki
+   * Orientation" section and
+   * docs/superpowers/specs/2026-11-16-chat-wiki-orientation-menu-design.md.
+   */
+  wikiDomains?: WikiDomain[];
+  /** The wiki id currently oriented to, for the submenu's checkmark. */
+  activeWikiId?: string | null;
+  /** Fires with the selected domain's id when a wiki is picked from the submenu. */
+  onOrientToWiki?: (wikiId: string) => void;
+  /** Fires when "Clear wiki orientation" is selected — only rendered when activeWikiId is set. */
+  onClearWikiOrientation?: () => void;
 }
 
 export interface ChatInputChipProps extends JSX.HTMLAttributes<HTMLSpanElement> {
@@ -245,6 +260,10 @@ export function ChatInput({
   workspaceId,
   autoApproveShell,
   onToggleAutoApproveShell,
+  wikiDomains,
+  activeWikiId,
+  onOrientToWiki,
+  onClearWikiOrientation,
 }: ChatInputProps) {
   const uploadsInFlight = useSignal<{ localId: string; filename: string }[]>([]);
   const canSend =
@@ -918,6 +937,37 @@ export function ChatInput({
                         onSelect={(provider, model) => onModelSelect?.(provider, model)}
                       />
                       {providerModelItems}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                </>
+              )}
+              {wikiDomains && wikiDomains.length > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>Orient to wiki</DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      {wikiDomains.map((domain) => (
+                        <DropdownMenuCheckboxItem
+                          key={domain.id}
+                          checked={domain.id === activeWikiId}
+                          title={domain.domain}
+                          onSelect={() => onOrientToWiki?.(domain.id)}
+                        >
+                          {domain.id}
+                        </DropdownMenuCheckboxItem>
+                      ))}
+                      {activeWikiId && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            title="Only clears the mechanical orientation set here — if the agent oriented to a wiki itself via a tool call, that content already in the conversation can't be un-said."
+                            onSelect={() => onClearWikiOrientation?.()}
+                          >
+                            Clear wiki orientation
+                          </DropdownMenuItem>
+                        </>
+                      )}
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>
                 </>

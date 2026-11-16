@@ -18,6 +18,7 @@ import { webFetchTool } from './tools/web-fetch.tool.js';
 import { makeGetToolKeyTool } from './tools/get-tool-key.tool.js';
 import { createContextWindowMiddleware, getCheckpointer } from './chat-agent.js';
 import { ambientContextMiddleware } from './ambient-context.middleware.js';
+import { wikiOrientationContextMiddleware } from './wiki-orientation-context.middleware.js';
 import { buildWikiIngestionSystemPrompt } from './wiki-ingestion-system-prompt.js';
 import { contentBlockSanitizerMiddleware } from './content-block-sanitizer.middleware.js';
 import { createRecursionGuardMiddleware } from './recursion-guard.middleware.js';
@@ -74,6 +75,7 @@ async function buildWikiIngestionAgent(provider?: string, model?: string) {
       binaryContentFetchMiddleware,
       createContextWindowMiddleware(env.chat?.contextWindow),
       ambientContextMiddleware,
+      wikiOrientationContextMiddleware,
     ],
   });
 

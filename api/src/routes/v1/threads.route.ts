@@ -10,6 +10,7 @@ import { getWakeupRegistry } from '../../services/wakeup-registry.js';
 import { createProvider } from '../../services/provider-factory.js';
 import { configManager, env } from '../../config/env.js';
 import { readRawToolsConfig } from './tool-settings.handlers.js';
+import { getWikiRegistry } from '../../services/wiki.js';
 import {
   listThreadsHandler,
   getThreadHandler,
@@ -26,6 +27,9 @@ import {
   putThreadToolsHandler,
   pendingWakeupHandler,
   deleteThreadToolsHandler,
+  setWikiOrientationHandler,
+  clearWikiOrientationHandler,
+  toClientMessage,
 } from './threads.handlers.js';
 
 export const threadsRouter = Router();
@@ -160,6 +164,35 @@ threadsRouter.post('/:id/unarchive', (req: Request, res: Response) => {
     return;
   }
   res.json(result.data);
+});
+
+// Mechanical (non-LLM) wiki orientation — see GLOSSARY.md's "Wiki
+// Orientation" section and
+// docs/superpowers/specs/2026-11-16-chat-wiki-orientation-menu-design.md.
+threadsRouter.post('/:id/wiki-orientation', async (req: Request, res: Response) => {
+  const { id } = req.params as { id: string };
+  const { wikiId } = req.body as { wikiId?: string };
+  if (typeof wikiId !== 'string' || !wikiId.trim()) {
+    res.status(400).json({ error: 'wikiId is required' });
+    return;
+  }
+  const registry = await getWikiRegistry();
+  const result = setWikiOrientationHandler(getThreadStore(), registry, id, wikiId);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(toClientMessage(result.data));
+});
+
+threadsRouter.post('/:id/wiki-orientation/clear', (req: Request, res: Response) => {
+  const { id } = req.params as { id: string };
+  const result = clearWikiOrientationHandler(getThreadStore(), id);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(toClientMessage(result.data));
 });
 
 threadsRouter.delete('/:id', async (req: Request, res: Response) => {

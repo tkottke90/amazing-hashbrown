@@ -232,3 +232,65 @@ describe('routes/v1/threads — archive/unarchive', () => {
     expect(res.status).to.equal(404);
   });
 });
+
+// setWikiOrientationHandler/clearWikiOrientationHandler are unit-tested on
+// their own (threads.handlers.test.ts), including the registry-dependent
+// success/404-unknown-wiki cases for the "set" side (via a stub
+// WikiRegistry) — there is no existing seam to swap the route's own
+// getWikiRegistry() singleton for a test fixture (no wiki.route.test.ts
+// exists in this codebase either, for the same reason), so these cases
+// cover only this route's own thin wiring: body validation that happens
+// before the registry is ever reached, and the registry-independent
+// "clear" side end to end.
+describe('routes/v1/threads — wiki orientation', () => {
+  let dir: string;
+  let baseUrl: string;
+  let close: () => Promise<void>;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'threads-route-wiki-orientation-test-'));
+    const db = openDatabase(join(dir, 'test.db'));
+    bootThreadStore(db);
+    getThreadStore().upsertThreadOnFirstMessage('chat-1', 'A chat', 'chat');
+    ({ baseUrl, close } = await startTestServer(threadsRouter, '/api/v1/threads'));
+  });
+
+  afterEach(async () => {
+    await close();
+    getThreadStore().close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const post = (path: string, body?: unknown) =>
+    fetch(`${baseUrl}${path}`, {
+      method: 'POST',
+      ...(body !== undefined
+        ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+        : {}),
+    });
+
+  it('400s with no wikiId in the body [orchestration]', async () => {
+    const res = await post('/chat-1/wiki-orientation', {});
+    expect(res.status).to.equal(400);
+    expect(await res.json()).to.deep.equal({ error: 'wikiId is required' });
+  });
+
+  it('400s with an empty wikiId [orchestration]', async () => {
+    const res = await post('/chat-1/wiki-orientation', { wikiId: '  ' });
+    expect(res.status).to.equal(400);
+  });
+
+  it('404s clearing orientation on an unknown thread [orchestration]', async () => {
+    const res = await post('/no-such-thread/wiki-orientation/clear');
+    expect(res.status).to.equal(404);
+  });
+
+  it('clears orientation and returns the cleared card [orchestration]', async () => {
+    const res = await post('/chat-1/wiki-orientation/clear');
+    expect(res.status).to.equal(200);
+    const body = (await res.json()) as { kind: string; action: string };
+    expect(body.kind).to.equal('wiki_orientation');
+    expect(body.action).to.equal('cleared');
+    expect(getThreadStore().getThreadMeta('chat-1')!.activeWikiId).to.equal(null);
+  });
+});
