@@ -386,6 +386,45 @@ Step 1 (always first, before anything else): determine which path applies below.
   // ask_user — the identical pre-existing issue already flagged above,
   // recurring on one more scenario. No mechanism ties step 4/7/8's content to
   // whether a model encodes a question as a tool call; left untouched.
+  //
+  // Third tightening, added after rerunning the second tightening above for
+  // real (suites/ingest-document.yaml, 2026-11-16): local and Digital Ocean
+  // both reached 7/7 (100%) — the step 7 architecture fix and the sourceText
+  // schema rewording both held up under an actual test this time.
+  // Ornith regressed on two scenarios that had passed in every prior round
+  // (idoc-006, idoc-007), neither touched by the second tightening's edits:
+  // - idoc-006 (empty input) — Ornith fabricated an entire fictional
+  //   "Nimbus Analytics" release-notes document, in direct violation of
+  //   step 3's existing, already-explicit prohibition — the identical
+  //   hallucination class already flagged for Digital Ocean on this same
+  //   scenario in the first tightening above (which, notably, did not
+  //   hallucinate this round). Cross-provider, already-flagged, not a
+  //   wording gap — the instruction is already as explicit as it can be.
+  // - idoc-007 (stop after write conflict) — Ornith called wiki_read_page on
+  //   the blocking page instead of relaying the conflict and stopping. Root
+  //   cause was this skill's own wording: step 11 said to relay-and-stop,
+  //   then immediately followed with "the tool's own response already says
+  //   what to do next (read the blocking page, append, or force...)" — which
+  //   reads as license to go do one of those right away. Reworded to say
+  //   those are the user's options to choose from after the conflict is
+  //   relayed, never an immediate follow-up action to take unprompted.
+  // Ornith's idoc-004 (sourceText) still failed even with the schema fix
+  // confirmed present in the tool source — its own reasoning states the
+  // correct intent ("I need to include sourceText verbatim") immediately
+  // before emitting a tool call that omits the field anyway. Reasoning is
+  // correct; encoding it into the structured call isn't. Reads as a
+  // capability ceiling at this model's quantization, not a further wording
+  // or schema gap — left untouched.
+  // Lemonade (3/7, prose_question: 4) showed the identical prose-vs-tool-call
+  // pattern already flagged above on all four of its failures, including a
+  // newly-affected idoc-006 — every one had correct reasoning (one scenario
+  // even quoted this skill's own step 3 sentence near-verbatim) and correct
+  // plan content where a content judge ran, failing only on whether the
+  // decided tool call actually got emitted as a tool call versus prose.
+  // idoc-005 is mechanically more exposed to this now (three sequential
+  // ask_user opportunities instead of one), which plausibly explains both
+  // its continued failure and part of the risen count without any of it
+  // being wording-fixable. Left untouched.
   {
     name: 'ingest-document',
     description:
@@ -422,6 +461,6 @@ Steps:
 
 10. Lint. Call wiki_lint on the domain and fix anything it surfaces before finishing — same norm the Wiki Chat ingestion agent already follows after a write batch. Don't finish the turn with known lint findings still open.
 
-11. Relay failures. If any wiki_create_page or wiki_update_page call in step 8 reports a conflict (e.g. "duplicate" despite the plan saying "new" — a stale search result or a race) or a validation error, relay the tool's own message to the user as-is and stop there — don't retry with a workaround, don't silently force past it, and don't continue executing the plan's remaining items as if nothing happened. The tool's own response already says what to do next (read the blocking page, append, or force with a distinguishing title); this skill doesn't duplicate that logic.`,
+11. Relay failures. If any wiki_create_page or wiki_update_page call in step 8 reports a conflict (e.g. "duplicate" despite the plan saying "new" — a stale search result or a race) or a validation error, relay the tool's own message to the user as-is and stop there — don't retry with a workaround, don't silently force past it, and don't continue executing the plan's remaining items as if nothing happened. The tool's own response names what could come next (read the blocking page, append, or force with a distinguishing title) — that's context for the user's decision, not a next action for you to take on your own. Reading the blocking page, appending, or forcing are all things you do only after relaying the conflict and getting the user's direction, never as an immediate, silent follow-up to the conflict itself — calling wiki_read_page right away because the conflict message mentioned it is the same mistake as retrying with a workaround.`,
   },
 ];
