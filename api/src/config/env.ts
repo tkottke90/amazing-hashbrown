@@ -380,6 +380,32 @@ export const McpToolStubSchema = z.object({
   enabled: z.boolean().default(true),
 });
 
+// Per-thread result cache for allowlisted MCP tools (tool-config.ts's
+// getCacheableToolIds()) — see api/src/services/mcp-tool-cache.ts and
+// docs/superpowers/specs/2026-11-13-mcp-tool-result-caching-design.md.
+// ttlMs is the global default a tool's own cacheTtlMs override (ToolEntry)
+// falls back to; threadEntryCap/ledgerCap bound this cache's footprint per
+// thread, independent of each other.
+export const McpToolCacheSchema = z.object({
+  enabled: z.boolean().default(true),
+  ttlMs: z
+    .number()
+    .int()
+    .positive()
+    .default(5 * 60 * 1000),
+  threadEntryCap: z.number().int().positive().default(50),
+  ledgerCap: z.number().int().positive().default(10),
+});
+
+// Count-cap eviction for tool-content-store.ts's backing Map — deliberately
+// has no TTL field: that store's whole contract is "fetch this anytime
+// later in the conversation" (get_tool_key, web_fetch, wiki reference
+// expansion, attachment resolution, Turn Overflow truncation all rely on
+// it), and a TTL there would silently break that for every one of them.
+export const ToolContentStoreSchema = z.object({
+  maxEntries: z.number().int().positive().default(500),
+});
+
 export const ChatSchema = z.object({
   showErrorMessages: z.boolean().default(false),
   codeBlockWrap: z.boolean().default(false),
@@ -387,6 +413,8 @@ export const ChatSchema = z.object({
   conversationSearch: ConversationSearchSchema.optional(),
   workspaceSummary: WorkspaceSummarySchema.optional(),
   mcpToolStub: McpToolStubSchema.optional(),
+  mcpToolCache: McpToolCacheSchema.optional(),
+  toolContentStore: ToolContentStoreSchema.optional(),
   // How many days since a chat thread's updatedAt before it's excluded from
   // the sidebar's own thread list (the Sidebar Retention Window — see
   // GLOSSARY.md). 0 disables this. Deliberately defaults to a non-zero
@@ -577,6 +605,15 @@ export const ToolEntrySchema = z
     defaultInclude: ToolDefaultIncludeSchema.optional(),
     description: z.string().optional(),
     instructions: z.string().optional(),
+    // Opt-in per-tool result caching (MCP tools only — see
+    // getCacheableToolIds() in tool-config.ts). Named fields, not part of
+    // the catchall below, since this is a generic concept every tool can
+    // carry rather than a tool-specific extra like web_fetch's timeoutMs.
+    cacheable: z.boolean().optional(),
+    // null is a real, settable value ("clear the per-tool override, use the
+    // global env.chat.mcpToolCache.ttlMs default"), distinct from undefined
+    // ("never configured").
+    cacheTtlMs: z.number().int().positive().nullable().optional(),
   })
   .catchall(z.unknown());
 

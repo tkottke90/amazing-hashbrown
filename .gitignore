@@ -166,6 +166,11 @@ eval-logs/
 # also match lib/thread-reports/ (see the api/src/config/ fix earlier).
 /thread-reports/
 
+# Build-time generated harness-docs corpus (api/src/scripts/
+# build-harness-docs-index.ts) — regenerated fresh from GLOSSARY.md/
+# docs/App-Docs on every build/dev start, never hand-edited.
+/api/generated/
+
 # Local npm registry auth (copy .npmrc.template -> .npmrc)
 .npmrc
 

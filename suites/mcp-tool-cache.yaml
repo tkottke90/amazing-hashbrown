@@ -1,0 +1,77 @@
+suite:
+  id: mcp-tool-cache
+  name: MCP Tool Result Caching (Redundant Re-fetch Avoidance)
+  purpose: >
+    Verifies the model-facing judgment this feature adds on top of the harness's own deterministic
+    dedup (mcpToolToLangChain's cache, unit/orchestration-tested in
+    api/src/services/mcp-tool-cache.test.ts and api/src/agents/chat-agent.test.ts — this suite does
+    not re-test that mechanical layer). Specifically: does the model avoid reflexively re-calling a
+    cacheable MCP tool for a question already answerable from a result it already has, and does it
+    reach for forceRefresh specifically when told the underlying data changed, rather than never
+    using it or using it as a routine default. Root-cause motivation:
+    docs/superpowers/specs/2026-11-13-mcp-tool-result-caching-design.md.
+  passingThreshold: 0.8
+
+scenarios:
+  - id: MTC-001-answers-from-already-fetched-result
+    name: Agent answers a follow-up from an already-fetched result instead of re-calling the tool
+    purpose: >
+      Seeds a prior n8n__get_workflow_details call and its result, then asks a follow-up question
+      answerable entirely from that same result. This is the exact failure mode the root-cause
+      investigation found (docs/superpowers/specs/2026-11-13-mcp-tool-result-caching-design.md):
+      calling the same read-only tool with identical arguments minutes/steps later for no reason.
+      Nothing about the workflow changed between the two turns, so there is no reason to re-fetch.
+    type: tool-sequence
+    turns:
+      - user: 'Can you pull up the "Process Email" n8n workflow and tell me what it does?'
+      - tool: n8n__get_workflow_details
+        args:
+          workflowId: 'eGBmlvkWBp10uoim'
+          detailLevel: 'full'
+        result:
+          text: |
+            {"workflow":{"id":"eGBmlvkWBp10uoim","name":"Process Email","active":true,"nodeCount":55},
+            "nodes":[
+              {"name":"Gmail Trigger","type":"n8n-nodes-base.gmailTrigger"},
+              {"name":"Scorer","type":"n8n-nodes-base.code"},
+              {"name":"Gate","type":"n8n-nodes-base.code"},
+              {"name":"Add Label","type":"n8n-nodes-base.gmail"}
+            ]}
+      - user: 'Does that workflow have a node called "Scorer" in it?'
+    tool: '!n8n__get_workflow_details'
+
+  - id: MTC-002-forceRefresh-after-told-data-changed
+    name: Agent re-fetches with forceRefresh true after being told the resource changed
+    purpose: >
+      Same seeded prior call as MTC-001, but this time the user explicitly says they just published
+      a change to the workflow before asking a question that needs current state. The agent has
+      concrete reason to believe its existing result is stale, so it should re-fetch — and do so
+      via the forceRefresh argument (the harness's own dedup would otherwise serve the stale cached
+      result), not a bare identical call that would silently get served from cache again.
+    type: tool-sequence
+    turns:
+      - user: 'Can you pull up the "Process Email" n8n workflow and tell me what it does?'
+      - tool: n8n__get_workflow_details
+        args:
+          workflowId: 'eGBmlvkWBp10uoim'
+          detailLevel: 'full'
+        result:
+          text: |
+            {"workflow":{"id":"eGBmlvkWBp10uoim","name":"Process Email","active":true,"nodeCount":55},
+            "nodes":[
+              {"name":"Gmail Trigger","type":"n8n-nodes-base.gmailTrigger"},
+              {"name":"Scorer","type":"n8n-nodes-base.code"},
+              {"name":"Gate","type":"n8n-nodes-base.code"},
+              {"name":"Add Label","type":"n8n-nodes-base.gmail"}
+            ]}
+      - user: >-
+          Okay, I just published a new version of that workflow with a fix to the Scorer node — can
+          you check it again and confirm the fix is live?
+    tool: n8n__get_workflow_details
+    argChecks:
+      - path: workflowId
+        match: equals
+        value: 'eGBmlvkWBp10uoim'
+      - path: forceRefresh
+        match: equals
+        value: true

@@ -1040,6 +1040,30 @@ in your current toolset, don't try to satisfy it — not by calling anything und
 not by asking the user for missing details like a title. Present the stub's summary and key concepts
 as your answer instead, and say plainly that you don't currently have write access to store it.`;
 
+// Unconditional (no requiresAnyOf) — this describes a workspace-context
+// block and a tool-schema field that only exist when the tool-settings
+// system has actually marked an MCP tool cacheable (opt-in, off by
+// default), the same way mcp_tool_discovery above is unconditional even
+// though MCP tools themselves may or may not be connected. Harmless to
+// describe when there's nothing to match: the model simply never sees a
+// "Resources already fetched this thread" block or a forceRefresh argument
+// in that case. See docs/superpowers/specs/2026-11-13-mcp-tool-result-caching-design.md.
+const MCP_TOOL_CACHE_SECTION = `If your workspace context includes a block headed "Resources already fetched this thread", each
+line there names a tool call you already made and where its result lives — a disk path, or a
+get_tool_key reference. Re-reading from there (or trusting the summary already in front of you) is
+faster than calling the tool again, and the harness already skips the real call for you on a repeat
+request with the same arguments — so calling it again "to be safe" buys you nothing extra, just the
+same wait a second time. A line marked stale means its cache window has passed; it's still the last
+known answer, not wrong by default, so keep using it unless this specific question needs the
+current state.
+
+Some tools that support this additionally accept a forceRefresh argument. When you do have a
+concrete reason to re-fetch — you or the user just wrote to the resource, for instance — calling
+the tool again with the same arguments is not enough by itself: the same cache-skip described above
+still applies, so you will just get the stale result back again unless you also pass
+forceRefresh: true on that call. Reserve it for that case, not as a routine double-check — if
+nothing in the conversation suggests the data changed, omit it.`;
+
 // A second get_tool_key producer alongside web_fetch (see WEB_FETCH_SECTION
 // above) — gated on get_tool_key itself, not on web_fetch, since an
 // attachment can be offloaded in chat/workspace-chat/wiki-ingestion turns
@@ -1667,6 +1691,25 @@ A grant from \`use_mcp_tools\` lasts only for the rest of this turn — it does 
 reply. If the same MCP tool is needed again later in the conversation, search and grant it again at that
 point; don't assume an earlier grant is still in effect.`;
 
+// Added for issue #416. Always-on, like MCP_TOOL_DISCOVERY_SECTION above:
+// search_harness_docs is itself always bound, so this section's own
+// applicability never needs gating. Exact prose is an implementation-time
+// starting point, not yet validated via the auto-eval loop — no eval run
+// has exercised this wording yet. Deliberately scoped narrow: this tool
+// answers "what is X" questions from GLOSSARY.md/docs/App-Docs, not "when
+// should I use tool X" questions, which stay owned by each tool's own
+// section here — see docs/superpowers/specs/
+// 2026-11-13-harness-docs-tool-corpus-design.md for why that split exists.
+const SEARCH_HARNESS_DOCS_SECTION = `search_harness_docs looks up a reference/terminology question about how this app itself works — what a
+term means, what a concept is, or how something is configured (e.g. "what is a Widget", "what is the
+Self wiki", "where do I configure MCP servers"). Reach for it when the user (or you, mid-task) has a
+factual question about the harness itself that you can't already answer with confidence, rather than
+guessing or saying nothing.
+
+It does not answer "when should I use tool X" questions — that guidance lives in each tool's own
+section here, not in this lookup. If search_harness_docs has no answer, say so plainly rather than
+filling the gap with an assumption.`;
+
 // Motivated by auto-eval round 1 of suites/conversation-search.yaml
 // (2026-10-11, local/Lemonade/Ornith/Digital Ocean, judge anthropic) —
 // search_conversation (issue #276) had no system-prompt guidance anywhere in
@@ -2132,6 +2175,7 @@ const HARNESS_SECTIONS: HarnessSection[] = [
   { tag: 'memory', content: MEMORY_SECTION },
   { tag: 'notation', content: NOTATION_SECTION },
   { tag: 'mcp_tool_discovery', content: MCP_TOOL_DISCOVERY_SECTION },
+  { tag: 'search_harness_docs', content: SEARCH_HARNESS_DOCS_SECTION },
   {
     tag: 'search_conversation',
     content: SEARCH_CONVERSATION_SECTION,
@@ -2140,6 +2184,7 @@ const HARNESS_SECTIONS: HarnessSection[] = [
   { tag: 'wiki_navigation', content: WIKI_NAVIGATION_SECTION, requiresAnyOf: WIKI_TOOL_IDS },
   { tag: 'web_fetch', content: WEB_FETCH_SECTION, requiresAnyOf: ['web_fetch'] },
   { tag: 'attachment', content: ATTACHMENT_SECTION, requiresAnyOf: ['get_tool_key'] },
+  { tag: 'mcp_tool_cache', content: MCP_TOOL_CACHE_SECTION },
   {
     tag: 'wiki_ingest',
     content: WIKI_INGEST_SECTION,

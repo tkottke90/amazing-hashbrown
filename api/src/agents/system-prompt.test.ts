@@ -33,6 +33,8 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('</notation>');
       expect(result).to.include('<mcp_tool_discovery>');
       expect(result).to.include('</mcp_tool_discovery>');
+      expect(result).to.include('<search_harness_docs>');
+      expect(result).to.include('</search_harness_docs>');
       expect(result).to.include('<search_conversation>');
       expect(result).to.include('</search_conversation>');
       expect(result).to.include('<wiki_navigation>');
@@ -41,6 +43,8 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('</web_fetch>');
       expect(result).to.include('<attachment>');
       expect(result).to.include('</attachment>');
+      expect(result).to.include('<mcp_tool_cache>');
+      expect(result).to.include('</mcp_tool_cache>');
       expect(result).to.include('<wiki_ingest>');
       expect(result).to.include('</wiki_ingest>');
       expect(result).to.include('<rlm>');
@@ -65,20 +69,22 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('</block_on_user_action_routing>');
       const opens = (result.match(/<[a-z_]+>/g) ?? []).length;
       const closes = (result.match(/<\/[a-z_]+>/g) ?? []).length;
-      expect(opens).to.equal(19);
-      expect(closes).to.equal(19);
+      expect(opens).to.equal(21);
+      expect(closes).to.equal(21);
     });
 
-    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, notation, mcp tool discovery, search_conversation, wiki navigation, web fetch, attachment, wiki ingest, rlm, shell execution, waiting, image, search_skills, create_tasks, spawn_sub_agent, ask_user routing, hand_off_task routing, block_on_user_action routing', () => {
+    it('orders section tags matching HARNESS_SECTIONS order — identity, memory, notation, mcp tool discovery, search harness docs, search_conversation, wiki navigation, web fetch, attachment, mcp tool cache, wiki ingest, rlm, shell execution, waiting, image, search_skills, create_tasks, spawn_sub_agent, ask_user routing, hand_off_task routing, block_on_user_action routing', () => {
       const result = buildSystemPrompt();
       const identityTagIndex = result.indexOf('<identity>');
       const memoryTagIndex = result.indexOf('<memory>');
       const notationTagIndex = result.indexOf('<notation>');
       const mcpToolDiscoveryTagIndex = result.indexOf('<mcp_tool_discovery>');
+      const searchHarnessDocsTagIndex = result.indexOf('<search_harness_docs>');
       const searchConversationTagIndex = result.indexOf('<search_conversation>');
       const wikiTagIndex = result.indexOf('<wiki_navigation>');
       const webFetchTagIndex = result.indexOf('<web_fetch>');
       const attachmentTagIndex = result.indexOf('<attachment>');
+      const mcpToolCacheTagIndex = result.indexOf('<mcp_tool_cache>');
       const wikiIngestTagIndex = result.indexOf('<wiki_ingest>');
       const rlmTagIndex = result.indexOf('<rlm>');
       const shellTagIndex = result.indexOf('<shell_execution>');
@@ -94,10 +100,12 @@ describe('agents/system-prompt', () => {
       expect(memoryTagIndex).to.be.greaterThan(-1);
       expect(notationTagIndex).to.be.greaterThan(-1);
       expect(mcpToolDiscoveryTagIndex).to.be.greaterThan(-1);
+      expect(searchHarnessDocsTagIndex).to.be.greaterThan(-1);
       expect(searchConversationTagIndex).to.be.greaterThan(-1);
       expect(wikiTagIndex).to.be.greaterThan(-1);
       expect(webFetchTagIndex).to.be.greaterThan(-1);
       expect(attachmentTagIndex).to.be.greaterThan(-1);
+      expect(mcpToolCacheTagIndex).to.be.greaterThan(-1);
       expect(wikiIngestTagIndex).to.be.greaterThan(-1);
       expect(rlmTagIndex).to.be.greaterThan(-1);
       expect(shellTagIndex).to.be.greaterThan(-1);
@@ -112,11 +120,13 @@ describe('agents/system-prompt', () => {
       expect(identityTagIndex).to.be.lessThan(memoryTagIndex);
       expect(memoryTagIndex).to.be.lessThan(notationTagIndex);
       expect(notationTagIndex).to.be.lessThan(mcpToolDiscoveryTagIndex);
-      expect(mcpToolDiscoveryTagIndex).to.be.lessThan(searchConversationTagIndex);
+      expect(mcpToolDiscoveryTagIndex).to.be.lessThan(searchHarnessDocsTagIndex);
+      expect(searchHarnessDocsTagIndex).to.be.lessThan(searchConversationTagIndex);
       expect(searchConversationTagIndex).to.be.lessThan(wikiTagIndex);
       expect(wikiTagIndex).to.be.lessThan(webFetchTagIndex);
       expect(webFetchTagIndex).to.be.lessThan(attachmentTagIndex);
-      expect(attachmentTagIndex).to.be.lessThan(wikiIngestTagIndex);
+      expect(attachmentTagIndex).to.be.lessThan(mcpToolCacheTagIndex);
+      expect(mcpToolCacheTagIndex).to.be.lessThan(wikiIngestTagIndex);
       expect(wikiIngestTagIndex).to.be.lessThan(rlmTagIndex);
       expect(rlmTagIndex).to.be.lessThan(shellTagIndex);
       expect(shellTagIndex).to.be.lessThan(waitingTagIndex);
@@ -986,6 +996,7 @@ describe('agents/system-prompt', () => {
         'wiki_navigation',
         'web_fetch',
         'attachment',
+        'mcp_tool_cache',
         'wiki_ingest',
         'rlm',
         'shell_execution',
@@ -1013,6 +1024,15 @@ describe('agents/system-prompt', () => {
       // identity/memory above.
       const result = filterHarnessSections(buildSystemPrompt(), new Set());
       expect(result).to.include('<mcp_tool_discovery>');
+    });
+
+    it('never removes mcp_tool_cache regardless of the available set', () => {
+      // Deliberately ungated (no requiresAnyOf/requiresAllOf) — whether a
+      // tool is actually cacheable is a config.yaml/tool-settings fact, not
+      // something this tool-id-based filter can see, so this section is
+      // described unconditionally and is a no-op when nothing is cached.
+      const result = filterHarnessSections(buildSystemPrompt(), new Set());
+      expect(result).to.include('<mcp_tool_cache>');
     });
 
     it('removes wiki_navigation and wiki_ingest when no wiki tool is available, keeping web_fetch', () => {
