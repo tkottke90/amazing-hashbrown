@@ -1,0 +1,7 @@
+# Monitoring's Green Room pools every wait reason into one state, with no deliberate-wait action
+
+**Status:** accepted
+
+The Provider Activity Monitor's Green Room (GLOSSARY.md § Monitoring) shows, on each Provider's own Provider Line, everything not currently seated there — but that pools two genuinely different reasons a request isn't running yet: a Task that's `ready` and Pinned to that Provider but not yet dequeued by the task scheduler (even against an idle Provider with free capacity), and a live LLM call actually blocked on `ProviderQueue`'s concurrency gate. We chose not to distinguish them. Doing so means wiring two separate subsystems' state — the task scheduler's dequeue status and `ProviderQueue`'s in-memory wait queue — into one view, for a distinction that mostly doesn't change what a user would do about either: switch the Pinned Provider, or wait.
+
+The same design pass considered, and rejected, letting a user drag a Task directly onto a Provider's own line to deliberately hold it waiting even when that Provider has an open seat. No existing Task field or scheduler behavior represents "ready, pinned, but deliberately not dequeued" — supporting it would be new backend scope, not a reuse of the PATCH-the-Pinned-Provider-and-let-the-scheduler-dequeue path the rest of this feature builds on. In the shipped interaction, dropping a Task onto a Provider always tries to seat it; landing on that Provider's line is only ever the automatic fallback when no seat is free, never a destination chosen on its own.

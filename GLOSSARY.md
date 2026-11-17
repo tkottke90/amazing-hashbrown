@@ -589,3 +589,29 @@ _Avoid_: Tool search, on-demand tools, tool catalog search
 **Discovered Tool**:
 An MCP tool granted into the bound-tool set for the remainder of the current Turn after being explicitly selected from an MCP Tool Discovery search result. Distinct from a tool bound via Tool Access (global defaults or a thread's own customization), which persists across Turns — a Discovered Tool's grant does not survive past the Turn it was selected in, even if the same tool is needed again next Turn.
 _Avoid_: Pulled-in tool, activated tool, bound tool (ambiguous with Bound Name)
+
+# Monitoring: Task Queue & Provider Activity
+
+Cross-workspace visibility into what the Queue lane and the provider concurrency gate are doing right now, so a stuck Task or an overloaded Provider can be found and acted on without first locating which workspace owns it.
+
+## Language
+
+**Pinned Provider**:
+A Task's own `provider`/`model` fields, naming the LLM backend its next Run should use, or null to fall back to the configured system default at run time. Settable via PATCH only while the Task is not `running` and not in a terminal status — the agent already resolved its provider for a `running` Task's current Run, and there's nothing left to run with a new one once the Task is `done`/`failed`/`cancelled`. Predates Monitoring (see `tasks.handlers.ts`'s `patchTaskHandler`) but is named here for the first time.
+_Avoid_: Model override, provider setting, provider pin (verb form only — the field itself is always "Pinned Provider")
+
+**Task Queue Monitor**:
+A cross-workspace table of every Task currently in the Queue lane (`ready` or `running`, app-wide) — the same underlying data the sidebar Queue Widget already aggregates into a single current-task-plus-count, expanded into a full list with each Task's Workspace (or Inbox), Pinned Provider, status, time-in-state, and its existing cancel/pause/take-over actions. Scoped to the Queue lane only — a Task in Attention (blocked/failed/waiting-on-user) already has its own surfacing and isn't duplicated here, and this view performs no automatic "stuck" detection of its own: it shows status and age, nothing more, and leaves the judgment to whoever's reading it.
+_Avoid_: Queue monitor, task monitor, global task list
+
+**Provider Activity Monitor**:
+A live, in-memory view of `ProviderQueue`'s per-provider concurrency gate — which threads currently hold a slot against each configured Provider, and which are waiting for one, attributed by thread (chat, wiki, workspace-chat, or task) and pushed over the existing app-level broadcast channel. Resets on restart the same way `ProviderQueue` itself does; never persisted, and answers a different question than the historical `usage-by-provider-tokens` Metric does.
+_Avoid_: Provider monitor, provider queue view
+
+**Green Room**:
+The one shared area of the Provider Activity Monitor holding everything not currently seated on a Provider — every Provider's own Provider Line lives inside it, rather than each Provider surfacing its waiters separately. See ADR-0068 for what it deliberately does and doesn't distinguish.
+_Avoid_: Waiting room, holding area, queue pool
+
+**Provider Line**:
+One Provider's own ordered queue of waiting requests inside the Green Room — a Task Pinned to that Provider but not yet seated, or a live request actually blocked on that Provider's `ProviderQueue` gate, both shown the same way (see ADR-0068).
+_Avoid_: Provider queue, wait line

@@ -33,6 +33,7 @@ import {
 } from './chat-agent.js';
 import type { StagnationLimitError } from './recursion-guard.middleware.js';
 import { getProviderQueue } from '../services/provider-queue.js';
+import { formatCallerLabel } from '../services/caller-identity.js';
 import { renderCacheLedger } from '../services/mcp-tool-cache.js';
 import { resolveProviderConfig, createProvider } from '../services/provider-factory.js';
 import { buildWorkspaceContext } from './workspace-chat-stream-handler.js';
@@ -804,7 +805,17 @@ export async function executeTask(
               resolvedTurnSentAt,
             );
           },
-          { signal: controller.signal },
+          {
+            signal: controller.signal,
+            caller: {
+              threadId,
+              kind: 'task',
+              label: formatCallerLabel(
+                'task',
+                workspaceScope ? `${workspaceScope.workspace.name} — ${task.title}` : task.title,
+              ),
+            },
+          },
         );
       const { interrupted } = await finalizeTurn(
         sink,

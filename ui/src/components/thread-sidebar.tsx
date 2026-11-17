@@ -16,6 +16,7 @@ import {
   Circle,
   MessagesSquare,
   LayoutDashboard,
+  Activity,
 } from 'lucide-preact';
 import { useLocation } from 'preact-iso';
 
@@ -378,6 +379,20 @@ export function ThreadSidebar() {
       >
         <Folder className="size-4 shrink-0" />
         Workspaces
+      </a>
+      <a
+        href="/monitoring"
+        aria-label="Monitoring"
+        onClick={guardAnchorClick}
+        className={cn(
+          'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
+          url === '/monitoring'
+            ? 'bg-sidebar-accent font-medium text-foreground'
+            : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground',
+        )}
+      >
+        <Activity className="size-4 shrink-0" />
+        Monitoring
       </a>
       <a
         href="/threads"

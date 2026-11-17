@@ -36,6 +36,7 @@ import { extractToolResultContent } from './tool-output.js';
 import { markArtifactReferenced } from '../artifacts/artifact-store.js';
 import { resolveProviderConfig } from '../services/provider-factory.js';
 import { getProviderQueue } from '../services/provider-queue.js';
+import { resolveCallerIdentity } from '../services/caller-identity.js';
 import { resolveAttachmentsForTurn, buildAttachmentSpan } from './attachment-resolution.js';
 
 // ---- SSE write helper ----
@@ -1025,6 +1026,7 @@ export async function streamChatToSse(
         onWaitChange: (waiting) =>
           writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
         signal: controller.signal,
+        caller: resolveCallerIdentity(threadStore, threadId),
       },
     );
 
@@ -1219,6 +1221,7 @@ export async function resumeChatToSse(
         onWaitChange: (waiting) =>
           writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
         signal: controller.signal,
+        caller: resolveCallerIdentity(threadStore, threadId),
       },
     );
 
@@ -1405,6 +1408,7 @@ export async function retryChatToSse(
         onWaitChange: (waiting) =>
           writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
         signal: controller.signal,
+        caller: resolveCallerIdentity(threadStore, threadId),
       },
     );
 

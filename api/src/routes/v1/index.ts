@@ -23,6 +23,7 @@ import { eventsRouter } from './events.route.js';
 import { webhooksRouter } from './webhooks.route.js';
 import { apiKeysRouter } from './api-keys.route.js';
 import { rolesRouter } from './roles.route.js';
+import { providerActivityRouter } from './provider-activity.route.js';
 
 export const v1Router = Router();
 
@@ -50,6 +51,7 @@ v1Router.use('/tool-settings', toolSettingsRouter);
 v1Router.use('/webhooks', webhooksRouter);
 v1Router.use('/api-keys', apiKeysRouter);
 v1Router.use('/roles', rolesRouter);
+v1Router.use('/provider-activity', providerActivityRouter);
 
 v1Router.get('/', (_req, res) => {
   res.json({

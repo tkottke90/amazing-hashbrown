@@ -16,6 +16,10 @@ export interface ProviderInfo {
   type: string;
   defaultModel?: string;
   models: ModelInfo[];
+  // Stable config (not live state) — bar-sizing input for the Provider
+  // Activity Monitor's Room view (GLOSSARY.md § Monitoring). Defaults to 1
+  // server-side when the provider's own config omits it.
+  maxConcurrency: number;
 }
 
 // A user-pinned provider/model pair (config.yaml `favoriteModels`). The

@@ -27,11 +27,18 @@ jest.mock('@/services/dashboard-api', () => ({
   fetchWidgets: jest.fn(),
 }));
 
+const mockFetchProviderActivity = jest.fn();
+jest.mock('@/hooks/use-provider-activity', () => ({
+  ...jest.requireActual('@/hooks/use-provider-activity'),
+  fetchProviderActivity: (...args: unknown[]) => mockFetchProviderActivity(...args),
+}));
+
 import { renderHook, waitFor } from '@testing-library/preact';
 import { connectLiveEvents } from '@/hooks/use-live-events';
 import { tasks, queueState } from '@/hooks/use-tasks';
 import { threads, type ThreadSummary } from '@/hooks/use-thread';
 import { useDashboardWidgets, _resetDashboardWidgetsForTests } from '@/hooks/use-dashboard-widgets';
+import { providerActivityState } from '@/hooks/use-provider-activity';
 import * as dashboardApi from '@/services/dashboard-api';
 import type { Task } from '@/services/tasks-api';
 import type { BigNumberWidget, WidgetLoadResult } from '@tkottke90/amazing-hashbrown-widgets/types';
@@ -142,9 +149,11 @@ describe('hooks/use-live-events', () => {
     mockHasThreadInstance.mockReturnValue(false);
     mockRefreshThreadList.mockClear();
     mockFetchWidgets.mockReset();
+    mockFetchProviderActivity.mockClear();
     threads.value = [];
     tasks.value = [];
     queueState.value = { queue: [], running: [] };
+    providerActivityState.value = [];
     _resetDashboardWidgetsForTests();
   });
 
@@ -180,6 +189,32 @@ describe('hooks/use-live-events', () => {
     connectLiveEvents();
     currentSource().open();
     expect(mockRefreshThreadList).toHaveBeenCalledTimes(1);
+  });
+
+  it('refetches provider activity on open (including on reconnect), as its REST fallback [unit]', () => {
+    connectLiveEvents();
+    currentSource().open();
+    expect(mockFetchProviderActivity).toHaveBeenCalledTimes(1);
+
+    currentSource().open();
+    expect(mockFetchProviderActivity).toHaveBeenCalledTimes(2);
+  });
+
+  it('sets providerActivityState directly from a provider_activity_update event, with no fetch [unit]', () => {
+    connectLiveEvents();
+    const providers = [
+      {
+        provider: 'ollama',
+        maxConcurrency: 2,
+        active: [{ threadId: 't1', kind: 'task' as const, label: 'Task: Sync pricing' }],
+        waiting: [],
+      },
+    ];
+
+    currentSource().emit({ type: 'provider_activity_update', providers });
+
+    expect(providerActivityState.value).toEqual(providers);
+    expect(mockFetchProviderActivity).not.toHaveBeenCalled();
   });
 
   it("patches the matching thread's afterAgentState on after_agent_state, leaving other threads untouched [unit]", () => {

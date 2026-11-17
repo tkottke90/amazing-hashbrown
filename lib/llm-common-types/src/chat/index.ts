@@ -16,4 +16,6 @@ export {
   type TaskQueueEntry,
   AfterAgentStateSchema,
   type AfterAgentState,
+  type ProviderActivityCaller,
+  type ProviderActivitySnapshot,
 } from './broadcast-events.js';
