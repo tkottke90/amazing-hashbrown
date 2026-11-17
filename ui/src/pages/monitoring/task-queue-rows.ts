@@ -4,9 +4,11 @@ import type { Workspace } from '@/services/workspaces-api';
 // The Task Queue Monitor's own composition over already-live data (no new
 // backend endpoint — see docs/superpowers/specs/2026-11-16-monitoring-task-queue-provider-activity-design.md).
 // `queueState` already carries everything this needs; `listQueue()`'s SQL
-// (and so QueueState.queue) includes 'paused' rows too, which correspond to
-// a Task's 'blocked' status — Attention-lane, deliberately excluded here
-// (see GLOSSARY.md § Task Queue Monitor).
+// (and so QueueState.queue) includes 'running' and 'paused' rows too, not
+// just 'pending' ones — 'paused' corresponds to a Task's 'blocked' status
+// (Attention-lane, deliberately excluded here, see GLOSSARY.md § Task Queue
+// Monitor); 'running' is the *same* entry `queue.running` already carries,
+// so it's filtered out here too, or a running task would render twice.
 export interface TaskQueueRow {
   task: Task;
   workspaceName: string;
@@ -32,7 +34,10 @@ export function buildTaskQueueRows(
   workspaces: Workspace[],
   now: number = Date.now(),
 ): TaskQueueRow[] {
-  const entries: (TaskQueueEntry & { task: Task | null })[] = [...queue.queue, ...queue.running];
+  const entries: (TaskQueueEntry & { task: Task | null })[] = [
+    ...queue.queue.filter((e) => e.status === 'pending'),
+    ...queue.running,
+  ];
 
   const rows: TaskQueueRow[] = [];
   for (const entry of entries) {

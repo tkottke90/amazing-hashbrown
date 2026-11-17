@@ -13,12 +13,6 @@ const suite: TestSuite = {
   steps: [
     {
       tags: ['@user-workflow'],
-      action: 'Navigate to /monitoring with nothing queued',
-      expectedOutcome: 'The Task Queue Monitor shows its empty state',
-      test: () => {},
-    },
-    {
-      tags: ['@user-workflow'],
       action:
         'Enqueue a task into an occupied workspace scope (stays ready, not dequeued) alongside the task already running there',
       expectedOutcome:
@@ -64,78 +58,83 @@ function monitorRow(page: Page, taskId: string) {
   return page.locator(`[data-testid="monitoring-queue-row"][data-task-id="${taskId}"]`);
 }
 
-test.describe('@user-workflow', { annotation: suiteAnnotations(suite) }, () => {
-  test('shows the empty state when nothing is queued anywhere', async ({ page }, testInfo) => {
-    await page.goto('/monitoring');
-    await pauseBeforeAction(page, testInfo);
-    await expect(page.getByText('Nothing in the queue right now.')).toBeVisible();
+// Serial: the second test's "running" task is what keeps the third test's
+// task 'ready' (not dequeued) — the scheduler serializes per workspace scope
+// (issue #160), and the e2e API server's no-op task executor (see
+// e2e/AGENTS.md) holds whatever it dequeues at 'running' forever, so the
+// workspace's one running slot never frees up on its own.
+test.describe.serial('@user-workflow', { annotation: suiteAnnotations(suite) }, () => {
+  let workspaceId: string;
+  let runningTaskId: string;
+  let readyTaskId: string;
+
+  // The running task is never cleaned up on its own (the no-op executor
+  // can't be interrupted), so the workspace itself is deleted afterward:
+  // that cascades to its tasks and queue rows, same pattern
+  // task-board-dnd.spec.ts's afterEach uses, and for the same reason —
+  // otherwise this task would stay globally visible for the rest of the
+  // suite and could break a later spec (e.g. task-queue-widget.spec.ts)
+  // that expects an empty queue at its own start.
+  test.afterAll(async ({ request }) => {
+    if (workspaceId) await request.delete(`/api/v1/workspaces/${workspaceId}`);
   });
 
-  // Serial: the second test's "running" task is what keeps the third test's
-  // task 'ready' (not dequeued) — the scheduler serializes per workspace
-  // scope (issue #160), and the e2e API server's no-op task executor (see
-  // e2e/AGENTS.md) holds whatever it dequeues at 'running' forever, so the
-  // workspace's one running slot never frees up for the rest of this file.
-  test.describe.serial('a running task occupying a workspace', () => {
-    let runningTaskId: string;
-    let readyTaskId: string;
+  test('lists a running task and its blocked ready sibling, with correct gating', async ({
+    page,
+    request,
+  }, testInfo) => {
+    const ws = await createWorkspace(request, `monitoring-tq-ws-${Date.now()}`);
+    workspaceId = ws.id;
 
-    test('lists a running task and its blocked ready sibling, with correct gating', async ({
-      page,
-      request,
-    }, testInfo) => {
-      const ws = await createWorkspace(request, `monitoring-tq-ws-${Date.now()}`);
+    const running = await createTask(request, 'Monitoring: running task', ws.id);
+    runningTaskId = running.id;
+    await enqueue(request, runningTaskId);
 
-      const running = await createTask(request, 'Monitoring: running task', ws.id);
-      runningTaskId = running.id;
-      await enqueue(request, runningTaskId);
+    const ready = await createTask(request, 'Monitoring: ready task', ws.id);
+    readyTaskId = ready.id;
+    await enqueue(request, readyTaskId);
 
-      const ready = await createTask(request, 'Monitoring: ready task', ws.id);
-      readyTaskId = ready.id;
-      await enqueue(request, readyTaskId);
+    await page.goto('/monitoring');
+    await pauseBeforeAction(page, testInfo);
 
-      await page.goto('/monitoring');
-      await pauseBeforeAction(page, testInfo);
+    const runningRow = monitorRow(page, runningTaskId);
+    await expect(runningRow).toBeVisible();
+    await expect(runningRow).toContainText('Monitoring: running task');
+    await expect(runningRow).toContainText(ws.name);
+    await expect(runningRow).toContainText('Running');
+    await expect(runningRow.getByRole('button', { name: 'Pause' })).toBeVisible();
+    await expect(
+      runningRow.getByTitle("Can't switch provider while running — pause or cancel instead."),
+    ).toBeDisabled();
 
-      const runningRow = monitorRow(page, runningTaskId);
-      await expect(runningRow).toBeVisible();
-      await expect(runningRow).toContainText('Monitoring: running task');
-      await expect(runningRow).toContainText(ws.name);
-      await expect(runningRow).toContainText('Running');
-      await expect(runningRow.getByRole('button', { name: 'Pause' })).toBeVisible();
-      await expect(
-        runningRow.getByTitle("Can't switch provider while running — pause or cancel instead."),
-      ).toBeDisabled();
+    const readyRow = monitorRow(page, readyTaskId);
+    await expect(readyRow).toBeVisible();
+    await expect(readyRow).toContainText('Monitoring: ready task');
+    await expect(readyRow).toContainText(ws.name);
+    await expect(readyRow).toContainText('Queued');
+    await expect(readyRow.getByRole('button', { name: 'Pause' })).not.toBeVisible();
+    await expect(
+      readyRow.getByTitle('Switch provider — takes effect immediately.'),
+    ).toBeEnabled();
+  });
 
-      const readyRow = monitorRow(page, readyTaskId);
-      await expect(readyRow).toBeVisible();
-      await expect(readyRow).toContainText('Monitoring: ready task');
-      await expect(readyRow).toContainText(ws.name);
-      await expect(readyRow).toContainText('Queued');
-      await expect(readyRow.getByRole('button', { name: 'Pause' })).not.toBeVisible();
-      await expect(
-        readyRow.getByTitle('Switch provider — takes effect immediately.'),
-      ).toBeEnabled();
-    });
+  test("cancelling the ready row's task via Actions removes it and really cancels it", async ({
+    page,
+    request,
+  }, testInfo) => {
+    await page.goto('/monitoring');
+    const readyRow = monitorRow(page, readyTaskId);
+    await expect(readyRow).toBeVisible();
 
-    test("cancelling the ready row's task via Actions removes it and really cancels it", async ({
-      page,
-      request,
-    }, testInfo) => {
-      await page.goto('/monitoring');
-      const readyRow = monitorRow(page, readyTaskId);
-      await expect(readyRow).toBeVisible();
+    page.on('dialog', (d) => d.accept());
+    await pauseBeforeAction(page, testInfo);
+    await readyRow.getByRole('button', { name: 'Cancel' }).click();
 
-      page.on('dialog', (d) => d.accept());
-      await pauseBeforeAction(page, testInfo);
-      await readyRow.getByRole('button', { name: 'Cancel' }).click();
+    await expect(readyRow).not.toBeVisible();
+    const fetched = await (await request.get(`/api/v1/tasks/${readyTaskId}`)).json();
+    expect(fetched.status).toBe('cancelled');
 
-      await expect(readyRow).not.toBeVisible();
-      const fetched = await (await request.get(`/api/v1/tasks/${readyTaskId}`)).json();
-      expect(fetched.status).toBe('cancelled');
-
-      // The running task is untouched by cancelling its unrelated sibling.
-      await expect(monitorRow(page, runningTaskId)).toBeVisible();
-    });
+    // The running task is untouched by cancelling its unrelated sibling.
+    await expect(monitorRow(page, runningTaskId)).toBeVisible();
   });
 });

@@ -85,6 +85,20 @@ describe('pages/monitoring/task-queue-rows', () => {
       expect(rows[0]!.elapsedMs).toBe(25_000);
     });
 
+    it("renders a running task only once, even though listQueue()'s SQL also includes 'running' rows in queue.queue [unit]", () => {
+      const t = task({ status: 'running' });
+      const runningEntry = entry({ status: 'running' }, t);
+      // The real server's getQueueHandler puts the same running entry in
+      // *both* arrays (queue.queue's SQL filter is status IN ('pending',
+      // 'running', 'paused'), not just 'pending') — this must not render
+      // the row twice.
+      const queue: QueueState = { queue: [runningEntry], running: [runningEntry] };
+
+      const rows = buildTaskQueueRows(queue, [workspace()]);
+
+      expect(rows).toHaveLength(1);
+    });
+
     it('includes a ready (queued) entry with its elapsed time computed from enqueuedAt [unit]', () => {
       const now = new Date('2026-11-16T12:00:40.000Z').getTime();
       const t = task({ status: 'ready' });

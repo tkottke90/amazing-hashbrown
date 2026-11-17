@@ -36,6 +36,11 @@ const suite: TestSuite = {
 
 const E2E_PROVIDER_1 = 'monitoring-e2e-provider-1';
 const E2E_PROVIDER_2 = 'monitoring-e2e-provider-2';
+// Only ever pinned alongside E2E_PROVIDER_1 below — patchTaskHandler requires
+// provider/model to be set as a matched pair, but never validates the model
+// string against a live model list (tasks.handlers.ts: "trusted from the
+// client... falls back gracefully at run time if it's ever wrong").
+const E2E_MODEL_1 = 'monitoring-e2e-model-1';
 
 // PATCH /api/v1/tasks/:id validates a Pinned Provider change's provider name
 // against the real, server-side env.providers (tasks.handlers.ts) — same
@@ -121,6 +126,15 @@ test.describe.serial('@user-workflow', { annotation: suiteAnnotations(suite) }, 
 
   test.describe.serial('two configured providers with a ready task pinned to the first', () => {
     let readyTaskId: string;
+    // The occupying "running" task is never cleaned up on its own (the e2e
+    // server's no-op executor can't be interrupted — see e2e/AGENTS.md), so
+    // the workspace itself is deleted afterward instead: that cascades to
+    // its tasks and queue rows, same pattern task-board-dnd.spec.ts's
+    // afterEach uses, and for the same reason — otherwise this permanently
+    // running task would stay globally visible for the rest of the suite
+    // and break any later spec (e.g. task-queue-widget.spec.ts) that
+    // expects an empty queue at its own start.
+    let workspaceId: string;
 
     test.beforeAll(async ({ request }) => {
       await seedProviders(request);
@@ -128,6 +142,7 @@ test.describe.serial('@user-workflow', { annotation: suiteAnnotations(suite) }, 
 
     test.afterAll(async ({ request }) => {
       await clearProviders(request);
+      if (workspaceId) await request.delete(`/api/v1/workspaces/${workspaceId}`);
     });
 
     test('renders both provider bars and the ready task chip on its Pinned Provider lane', async ({
@@ -135,6 +150,7 @@ test.describe.serial('@user-workflow', { annotation: suiteAnnotations(suite) }, 
       request,
     }, testInfo) => {
       const ws = await createWorkspace(request, `monitoring-pa-ws-${Date.now()}`);
+      workspaceId = ws.id;
 
       // Occupies the workspace's one running slot (no-op executor holds it
       // forever — see e2e/AGENTS.md), so the second task stays 'ready',
@@ -146,7 +162,7 @@ test.describe.serial('@user-workflow', { annotation: suiteAnnotations(suite) }, 
       const ready = await createTask(request, 'Provider activity: ready task', ws.id);
       readyTaskId = ready.id;
       const patchRes = await request.patch(`/api/v1/tasks/${ready.id}`, {
-        data: { provider: E2E_PROVIDER_1, model: null },
+        data: { provider: E2E_PROVIDER_1, model: E2E_MODEL_1 },
       });
       expect(patchRes.status()).toBe(200);
       await enqueue(request, readyTaskId);
