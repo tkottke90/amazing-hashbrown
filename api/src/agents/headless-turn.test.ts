@@ -70,7 +70,14 @@ describe('agents/headless-turn', () => {
   let threadStore: ThreadStore;
   let threadId: string;
   let received: AppBroadcastEvent[];
-  const client = (event: AppBroadcastEvent) => received.push(event);
+  // Excludes provider_activity_update — this suite's exhaustive assertions
+  // are about thread-turn lifecycle broadcasts specifically; a real
+  // ProviderQueue.withSlot() call (now that it's wired with caller
+  // identity) also fires that event on every real acquire/release, which
+  // is its own, separately-tested concern (provider-queue.test.ts).
+  const client = (event: AppBroadcastEvent) => {
+    if (event.type !== 'provider_activity_update') received.push(event);
+  };
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'headless-turn-test-'));

@@ -2351,7 +2351,14 @@ describe('agents/task-execution', () => {
 
     beforeEach(() => {
       received = [];
-      writer = (event) => received.push(event);
+      // Excludes provider_activity_update — this suite's exhaustive
+      // assertions are about task-run lifecycle broadcasts specifically; a
+      // real ProviderQueue.withSlot() call (now wired with caller identity)
+      // also fires that event on every real acquire/release, which is its
+      // own, separately-tested concern (provider-queue.test.ts).
+      writer = (event) => {
+        if (event.type !== 'provider_activity_update') received.push(event);
+      };
       registerBroadcastClient(writer);
     });
 
