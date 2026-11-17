@@ -16,6 +16,7 @@ import { WorkspacesView } from '@/pages/workspaces';
 import { WorkspaceDetailView } from '@/pages/workspaces/[id]';
 import { CloseProjectView } from '@/pages/workspaces/close/[id]';
 import { InboxView } from '@/pages/inbox';
+import { MonitoringView } from '@/pages/monitoring';
 
 export function App() {
   useEffect(() => {
@@ -59,6 +60,7 @@ export function App() {
           <WorkspaceDetailView path="/workspaces/:id" />
           <CloseProjectView path="/workspaces/:id/close" />
           <InboxView path="/inbox" />
+          <MonitoringView path="/monitoring" />
         </Router>
       </TooltipProvider>
     </LocationProvider>

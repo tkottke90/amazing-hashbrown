@@ -25,6 +25,7 @@ import { getThreadStore } from '../services/thread-store.js';
 import { getWikiRegistry } from '../services/wiki.js';
 import { createProvider, resolveProviderConfig } from '../services/provider-factory.js';
 import { getProviderQueue } from '../services/provider-queue.js';
+import { formatCallerLabel } from '../services/caller-identity.js';
 import { getWorkspaceStore, type Workspace } from '../services/workspace-store.js';
 import { renderCacheLedger } from '../services/mcp-tool-cache.js';
 import { resolveTurnModel, startTurnObservability } from './turn-observability.js';
@@ -307,6 +308,11 @@ export async function streamWorkspaceChatToSse(
         onWaitChange: (waiting) =>
           writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
         signal: controller.signal,
+        caller: {
+          threadId,
+          kind: 'workspace-chat',
+          label: formatCallerLabel('workspace-chat', workspace.name),
+        },
       },
     );
 
@@ -537,6 +543,11 @@ export async function resumeWorkspaceChatToSse(
         onWaitChange: (waiting) =>
           writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
         signal: controller.signal,
+        caller: {
+          threadId,
+          kind: 'workspace-chat',
+          label: formatCallerLabel('workspace-chat', workspace.name),
+        },
       },
     );
 
@@ -752,6 +763,11 @@ export async function retryWorkspaceChatToSse(
         onWaitChange: (waiting) =>
           writeSseEvent(sink, { type: 'provider_wait', provider: resolvedProvider, waiting }),
         signal: controller.signal,
+        caller: {
+          threadId,
+          kind: 'workspace-chat',
+          label: formatCallerLabel('workspace-chat', workspace.name),
+        },
       },
     );
 

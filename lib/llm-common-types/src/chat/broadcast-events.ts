@@ -150,6 +150,32 @@ const DashboardReorderedSchema = z.object({
   widgets: z.array(DashboardWidgetSchema),
 });
 
+// One entry per configured Provider, carried on every acquire/release/abort
+// mutation of ProviderQueue's in-memory gate (see Provider Activity Monitor,
+// GLOSSARY.md § Monitoring) — a "full snapshot, not delta" push, same shape
+// as TaskQueueUpdateSchema above. `active` holds whoever currently holds a
+// slot; `waiting` is that Provider's own Provider Line inside the Green
+// Room — both a Task not yet dequeued and a request genuinely blocked on
+// the gate are represented the same way here, deliberately (ADR-0068).
+const ProviderActivityCallerSchema = z.object({
+  threadId: z.string(),
+  kind: z.enum(['chat', 'wiki', 'workspace-chat', 'task']),
+  label: z.string(),
+});
+const ProviderActivitySnapshotSchema = z.object({
+  provider: z.string(),
+  maxConcurrency: z.number(),
+  active: z.array(ProviderActivityCallerSchema),
+  waiting: z.array(ProviderActivityCallerSchema),
+});
+export type ProviderActivityCaller = z.infer<typeof ProviderActivityCallerSchema>;
+export type ProviderActivitySnapshot = z.infer<typeof ProviderActivitySnapshotSchema>;
+
+const ProviderActivityUpdateSchema = z.object({
+  type: z.literal('provider_activity_update'),
+  providers: z.array(ProviderActivitySnapshotSchema),
+});
+
 export const AppBroadcastEventSchema = z.discriminatedUnion('type', [
   TaskQueueUpdateSchema,
   HitlPromptBroadcastSchema,
@@ -161,5 +187,6 @@ export const AppBroadcastEventSchema = z.discriminatedUnion('type', [
   AfterAgentStateEventSchema,
   WidgetUpdatedSchema,
   DashboardReorderedSchema,
+  ProviderActivityUpdateSchema,
 ]);
 export type AppBroadcastEvent = z.infer<typeof AppBroadcastEventSchema>;

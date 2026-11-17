@@ -248,6 +248,44 @@ describe('routes/v1/providers', () => {
     expect(model?.outputPricePerM).to.equal(10);
   });
 
+  it('reports maxConcurrency, defaulting to 1 when the provider config omits it', async () => {
+    const modelsServer = await startModelsServer({
+      object: 'list',
+      data: [{ id: 'gpt-4o', object: 'model', owned_by: 'openai' }],
+    });
+    closeModelsServer = modelsServer.close;
+
+    configManager.set('providers', [
+      {
+        name: 'no-limit-set',
+        type: 'openai',
+        baseUrl: modelsServer.baseUrl,
+        apiKey: 'sk-test',
+        defaultModel: 'gpt-4o',
+      },
+      {
+        name: 'limited',
+        type: 'openai',
+        baseUrl: modelsServer.baseUrl,
+        apiKey: 'sk-test',
+        defaultModel: 'gpt-4o',
+        maxConcurrency: 4,
+      },
+    ]);
+
+    ({ baseUrl, close: closeTestServer } = await startTestServer(
+      providersRouter,
+      '/api/v1/providers',
+    ));
+    const res = await fetch(baseUrl);
+    const body = (await res.json()) as {
+      providers: { name: string; maxConcurrency: number }[];
+    };
+
+    expect(body.providers.find((p) => p.name === 'no-limit-set')?.maxConcurrency).to.equal(1);
+    expect(body.providers.find((p) => p.name === 'limited')?.maxConcurrency).to.equal(4);
+  });
+
   it("reports an azure-openai provider's deploymentName as its one model, with no live /models call", async () => {
     // No mock server at all — if GET / tried to make a live call for this
     // provider, it would have nothing to reach and the request would fail

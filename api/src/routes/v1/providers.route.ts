@@ -58,6 +58,11 @@ providersRouter.get('/', async (_req, res) => {
         // Name"), reported here the same way defaultModel normally is.
         defaultModel: p.type === 'azure-openai' ? p.deploymentName : p.defaultModel,
         models,
+        // Stable config, not live state — mirrors ProviderQueue's own
+        // default (resolveMaxConcurrencyFromEnv in provider-queue.ts) so
+        // the Provider Activity Monitor's bar sizing matches what actually
+        // gates requests.
+        maxConcurrency: p.maxConcurrency ?? 1,
       };
     }),
   );

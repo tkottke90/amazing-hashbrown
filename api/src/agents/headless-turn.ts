@@ -3,6 +3,7 @@ import { env, type AnyProviderConfig } from '../config/env.js';
 import { logger, serializeError } from '../config/logger.js';
 import type { ThreadStore } from '../services/thread-store.js';
 import { getProviderQueue } from '../services/provider-queue.js';
+import { resolveCallerIdentity } from '../services/caller-identity.js';
 import { resolveProviderConfig } from '../services/provider-factory.js';
 import { broadcast } from '../services/broadcast.js';
 import { getActiveSseWriter, setActiveSseWriter, type SseWriter } from './active-sse-writer.js';
@@ -203,7 +204,7 @@ export async function runHeadlessTurn(params: HeadlessTurnParams): Promise<void>
           );
           return pipeEvents(sink, msgId, rawStream, threadStore, threadId, turnSentAt);
         },
-        { signal: controller.signal },
+        { signal: controller.signal, caller: resolveCallerIdentity(threadStore, threadId) },
       );
 
     await finalizeTurn(

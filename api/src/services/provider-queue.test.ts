@@ -272,4 +272,71 @@ describe('services/provider-queue', () => {
       expect(waited).to.equal(true);
     });
   });
+
+  describe('ProviderQueue#getGateSnapshot / getAllGateSnapshots — caller identity', () => {
+    function caller(threadId: string): { threadId: string; kind: 'chat'; label: string } {
+      return { threadId, kind: 'chat', label: `Chat: ${threadId}` };
+    }
+
+    it('records an immediately-granted caller in active, not waiting', async () => {
+      const queue = queueWithLimits({ p: 1 });
+      await queue.acquireSlot('p', 'sync', { caller: caller('t1') });
+
+      const snapshot = queue.getGateSnapshot('p');
+      expect(snapshot.active).to.deep.equal([caller('t1')]);
+      expect(snapshot.waiting).to.deep.equal([]);
+    });
+
+    it('records a queued caller in waiting, not active', async () => {
+      const queue = queueWithLimits({ p: 1 });
+      await queue.acquireSlot('p', 'sync', { caller: caller('t1') }); // holds the only slot
+      void queue.acquireSlot('p', 'sync', { caller: caller('t2') }); // queues
+
+      const snapshot = queue.getGateSnapshot('p');
+      expect(snapshot.active).to.deep.equal([caller('t1')]);
+      expect(snapshot.waiting).to.deep.equal([caller('t2')]);
+    });
+
+    it('moves a caller from waiting to active once dispatched by a release', async () => {
+      const queue = queueWithLimits({ p: 1 });
+      await queue.acquireSlot('p', 'sync', { caller: caller('t1') });
+      const waiter = queue.acquireSlot('p', 'sync', { caller: caller('t2') });
+
+      queue.releaseSlot('p', caller('t1'));
+      await waiter;
+
+      const snapshot = queue.getGateSnapshot('p');
+      expect(snapshot.active).to.deep.equal([caller('t2')]);
+      expect(snapshot.waiting).to.deep.equal([]);
+    });
+
+    it('removes a caller from active on release', async () => {
+      const queue = queueWithLimits({ p: 1 });
+      await queue.acquireSlot('p', 'sync', { caller: caller('t1') });
+      queue.releaseSlot('p', caller('t1'));
+
+      expect(queue.getGateSnapshot('p').active).to.deep.equal([]);
+    });
+
+    it('removes a caller from waiting when its request is aborted', async () => {
+      const queue = queueWithLimits({ p: 1 });
+      const controller = new AbortController();
+      await queue.acquireSlot('p', 'sync', { caller: caller('t1') });
+      const queued = queue
+        .acquireSlot('p', 'sync', { caller: caller('t2'), signal: controller.signal })
+        .catch(() => {});
+
+      controller.abort();
+      await queued;
+
+      expect(queue.getGateSnapshot('p').waiting).to.deep.equal([]);
+    });
+
+    it('getAllGateSnapshots includes a provider with no activity, with empty active/waiting', () => {
+      const queue = queueWithLimits({ p: 3 });
+      const snapshots = queue.getAllGateSnapshots(['p']);
+
+      expect(snapshots).to.deep.equal([{ provider: 'p', maxConcurrency: 3, active: [], waiting: [] }]);
+    });
+  });
 });

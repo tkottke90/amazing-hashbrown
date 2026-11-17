@@ -2,6 +2,7 @@ import { AppBroadcastEventSchema, type AppBroadcastEvent } from '@tkottke90/llm-
 import { tasks, queueState, refreshQueue, refreshTask, refreshTasks } from './use-tasks';
 import { hasThreadInstance, refreshThreadList, threads, useThreadInstance } from './use-thread';
 import { patchDashboardWidget, patchDashboardWidgets } from './use-dashboard-widgets';
+import { providerActivityState, fetchProviderActivity } from './use-provider-activity';
 import type { QueueState, TaskStatus } from '../services/tasks-api';
 
 // Opens the standing app-level SSE channel (GET /api/v1/events) — unlike
@@ -24,6 +25,7 @@ export function connectLiveEvents(): EventSource {
     // Also the AfterAgent indicators — an after_agent_state 'done' missed
     // while disconnected would otherwise leave a thread showing 'running'.
     void refreshThreadList();
+    void fetchProviderActivity();
   };
 
   es.onmessage = (msg) => {
@@ -123,6 +125,11 @@ function handleEvent(event: AppBroadcastEvent): void {
       // A Reorder can change every widget's order between the old and new
       // slot (ADR-0008) — patch every listed widget in one go, no refetch.
       patchDashboardWidgets(event.dashboardId, event.widgets);
+      return;
+    case 'provider_activity_update':
+      // Full snapshot, same "no fetch needed" shape as task_queue_update —
+      // fired on every ProviderQueue acquire/release/abort.
+      providerActivityState.value = event.providers;
       return;
   }
 }
