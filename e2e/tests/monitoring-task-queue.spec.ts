@@ -113,9 +113,7 @@ test.describe.serial('@user-workflow', { annotation: suiteAnnotations(suite) }, 
     await expect(readyRow).toContainText(ws.name);
     await expect(readyRow).toContainText('Queued');
     await expect(readyRow.getByRole('button', { name: 'Pause' })).not.toBeVisible();
-    await expect(
-      readyRow.getByTitle('Switch provider — takes effect immediately.'),
-    ).toBeEnabled();
+    await expect(readyRow.getByTitle('Switch provider — takes effect immediately.')).toBeEnabled();
   });
 
   test("cancelling the ready row's task via Actions removes it and really cancels it", async ({
