@@ -135,6 +135,20 @@ const DashboardWidgetSchema = z.discriminatedUnion('type', [
   DashboardWidgetBaseSchema.extend({ type: z.literal('spacer') }),
 ]);
 
+export const ProviderActivityCallerSchema = z.object({
+  threadId: z.string(),
+  kind: z.enum(['chat', 'wiki', 'workspace-chat', 'task']),
+  label: z.string(),
+});
+export type ProviderActivityCaller = z.infer<typeof ProviderActivityCallerSchema>;
+export const ProviderActivitySnapshotSchema = z.object({
+  provider: z.string(),
+  maxConcurrency: z.number(),
+  active: z.array(ProviderActivityCallerSchema),
+  waiting: z.array(ProviderActivityCallerSchema),
+});
+export type ProviderActivitySnapshot = z.infer<typeof ProviderActivitySnapshotSchema>;
+
 export const AppBroadcastEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('task_queue_update'),
@@ -176,6 +190,10 @@ export const AppBroadcastEventSchema = z.discriminatedUnion('type', [
     type: z.literal('dashboard_reordered'),
     dashboardId: z.string(),
     widgets: z.array(DashboardWidgetSchema),
+  }),
+  z.object({
+    type: z.literal('provider_activity_update'),
+    providers: z.array(ProviderActivitySnapshotSchema),
   }),
 ]);
 export type AppBroadcastEvent = z.infer<typeof AppBroadcastEventSchema>;

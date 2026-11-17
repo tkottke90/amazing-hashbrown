@@ -92,7 +92,7 @@ export function TaskQueueMonitor() {
   }, []);
 
   const rows = useComputed(() => {
-    tick.value; // subscribe — see effect above
+    void tick.value; // subscribe — see effect above
     return buildTaskQueueRows(queueState.value, workspaces.value);
   });
 
@@ -123,7 +123,9 @@ export function TaskQueueMonitor() {
           <table class="w-full min-w-[720px]">
             <thead>
               <tr class="border-b border-border bg-muted/40">
-                <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Task</th>
+                <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
+                  Task
+                </th>
                 <th class="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">
                   Workspace
                 </th>

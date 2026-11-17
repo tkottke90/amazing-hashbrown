@@ -83,7 +83,7 @@ describe('pages/monitoring/ProviderActivityMonitor', () => {
     expect(screen.getByText('No providers configured.')).toBeInTheDocument();
   });
 
-  it("renders one dot per active caller and one outline dot per free slot [unit]", () => {
+  it('renders one dot per active caller and one outline dot per free slot [unit]', () => {
     providers.value = [provider({ name: 'ollama', maxConcurrency: 3 })];
     providerActivityState.value = [
       snapshot({
@@ -112,7 +112,7 @@ describe('pages/monitoring/ProviderActivityMonitor', () => {
     expect(chip).toHaveTextContent('Task: Sync vendor pricing sheet');
   });
 
-  it("lists a real waiting caller as a non-draggable chip [unit]", () => {
+  it('lists a real waiting caller as a non-draggable chip [unit]', () => {
     providers.value = [provider({ name: 'ollama' })];
     providerActivityState.value = [
       snapshot({

@@ -1,4 +1,7 @@
-import type { ProviderActivityCaller, ProviderActivitySnapshot } from '@tkottke90/llm-common-types/chat';
+import type {
+  ProviderActivityCaller,
+  ProviderActivitySnapshot,
+} from '@tkottke90/llm-common-types/chat';
 import type { QueueState, Task } from '@/services/tasks-api';
 
 // One entry on a Provider's own Provider Line inside the Green Room

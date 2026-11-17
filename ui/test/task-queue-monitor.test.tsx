@@ -144,7 +144,7 @@ describe('pages/monitoring/TaskQueueMonitor', () => {
     expect(mockCancelTask).not.toHaveBeenCalled();
   });
 
-  it("disables the Pinned Provider switch for a running task, with an explanatory title [unit]", () => {
+  it('disables the Pinned Provider switch for a running task, with an explanatory title [unit]', () => {
     const t = task({ status: 'running', provider: 'ollama', model: 'llama3.1' });
     queueState.value = { queue: [], running: [entry(t, 'running')] };
 

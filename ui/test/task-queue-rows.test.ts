@@ -51,7 +51,13 @@ function entry(overrides: Partial<TaskQueueEntry> = {}, t: Task | null = task())
 }
 
 function workspace(overrides: Partial<Workspace> = {}): Workspace {
-  return { id: 'ws-1', name: 'Billing', location: '/tmp/ws-1', threadId: null, ...overrides } as Workspace;
+  return {
+    id: 'ws-1',
+    name: 'Billing',
+    location: '/tmp/ws-1',
+    threadId: null,
+    ...overrides,
+  } as Workspace;
 }
 
 describe('pages/monitoring/task-queue-rows', () => {
@@ -128,7 +134,9 @@ describe('pages/monitoring/task-queue-rows', () => {
         queue: [],
         running: [entry({}, task({ workspaceId: 'deleted-ws' }))],
       };
-      expect(buildTaskQueueRows(queue, [workspace({ id: 'ws-1' })])[0]!.workspaceName).toBe('Inbox');
+      expect(buildTaskQueueRows(queue, [workspace({ id: 'ws-1' })])[0]!.workspaceName).toBe(
+        'Inbox',
+      );
     });
   });
 });

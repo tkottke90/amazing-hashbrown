@@ -79,7 +79,7 @@ describe('pages/monitoring/green-room', () => {
     ]);
   });
 
-  it("falls back to the default provider for a task with no Pinned Provider [unit]", () => {
+  it('falls back to the default provider for a task with no Pinned Provider [unit]', () => {
     const t = task({ status: 'ready', provider: null });
     const queue: QueueState = { queue: [entry(t)], running: [] };
 

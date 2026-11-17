@@ -336,7 +336,9 @@ describe('services/provider-queue', () => {
       const queue = queueWithLimits({ p: 3 });
       const snapshots = queue.getAllGateSnapshots(['p']);
 
-      expect(snapshots).to.deep.equal([{ provider: 'p', maxConcurrency: 3, active: [], waiting: [] }]);
+      expect(snapshots).to.deep.equal([
+        { provider: 'p', maxConcurrency: 3, active: [], waiting: [] },
+      ]);
     });
   });
 });

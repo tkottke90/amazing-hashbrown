@@ -17,7 +17,9 @@ function makeStore(): { store: ThreadStore; dir: string } {
 describe('services/caller-identity', () => {
   describe('formatCallerLabel', () => {
     it('prefixes the kind label onto the given name', () => {
-      expect(formatCallerLabel('chat', 'Release notes draft')).to.equal('Chat: Release notes draft');
+      expect(formatCallerLabel('chat', 'Release notes draft')).to.equal(
+        'Chat: Release notes draft',
+      );
       expect(formatCallerLabel('wiki', 'self — ingestion')).to.equal('Wiki: self — ingestion');
       expect(formatCallerLabel('workspace-chat', 'Billing')).to.equal('Workspace: Billing');
       expect(formatCallerLabel('task', 'Billing — Sync pricing')).to.equal(
@@ -49,7 +51,11 @@ describe('services/caller-identity', () => {
         store.upsertThreadOnFirstMessage(threadId, title, type);
 
         const identity = resolveCallerIdentity(store, threadId);
-        expect(identity).to.deep.equal({ threadId, kind: type, label: formatCallerLabel(type, title) });
+        expect(identity).to.deep.equal({
+          threadId,
+          kind: type,
+          label: formatCallerLabel(type, title),
+        });
       });
     }
 
