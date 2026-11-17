@@ -96,9 +96,6 @@ describe('pages/monitoring/provider-repin', () => {
     await expect(repinTask(t, 'lemonade')).resolves.toBe(false);
 
     expect(queueState.value).toBe(snapshot);
-    expect(mockShowToast).toHaveBeenCalledWith(
-      'error',
-      'Cannot switch provider while running.',
-    );
+    expect(mockShowToast).toHaveBeenCalledWith('error', 'Cannot switch provider while running.');
   });
 });

@@ -28,9 +28,9 @@ function task(overrides: Partial<Task> = {}): Task {
   };
 }
 
-function entry(overrides: Partial<TaskQueueEntry> = {}, t: Task | null = task()): TaskQueueEntry & {
-  task: Task | null;
-} {
+type QueueRowEntry = TaskQueueEntry & { task: Task | null };
+
+function entry(overrides: Partial<TaskQueueEntry> = {}, t: Task | null = task()): QueueRowEntry {
   return {
     id: 'q-1',
     taskId: 'task-1',
@@ -122,10 +122,7 @@ describe('pages/monitoring/task-queue-rows', () => {
     });
 
     it("falls back to 'Inbox' for a workspace-less task [unit]", () => {
-      const queue: QueueState = {
-        queue: [],
-        running: [entry({}, task({ workspaceId: null }))],
-      };
+      const queue: QueueState = { queue: [], running: [entry({}, task({ workspaceId: null }))] };
       expect(buildTaskQueueRows(queue, [workspace()])[0]!.workspaceName).toBe('Inbox');
     });
 
