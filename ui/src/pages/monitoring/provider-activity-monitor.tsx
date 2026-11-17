@@ -124,8 +124,8 @@ export function ProviderActivityMonitor() {
       <div class="mb-3">
         <h2 class="text-base font-semibold">Provider Activity</h2>
         <p class="text-xs text-muted-foreground mt-0.5">
-          Who's holding or waiting on each provider's concurrency limit, live — drag a queued
-          task's chip onto another provider to re-pin it.
+          Who's holding or waiting on each provider's concurrency limit, live — drag a queued task's
+          chip onto another provider to re-pin it.
         </p>
       </div>
 
