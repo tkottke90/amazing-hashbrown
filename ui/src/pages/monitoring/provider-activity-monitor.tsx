@@ -103,9 +103,8 @@ export function ProviderActivityMonitor() {
     function onUp(ev: PointerEvent) {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
-      const dropTarget = document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>(
-        '[data-provider-bar]',
-      );
+      const elementAtPoint = document.elementFromPoint(ev.clientX, ev.clientY);
+      const dropTarget = elementAtPoint?.closest<HTMLElement>('[data-provider-bar]');
       const targetProvider = dropTarget?.dataset.providerBar;
       dragging.value = null;
       if (targetProvider && targetProvider !== task.provider) {
