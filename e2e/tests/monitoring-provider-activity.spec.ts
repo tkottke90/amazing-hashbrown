@@ -6,7 +6,7 @@ const suite: TestSuite = {
   id: 61,
   name: 'Monitoring — Provider Activity Monitor',
   description:
-    'Verifies the /monitoring page\'s Provider Activity Monitor (Room view): provider bars render for every configured provider, a ready task not yet dequeued shows on its Pinned Provider\'s Green Room lane, and dragging that chip onto a different provider\'s bar really re-pins it',
+    "Verifies the /monitoring page's Provider Activity Monitor (Room view): provider bars render for every configured provider, a ready task not yet dequeued shows on its Pinned Provider's Green Room lane, and dragging that chip onto a different provider's bar really re-pins it",
   purpose:
     'Providers have concurrency limits with no prior visibility into who is using one — regression-test that the Room view actually renders real provider/task state, and that its one interactive gesture (drag-to-re-pin) performs the real PATCH it claims to, not just a local visual move',
   tags: ['@user-workflow'],
