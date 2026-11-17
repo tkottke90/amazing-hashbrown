@@ -381,6 +381,11 @@ implementation details that change without notice.
 | `widget-action`                      | `ui/src/pages/dashboard/widget-action.tsx`                | A widget card's pinned Edit/Delete button row, between its content and footer                                                                  |
 | `widget-card-provenance`             | `ui/src/pages/dashboard/widget-footer.tsx`                | A widget card's pinned footer (Widget Source badge + relative timestamp); absent when neither is set                                           |
 | `ghost-cell`                         | `ui/src/pages/dashboard/dashboard-grid.tsx`               | A decorative, non-interactive overlay over an unoccupied grid cell, shown only in Edit Mode (Ghost Cell, see GLOSSARY.md)                      |
+| `monitoring-queue-row`               | `ui/src/pages/monitoring/task-queue-monitor.tsx`          | A Task Queue Monitor table row; pair with `data-task-id`                                                                                       |
+| `provider-bar`                       | `ui/src/pages/monitoring/provider-activity-monitor.tsx`   | A Provider Activity Monitor provider bar; pair with `data-provider-bar` (also the drag-and-drop re-pin drop target)                            |
+| `green-room-lane`                    | `ui/src/pages/monitoring/provider-activity-monitor.tsx`   | A provider's own Green Room lane; pair with `data-provider`                                                                                    |
+| `green-room-chip-ready`              | `ui/src/pages/monitoring/provider-activity-monitor.tsx`   | A ready (not-yet-dequeued) task's draggable chip inside a Green Room lane                                                                      |
+| `green-room-chip-live`               | `ui/src/pages/monitoring/provider-activity-monitor.tsx`   | A real ProviderQueue waiter's chip inside a Green Room lane — not draggable                                                                    |
 
 When you add a new `data-testid` to a UI source file, record it in the table
 above so future test authors can discover it without grepping the whole
