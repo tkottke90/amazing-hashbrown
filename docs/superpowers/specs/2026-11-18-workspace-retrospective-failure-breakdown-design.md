@@ -110,14 +110,14 @@ One sentence added to the existing prefix, targeting the actual failure mode (no
 
 ## 6. Files changed
 
-| File | Change |
-| --- | --- |
-| `lib/thread-reports/src/types.ts` | Add `toolCallCounts`, `toolFailureCounts`, `otherFailures` to `ThreadReportStats` |
-| `lib/thread-reports/src/build.ts` | New `computeFailureBreakdown(traces)`; lift `toolCallCounts` out of `computeStats`'s existing internal map; wire both into `buildThreadReport()`'s returned `stats` |
-| `lib/thread-reports/templates/report.njk` | New uncapped "Tool Calls" / "Other Failures" sections in the Stats area |
-| `lib/thread-reports/test/unit/build.test.ts` | New `computeFailureBreakdown` cases (§4) |
-| `lib/thread-reports/test/unit/render.test.ts` | Update existing fixtures with new required fields; new rendering cases |
-| `api/src/agents/workspace-retrospective-narrative.ts` | `buildEvidenceSummary`: tool-distribution + other-failures sub-bullets, top-8 cap, ratio phrasing, 120-char truncation; `PROMPT_PREFIX` addition |
-| `api/src/agents/workspace-retrospective-narrative.test.ts` | New rendering/prompt cases (§4) |
-| `suites/workspace-retrospective-narrative.yaml` (new) | `bug-401-grounds-cause-in-evidence-not-goal-text` eval scenario |
-| `GLOSSARY.md`, `docs/adr/0069-*.md`, `docs/adr/0070-*.md` | Already committed (domain-modeling pass) |
+| File                                                       | Change                                                                                                                                                              |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lib/thread-reports/src/types.ts`                          | Add `toolCallCounts`, `toolFailureCounts`, `otherFailures` to `ThreadReportStats`                                                                                   |
+| `lib/thread-reports/src/build.ts`                          | New `computeFailureBreakdown(traces)`; lift `toolCallCounts` out of `computeStats`'s existing internal map; wire both into `buildThreadReport()`'s returned `stats` |
+| `lib/thread-reports/templates/report.njk`                  | New uncapped "Tool Calls" / "Other Failures" sections in the Stats area                                                                                             |
+| `lib/thread-reports/test/unit/build.test.ts`               | New `computeFailureBreakdown` cases (§4)                                                                                                                            |
+| `lib/thread-reports/test/unit/render.test.ts`              | Update existing fixtures with new required fields; new rendering cases                                                                                              |
+| `api/src/agents/workspace-retrospective-narrative.ts`      | `buildEvidenceSummary`: tool-distribution + other-failures sub-bullets, top-8 cap, ratio phrasing, 120-char truncation; `PROMPT_PREFIX` addition                    |
+| `api/src/agents/workspace-retrospective-narrative.test.ts` | New rendering/prompt cases (§4)                                                                                                                                     |
+| `suites/workspace-retrospective-narrative.yaml` (new)      | `bug-401-grounds-cause-in-evidence-not-goal-text` eval scenario                                                                                                     |
+| `GLOSSARY.md`, `docs/adr/0069-*.md`, `docs/adr/0070-*.md`  | Already committed (domain-modeling pass)                                                                                                                            |

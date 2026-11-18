@@ -245,9 +245,7 @@ describe('render/renderThreadReportHtml', () => {
       const wikiSearchIndex = html.indexOf('wiki_search');
       expect(askUserIndex).to.be.greaterThan(-1);
       expect(wikiSearchIndex).to.be.greaterThan(-1);
-      expect(askUserIndex, 'higher call count should render first').to.be.lessThan(
-        wikiSearchIndex,
-      );
+      expect(askUserIndex, 'higher call count should render first').to.be.lessThan(wikiSearchIndex);
       expect(html).to.include('2 calls');
       expect(html).to.include('1 call');
     });
