@@ -48,6 +48,23 @@ function getNjkEnv(): nunjucks.Environment {
       const html = marked.parse(text ?? '', { async: false }) as string;
       return new nunjucks.runtime.SafeString(html);
     });
+    // Tool Calls / Other Failures sections (Failure Breakdown, Tool-Call
+    // Distribution — see GLOSSARY.md) need their Record<string, ...> stats
+    // fields sorted by count descending for display; nunjucks' own
+    // dictsort only sorts ascending and ties break the wrong way, so this
+    // is a dedicated filter rather than inline template arithmetic.
+    // Values are either a plain count (toolCallCounts) or an
+    // { count, example } entry (toolFailureCounts/otherFailures) — both
+    // sort by the same underlying count.
+    njkEnv.addFilter(
+      'sortEntries',
+      (record: Record<string, number | { count: number }> | undefined) =>
+        Object.entries(record ?? {}).sort(([aName, aVal], [bName, bVal]) => {
+          const aCount = typeof aVal === 'number' ? aVal : aVal.count;
+          const bCount = typeof bVal === 'number' ? bVal : bVal.count;
+          return bCount !== aCount ? bCount - aCount : aName.localeCompare(bName);
+        }),
+    );
   }
   return njkEnv;
 }

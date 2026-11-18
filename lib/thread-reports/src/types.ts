@@ -119,6 +119,22 @@ export interface ThreadReportStats {
   mostPopularTool: string | null;
   failureCount: number;
   wikiWriteCount: number;
+  // Tool-Call Distribution (see GLOSSARY.md) — full per-tool-name call
+  // counts. mostPopularTool stays (existing consumers read it), now
+  // redundant with this map's own max — not removed, to avoid unrelated
+  // churn to existing consumers.
+  toolCallCounts: Record<string, number>;
+  // Failure Breakdown (see GLOSSARY.md, ADR-0069, ADR-0070) — keyed by
+  // tool name; only 'tool-call'-type spans with a non-null error
+  // contribute. Always present (an empty object when nothing failed),
+  // matching this interface's existing convention of never making a field
+  // optional (cf. mostPopularTool: string | null).
+  toolFailureCounts: Record<string, { count: number; example: string }>;
+  // Failure Breakdown's non-tool-call bucket: llm-call/attachment span
+  // errors and turn-level (no-span) trace errors. 'context_length' is the
+  // one literal-matched category (ADR-0070); everything else is 'other'.
+  // Partial, not an open Record, since there are only ever these two keys.
+  otherFailures: Partial<Record<'context_length' | 'other', { count: number; example: string }>>;
 }
 
 export type TraceOutcome = 'no-op' | 'identified' | 'unknown';

@@ -615,3 +615,25 @@ _Avoid_: Waiting room, holding area, queue pool
 **Provider Line**:
 One Provider's own ordered queue of waiting requests inside the Green Room — a Task Pinned to that Provider but not yet seated, or a live request actually blocked on that Provider's `ProviderQueue` gate, both shown the same way (see ADR-0068).
 _Avoid_: Provider queue, wait line
+
+# Workspace Retrospective Evidence
+
+What a Workspace Retrospective actually has to reason from: a generated Thread Report per thread, the deterministic Anomalies a retrospective flags on top of it, and (new) the Failure Breakdown and Tool-Call Distribution that make a Thread Report's own failure/tool detail visible instead of collapsed into bare counts.
+
+## Language
+
+**Thread Report**:
+A generated, point-in-time report over one thread's full history — its message transcript, trace timeline, and `ThreadReportStats` — built fresh from the ThreadStore/ObservabilityStore on each request (`lib/thread-reports`) and never persisted. Served as HTML at `/api/v1/threads/:id/report`, or via the `bin/thread-report.ts` CLI. A Workspace Retrospective's `chat` field and each Task Run's `threadReport` field are both Thread Reports.
+_Avoid_: Trace report, thread summary (see `SummaryPayload`, a different, persisted concept)
+
+**Anomaly**:
+A deterministic, rule-based signal a Workspace Retrospective flags about something that went wrong across a Workspace's chat and Task Runs — currently `repeated_failures` (a Task's consecutive failed Runs), `wiki_mismatch` (a wiki write landing outside the Workspace's own wiki), and `recursion_escalation` (a Run hitting the recursion/stagnation check-in). Computed independently of the narrative LLM and always rendered as its own section, whether or not a narrative is generated. Distinct from a Failure Breakdown, which is raw evidence about what failed, not itself a detected problem.
+_Avoid_: Flag, warning, issue (too generic)
+
+**Failure Breakdown**:
+A Thread Report's own record of what actually failed within it: failed tool-call counts keyed by tool name (from `tool-call`-type trace spans), plus a small fixed set of non-tool-call failure categories (`context_length`, matched against the one known literal `ContextBudgetExceededError` message; everything else as `other`), each with a count and one example error message. Computed once per Thread Report, from trace/span `error` text — never from a message's own `AssistantPayload.error` field (see ADR-0069) — and deliberately not a semantic error taxonomy like "timeout" or "disconnected" (see ADR-0070). Feeds the workspace-retrospective narrative prompt and the Thread Report's own rendering; never itself promoted to an Anomaly.
+_Avoid_: Failure taxonomy, error taxonomy, failure categories
+
+**Tool-Call Distribution**:
+A Thread Report's full per-tool-name call-count map — previously collapsed down to just its single most-called tool, now exposed in full. Not itself a failure signal; pairs with a Failure Breakdown's tool-keyed failure counts (same tool names) to show a failure rate per tool, e.g. "`fetch_url`: 23/23 failed".
+_Avoid_: Tool usage stats, tool histogram

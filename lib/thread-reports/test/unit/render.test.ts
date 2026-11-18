@@ -47,6 +47,9 @@ function fixture(): ThreadReportData {
       mostPopularTool: null,
       failureCount: 0,
       wikiWriteCount: 1,
+      toolCallCounts: {},
+      toolFailureCounts: {},
+      otherFailures: {},
     },
     timeline: [
       {
@@ -213,5 +216,75 @@ describe('render/renderThreadReportHtml', () => {
     const html = await renderThreadReportHtml(assistantErrorFixture());
     expect(html).to.include('Something went wrong.');
     expect(html).to.not.include('Something went wrong:');
+  });
+
+  // Failure Breakdown / Tool-Call Distribution (see GLOSSARY.md) — rendered
+  // uncapped, in full, unlike the narrative builder's capped/truncated text.
+  function statsFixture(overrides: Partial<ThreadReportData['stats']>): ThreadReportData {
+    const data = fixture();
+    data.stats = {
+      ...data.stats,
+      toolCallCounts: {},
+      toolFailureCounts: {},
+      otherFailures: {},
+      ...overrides,
+    };
+    return data;
+  }
+
+  describe('Tool Calls section', () => {
+    it('renders each tool with its call count, sorted descending by count [unit]', async () => {
+      const html = await renderThreadReportHtml(
+        statsFixture({
+          toolCallCount: 3,
+          toolCallCounts: { wiki_search: 1, ask_user: 2 },
+        }),
+      );
+      expect(html).to.include('Tool Calls');
+      const askUserIndex = html.indexOf('ask_user');
+      const wikiSearchIndex = html.indexOf('wiki_search');
+      expect(askUserIndex).to.be.greaterThan(-1);
+      expect(wikiSearchIndex).to.be.greaterThan(-1);
+      expect(askUserIndex, 'higher call count should render first').to.be.lessThan(wikiSearchIndex);
+      expect(html).to.include('2 calls');
+      expect(html).to.include('1 call');
+    });
+
+    it('annotates a tool with its failure count and full example message when it has failures [unit]', async () => {
+      const html = await renderThreadReportHtml(
+        statsFixture({
+          toolCallCount: 23,
+          toolCallCounts: { fetch_url: 23 },
+          toolFailureCounts: { fetch_url: { count: 23, example: 'fetch failed: ETIMEDOUT' } },
+        }),
+      );
+      expect(html).to.include('23 failed');
+      expect(html).to.include('fetch failed: ETIMEDOUT');
+    });
+
+    it('omits the Tool Calls section entirely when no tools were called [unit]', async () => {
+      const html = await renderThreadReportHtml(statsFixture({ toolCallCount: 0 }));
+      expect(html).to.not.include('Tool Calls');
+    });
+  });
+
+  describe('Other Failures section', () => {
+    it('renders the full, untruncated example message for each failure category [unit]', async () => {
+      const longExample = `This turn produced more tool output than the configured context budget allows, even after truncating every tool result in it. ${'x'.repeat(200)}`;
+      const html = await renderThreadReportHtml(
+        statsFixture({
+          failureCount: 1,
+          otherFailures: { context_length: { count: 1, example: longExample } },
+        }),
+      );
+      expect(html).to.include('Other Failures');
+      expect(html).to.include('context_length');
+      expect(html).to.include(longExample);
+    });
+
+    it('omits the Other Failures section entirely when nothing failed [unit]', async () => {
+      const html = await renderThreadReportHtml(statsFixture({ failureCount: 0 }));
+      expect(html).to.not.include('Other Failures');
+    });
   });
 });
