@@ -170,6 +170,9 @@ describe('build/buildThreadReport', () => {
       mostPopularTool: 'ask_user',
       failureCount: 0,
       wikiWriteCount: 1,
+      toolCallCounts: { wiki_search: 1, ask_user: 2 },
+      toolFailureCounts: {},
+      otherFailures: {},
     });
   });
 
@@ -345,6 +348,12 @@ describe('build/buildThreadReport', () => {
       'Context size has been exceeded',
     );
     expect(result!.stats.failureCount).to.equal(1);
+    // A turn-level trace error (no owning span) with no literal context-budget
+    // match falls into otherFailures.other, same as any other unmatched error.
+    expect(result!.stats.otherFailures).to.deep.equal({
+      other: { count: 1, example: 'Context size has been exceeded' },
+    });
+    expect(result!.stats.toolFailureCounts).to.deep.equal({});
   });
 
   it('does not double-count failureCount when a trace-level error accompanies an already-counted span error', () => {
@@ -376,6 +385,12 @@ describe('build/buildThreadReport', () => {
     });
 
     expect(result!.stats.failureCount).to.equal(1);
+    // The Failure Breakdown mirrors the same mutual-exclusivity rule: the
+    // trace-level error is NOT also bucketed when a span on the same trace
+    // already accounts for the failure (count stays 1, not 2).
+    expect(result!.stats.otherFailures).to.deep.equal({
+      other: { count: 1, example: 'Context size has been exceeded' },
+    });
   });
 
   it("carries a failed assistant message's persisted error through to ThreadReportData", () => {
@@ -403,6 +418,152 @@ describe('build/buildThreadReport', () => {
     expect((assistantMessage!.payload as { error?: string }).error).to.equal(
       'Context size has been exceeded',
     );
+  });
+
+  it('buckets a tool-call span error by tool name into toolFailureCounts, keeping the first example on repeat failures', () => {
+    const threadId = 't-tool-failure';
+    const traceId = store.startTrace({ threadId, provider: 'local', model: 'llama3.2' });
+    store.saveSpans([
+      {
+        spanId: 'span-tool-1',
+        traceId,
+        parentSpanId: null,
+        type: 'tool-call',
+        name: 'fetch_url',
+        startedAt: '2026-07-18T10:00:00.000Z',
+        endedAt: '2026-07-18T10:00:01.000Z',
+        latencyMs: 1000,
+        inputTokens: null,
+        outputTokens: null,
+        outputPreview: null,
+        inputPreview: null,
+        error: 'fetch failed: ETIMEDOUT',
+      },
+      {
+        spanId: 'span-tool-2',
+        traceId,
+        parentSpanId: null,
+        type: 'tool-call',
+        name: 'fetch_url',
+        startedAt: '2026-07-18T10:00:01.000Z',
+        endedAt: '2026-07-18T10:00:02.000Z',
+        latencyMs: 1000,
+        inputTokens: null,
+        outputTokens: null,
+        outputPreview: null,
+        inputPreview: null,
+        error: 'fetch failed: ECONNRESET',
+      },
+    ]);
+    store.endTrace(traceId, { totalTokens: 0 });
+
+    const thread = makeThread({ id: threadId, messages: [] });
+    const result = buildThreadReport(threadId, {
+      threadStore: fakeThreadStore(thread),
+      observabilityStore: store,
+    });
+
+    expect(result!.stats.toolFailureCounts).to.deep.equal({
+      fetch_url: { count: 2, example: 'fetch failed: ETIMEDOUT' },
+    });
+    expect(result!.stats.otherFailures).to.deep.equal({});
+    expect(result!.stats.failureCount).to.equal(2);
+  });
+
+  it('buckets an attachment span error into otherFailures.other, separately from tool-call failures', () => {
+    const threadId = 't-attachment-failure';
+    const traceId = store.startTrace({ threadId, provider: 'local', model: 'llama3.2' });
+    store.saveSpans([
+      {
+        spanId: 'span-attachment-1',
+        traceId,
+        parentSpanId: null,
+        type: 'attachment',
+        name: 'upload_image',
+        startedAt: '2026-07-18T10:00:00.000Z',
+        endedAt: '2026-07-18T10:00:00.500Z',
+        latencyMs: 500,
+        inputTokens: null,
+        outputTokens: null,
+        outputPreview: null,
+        inputPreview: null,
+        error: 'file too large',
+      },
+    ]);
+    store.endTrace(traceId, { totalTokens: 0 });
+
+    const thread = makeThread({ id: threadId, messages: [] });
+    const result = buildThreadReport(threadId, {
+      threadStore: fakeThreadStore(thread),
+      observabilityStore: store,
+    });
+
+    expect(result!.stats.toolFailureCounts).to.deep.equal({});
+    expect(result!.stats.otherFailures).to.deep.equal({
+      other: { count: 1, example: 'file too large' },
+    });
+  });
+
+  it('matches the ContextBudgetExceededError literal substring as the context_length category', () => {
+    const threadId = 't-context-length';
+    const traceId = store.startTrace({ threadId, provider: 'local', model: 'llama3.2' });
+    store.endTrace(traceId, {
+      totalTokens: 0,
+      error:
+        'This turn produced more tool output than the configured context budget allows, even after truncating every tool result in it.',
+    });
+
+    const thread = makeThread({ id: threadId, messages: [] });
+    const result = buildThreadReport(threadId, {
+      threadStore: fakeThreadStore(thread),
+      observabilityStore: store,
+    });
+
+    expect(result!.stats.otherFailures.context_length).to.deep.equal({
+      count: 1,
+      example:
+        'This turn produced more tool output than the configured context budget allows, even after truncating every tool result in it.',
+    });
+    expect(result!.stats.otherFailures).to.not.have.property('other');
+  });
+
+  it('sums toolFailureCounts and otherFailures counts to exactly stats.failureCount across multiple traces', () => {
+    const threadId = 't-failure-invariant';
+
+    const toolTraceId = store.startTrace({ threadId, provider: 'local', model: 'llama3.2' });
+    store.saveSpans([
+      {
+        spanId: 'span-invariant-tool',
+        traceId: toolTraceId,
+        parentSpanId: null,
+        type: 'tool-call',
+        name: 'mcp_read_resource',
+        startedAt: '2026-07-18T10:00:00.000Z',
+        endedAt: '2026-07-18T10:00:01.000Z',
+        latencyMs: 1000,
+        inputTokens: null,
+        outputTokens: null,
+        outputPreview: null,
+        inputPreview: null,
+        error: 'MCP server disconnected',
+      },
+    ]);
+    store.endTrace(toolTraceId, { totalTokens: 0 });
+
+    const turnLevelTraceId = store.startTrace({ threadId, provider: 'local', model: 'llama3.2' });
+    store.endTrace(turnLevelTraceId, { totalTokens: 0, error: 'Stopped.' });
+
+    const thread = makeThread({ id: threadId, messages: [] });
+    const result = buildThreadReport(threadId, {
+      threadStore: fakeThreadStore(thread),
+      observabilityStore: store,
+    });
+
+    const breakdownTotal =
+      Object.values(result!.stats.toolFailureCounts).reduce((sum, f) => sum + f.count, 0) +
+      Object.values(result!.stats.otherFailures).reduce((sum, f) => sum + (f?.count ?? 0), 0);
+    expect(breakdownTotal).to.equal(result!.stats.failureCount);
+    expect(result!.stats.failureCount).to.equal(2);
   });
 
   it('interleaves wiki_update messages into the timeline in chronological order', () => {

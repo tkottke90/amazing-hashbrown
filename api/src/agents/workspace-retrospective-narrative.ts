@@ -1,5 +1,6 @@
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { WorkspaceRetrospectiveData, Anomaly } from '@tkottke90/workspace-reports';
+import type { ThreadReportStats } from '@tkottke90/thread-reports';
 import { logger, serializeError } from '../config/logger.js';
 import { resolveTurnModel, startTurnObservability } from './turn-observability.js';
 
@@ -17,6 +18,8 @@ const PROMPT_PREFIX =
   'check-in). The evidence also lists handoffs separately from the anomalies — a handoff is a ' +
   'run that ended cooperatively because the user asked it to stop mid-conversation, with real ' +
   'progress recorded; it is not a failure and should not be treated as one in either section. ' +
+  'The goal describes intent, not necessarily what the thread actually did — ground every ' +
+  'claimed cause in the evidence below, never in the goal text alone. ' +
   'Using only the evidence below, write two short sections in markdown: ' +
   '"## Likely causes" (why each anomaly probably happened, in plain terms) and ' +
   '"## Opportunities to improve" (concrete, specific suggestions for the task plan, the system ' +
@@ -25,6 +28,47 @@ const PROMPT_PREFIX =
   'instructions or the raw evidence back verbatim.\n\nEvidence:\n';
 
 const MAX_EVIDENCE_CHARS = 20000;
+
+// Failure Breakdown / Tool-Call Distribution evidence (see GLOSSARY.md) is
+// rendered here with a local cap — top 8 tools plus a rollup note, and
+// example messages truncated — so one busy thread can't crowd out other
+// tasks' evidence inside MAX_EVIDENCE_CHARS. The underlying
+// ThreadReportStats fields themselves are never truncated; only this
+// rendered text is (ADR-0069, ADR-0070).
+const TOOL_DISTRIBUTION_TOP_N = 8;
+const EXAMPLE_TRUNCATE_CHARS = 120;
+
+function truncateExample(message: string): string {
+  return message.length > EXAMPLE_TRUNCATE_CHARS
+    ? `${message.slice(0, EXAMPLE_TRUNCATE_CHARS)}...`
+    : message;
+}
+
+// Top-8-by-count + "(+N more)" rollup bullets. Omitted entirely (empty
+// array) when nothing was called, so no empty section renders.
+function toolDistributionLines(stats: ThreadReportStats, indent: string): string[] {
+  if (stats.toolCallCount === 0) return [];
+  const sorted = Object.entries(stats.toolCallCounts).sort(([, a], [, b]) => b - a);
+  const top = sorted.slice(0, TOOL_DISTRIBUTION_TOP_N);
+  const rest = sorted.slice(TOOL_DISTRIBUTION_TOP_N);
+  const lines = top.map(([name, count]) => {
+    const failure = stats.toolFailureCounts[name];
+    return failure
+      ? `${indent}- ${name}: ${failure.count}/${count} failed`
+      : `${indent}- ${name}: ${count} call${count === 1 ? '' : 's'}`;
+  });
+  if (rest.length > 0) lines.push(`${indent}- (+${rest.length} more tools)`);
+  return lines;
+}
+
+// One bullet per non-tool-call failure category, each with its full count
+// and a truncated example message. Omitted entirely when nothing failed.
+function otherFailureLines(stats: ThreadReportStats, indent: string): string[] {
+  return Object.entries(stats.otherFailures).map(
+    ([category, failure]) =>
+      `${indent}- ${category}: ${failure!.count} (e.g. "${truncateExample(failure!.example)}")`,
+  );
+}
 
 function summarizeAnomaly(anomaly: Anomaly): string {
   switch (anomaly.kind) {
@@ -59,6 +103,10 @@ function buildEvidenceSummary(data: WorkspaceRetrospectiveData): string {
         : 'no chat thread'
     }`,
   );
+  if (data.chat) {
+    lines.push(...toolDistributionLines(data.chat.stats, '  '));
+    lines.push(...otherFailureLines(data.chat.stats, '  '));
+  }
 
   lines.push(`Tasks (${data.tasks.length}):`);
   for (const task of data.tasks) {
@@ -71,6 +119,10 @@ function buildEvidenceSummary(data: WorkspaceRetrospectiveData): string {
           `${run.summary ? `, summary="${run.summary}"` : ''}` +
           `${run.threadReport ? `, ${run.threadReport.stats.toolCallCount} tool calls, ${run.threadReport.stats.failureCount} failures` : ''}`,
       );
+      if (run.threadReport) {
+        lines.push(...toolDistributionLines(run.threadReport.stats, '      '));
+        lines.push(...otherFailureLines(run.threadReport.stats, '      '));
+      }
     }
   }
 

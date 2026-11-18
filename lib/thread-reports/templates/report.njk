@@ -48,6 +48,41 @@
   {% endif %}
 </div>
 
+{% if stats.toolCallCount > 0 %}
+<h2>Tool Calls</h2>
+<div class="span-list">
+  {% for name, count in stats.toolCallCounts | sortEntries %}
+    {% set failure = stats.toolFailureCounts[name] %}
+    <details class="span-row {{ 'span-error' if failure }}" {{ 'open' if failure }}>
+      <summary>
+        <span class="span-name">{{ name }}</span>
+        <span class="span-tokens">
+          {{ count }} call{{ 's' if count != 1 }}{% if failure %}, {{ failure.count }} failed{% endif %}
+        </span>
+      </summary>
+      {% if failure %}
+        <div class="span-error-text">{{ failure.example }}</div>
+      {% endif %}
+    </details>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if stats.failureCount > 0 %}
+<h2>Other Failures</h2>
+<div class="span-list">
+  {% for category, failure in stats.otherFailures | sortEntries %}
+    <details class="span-row span-error" open>
+      <summary>
+        <span class="span-name">{{ category }}</span>
+        <span class="span-tokens">{{ failure.count }} failure{{ 's' if failure.count != 1 }}</span>
+      </summary>
+      <div class="span-error-text">{{ failure.example }}</div>
+    </details>
+  {% endfor %}
+</div>
+{% endif %}
+
 <h2>Trace</h2>
 <div class="timeline">
   {% for event in timeline %}

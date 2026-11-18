@@ -18,6 +18,14 @@ import type {
 
 const AFTER_AGENT_PREFIX = 'after-agent:';
 
+// Literal substring from the ContextBudgetExceededError message thrown by
+// api/src/agents/summary-boundary.ts — duplicated here (not imported) since
+// this package must stay independent of api-internal code (see this file's
+// header convention and ADR-0070). It's the one failure category with a
+// real, matchable literal string; everything else falls to 'other'.
+const CONTEXT_BUDGET_EXCEEDED_MARKER =
+  'This turn produced more tool output than the configured context budget allows';
+
 const DEFAULT_RECURSION_LIMIT = 100;
 const DEFAULT_RECURSION_WARN_THRESHOLD = 0.75;
 const DEFAULT_CONTEXT_WINDOW_MAX_TOKENS = 32000;
@@ -31,7 +39,7 @@ export interface BuildThreadReportOptions {
 function computeStats(
   messages: ThreadReportData['thread']['messages'],
   failureCount: number,
-): ThreadReportStats {
+): Omit<ThreadReportStats, 'toolFailureCounts' | 'otherFailures'> {
   const turnCount = messages.filter((m) => m.kind === 'user').length;
   const toolCallMessages = messages.filter((m) => m.kind === 'tool_call');
   const toolCallCount = toolCallMessages.length;
@@ -52,7 +60,80 @@ function computeStats(
     }
   }
 
-  return { turnCount, toolCallCount, mostPopularTool, failureCount, wikiWriteCount };
+  return {
+    turnCount,
+    toolCallCount,
+    mostPopularTool,
+    failureCount,
+    wikiWriteCount,
+    toolCallCounts: Object.fromEntries(toolCounts),
+  };
+}
+
+type FailureBreakdown = Pick<ThreadReportStats, 'toolFailureCounts' | 'otherFailures'>;
+
+// A trace's span shape, derived from TraceWithSpans itself rather than
+// importing a span type name from @tkottke90/observability (not vendored
+// here) — same independence rule as this file's other types.
+type Span = TraceWithSpans['spans'][number];
+
+function isErroredSpan(span: Span): span is Span & { error: string } {
+  return span.error !== null;
+}
+
+function bucketOtherFailure(
+  otherFailures: FailureBreakdown['otherFailures'],
+  message: string,
+): void {
+  const key = message.includes(CONTEXT_BUDGET_EXCEEDED_MARKER) ? 'context_length' : 'other';
+  const existing = otherFailures[key];
+  if (existing) {
+    existing.count += 1;
+  } else {
+    otherFailures[key] = { count: 1, example: message };
+  }
+}
+
+function bucketToolFailure(
+  toolFailureCounts: FailureBreakdown['toolFailureCounts'],
+  toolName: string,
+  message: string,
+): void {
+  const existing = toolFailureCounts[toolName];
+  if (existing) {
+    existing.count += 1;
+  } else {
+    toolFailureCounts[toolName] = { count: 1, example: message };
+  }
+}
+
+// Failure Breakdown (see GLOSSARY.md). Mirrors buildThreadReport()'s own
+// failureCount mutual-exclusivity rule below — a trace-level error only
+// counts when no span on that trace already accounts for it — so this
+// Breakdown's totals always sum to stats.failureCount.
+function computeFailureBreakdown(traces: TraceWithSpans[]): FailureBreakdown {
+  const toolFailureCounts: FailureBreakdown['toolFailureCounts'] = {};
+  const otherFailures: FailureBreakdown['otherFailures'] = {};
+
+  for (const trace of traces) {
+    const erroredSpans = trace.spans.filter(isErroredSpan);
+    if (erroredSpans.length > 0) {
+      for (const span of erroredSpans) {
+        if (span.type === 'tool-call') {
+          bucketToolFailure(toolFailureCounts, span.name, span.error);
+        } else {
+          // span.type is 'llm-call' or 'attachment' — SpanTypeSchema
+          // (@tkottke90/llm-common-types) is closed to exactly these three
+          // literals, so this else branch is exhaustive, not a guess.
+          bucketOtherFailure(otherFailures, span.error);
+        }
+      }
+    } else if (trace.error) {
+      bucketOtherFailure(otherFailures, trace.error);
+    }
+  }
+
+  return { toolFailureCounts, otherFailures };
 }
 
 // Cumulative 1-based count of assistant messages, in seq order — the same
@@ -286,7 +367,7 @@ export function buildThreadReport(
     threadId,
     generatedAt: new Date().toISOString(),
     thread: { ...thread, messages: messagesWithStepIndex },
-    stats: computeStats(thread.messages, failureCount),
+    stats: { ...computeStats(thread.messages, failureCount), ...computeFailureBreakdown(traces) },
     timeline: attachSystemPromptTokens(timeline),
     recursion: { recursionLimit, recursionWarnThreshold },
     ...(contextWindow ? { contextWindow } : {}),

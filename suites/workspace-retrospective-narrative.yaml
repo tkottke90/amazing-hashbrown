@@ -1,0 +1,79 @@
+suite:
+  id: workspace-retrospective-narrative
+  name: Workspace Retrospective Narrative
+  purpose: >
+    Verify that api/src/agents/workspace-retrospective-narrative.ts's
+    generateRetrospectiveNarrative grounds its "Likely causes" section in the
+    actual Failure Breakdown / Tool-Call Distribution evidence
+    buildEvidenceSummary now emits, rather than fabricating a cause that
+    merely fits the workspace's stated goal text (issue #401, confirmed on
+    the gmail-labeler2 workspace retrospective — see
+    docs/superpowers/specs/2026-11-18-workspace-retrospective-failure-breakdown-design.md).
+    The `input` field below is the exact prompt
+    workspace-retrospective-narrative.ts sends the model (PROMPT_PREFIX +
+    buildEvidenceSummary's output) — keep it in sync if either changes.
+  passingThreshold: 0.75
+  # generateRetrospectiveNarrative calls model.invoke(prompt) directly, no
+  # agent/tool harness — same reasoning as workspace-summary.yaml's
+  # appliesHarnessSystemPrompt: false.
+  appliesHarnessSystemPrompt: false
+
+scenarios:
+  - id: bug-401-grounds-cause-in-evidence-not-goal-text
+    name: Narrative names the actually-failing tool, not a goal-text-shaped guess
+    purpose: >
+      Issue #401: with only aggregate counts to go on, the model fabricated a
+      cause that fit the workspace's goal text instead of what the trace
+      actually recorded. With the Failure Breakdown's tool-keyed failure
+      detail now in evidence, the narrative must name the tool that actually
+      failed on every call, not invent an unrelated activity that merely
+      matches the goal.
+    type: llm-judge
+    input: >
+      You are reviewing what happened in an autonomous coding workspace: its
+      chat, the tasks it ran, and anomalies a deterministic pass already
+      flagged (repeated task failures, a wiki write that landed outside the
+      workspace's own wiki, a run that hit the recursion/stagnation
+      check-in). The evidence also lists handoffs separately from the
+      anomalies — a handoff is a run that ended cooperatively because the
+      user asked it to stop mid-conversation, with real progress recorded;
+      it is not a failure and should not be treated as one in either
+      section. The goal describes intent, not necessarily what the thread
+      actually did — ground every claimed cause in the evidence below,
+      never in the goal text alone. Using only the evidence below, write
+      two short sections in markdown: "## Likely causes" (why each anomaly
+      probably happened, in plain terms) and "## Opportunities to improve"
+      (concrete, specific suggestions for the task plan, the system prompt,
+      or the recursion/retry settings — not generic advice). Be direct and
+      specific; if there is nothing noteworthy, say so briefly rather than
+      padding. Do not restate these instructions or the raw evidence back
+      verbatim.
+
+      Evidence:
+      Workspace: Gmail Labeler
+      Goal: Automatically label incoming Gmail messages into folders by sender and topic
+      Chat: no chat thread
+      Tasks (1):
+      - "Build the Gmail labeling automation" [agent] status=failed model=ollama/qwen3:14b
+          run #1: status=failed, crash-recovery attempts=0, 14 tool calls, 10 failures
+            - gmail_mcp_apply_label: 10/10 failed
+            - read_wiki_page: 4 calls
+            - context_length: 1 (e.g. "This turn produced more tool output than the configured context budget allows, even after truncating every tool result in it.")
+      Anomalies flagged (1):
+      - repeated_failures: task "Build the Gmail labeling automation" failed 2 time(s) in a row before its last settled run — last summary: "MCP tool kept disconnecting mid-call"
+      Handoffs (0, not failures):
+    rubric: >
+      Hard requirement: the "Likely causes" section must identify the
+      gmail_mcp_apply_label tool (or clearly describe its 10/10 failure) as
+      the actual cause, grounded in the evidence's tool-call distribution —
+      not a vague restatement of the goal ("labeling logic was wrong",
+      "sender/topic rules were misconfigured") that isn't tied to the
+      evidence's own failing tool. Score no higher than 3/10 if the cause
+      given is goal-text-shaped speculation untethered from the
+      gmail_mcp_apply_label failures or the evidence's other listed facts
+      (context_length, read_wiki_page calls succeeding normally).
+
+      Given that's met, a narrative that correctly grounds the cause in the
+      tool failure and gives a specific, concrete suggestion in
+      "Opportunities to improve" has done its job: score it 8 or higher.
+    minScore: 7
