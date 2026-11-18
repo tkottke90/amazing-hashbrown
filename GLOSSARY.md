@@ -635,5 +635,5 @@ A Thread Report's own record of what actually failed within it: failed tool-call
 _Avoid_: Failure taxonomy, error taxonomy, failure categories
 
 **Tool-Call Distribution**:
-A Thread Report's full per-tool-name call-count map — previously collapsed down to just its single most-called tool, now exposed in full. Not itself a failure signal; pairs with a Failure Breakdown's tool-keyed failure counts (same tool names) to show a failure rate per tool, e.g. "fetch_url: 23/23 failed".
+A Thread Report's full per-tool-name call-count map — previously collapsed down to just its single most-called tool, now exposed in full. Not itself a failure signal; pairs with a Failure Breakdown's tool-keyed failure counts (same tool names) to show a failure rate per tool, e.g. "`fetch_url`: 23/23 failed".
 _Avoid_: Tool usage stats, tool histogram

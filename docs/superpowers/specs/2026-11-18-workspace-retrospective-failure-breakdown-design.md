@@ -51,7 +51,7 @@ A new function in `build.ts`, alongside the existing `computeStats`/`computeCont
 function computeFailureBreakdown(traces: TraceWithSpans[]): {
   toolFailureCounts: Record<string, { count: number; example: string }>;
   otherFailures: Partial<Record<'context_length' | 'other', { count: number; example: string }>>;
-}
+};
 ```
 
 For each trace:
@@ -76,7 +76,7 @@ Both sections render only when non-empty (`toolCallCount > 0` / `failureCount > 
 For both the chat thread's block and each task run's block, append (as indented sub-bullets, never packed onto the existing dense status line — R4-Q1):
 
 - A **tool-call distribution** bullet list — top 8 tools by call count (by `toolCallCounts`), each shown with its failure ratio when `toolFailureCounts` has an entry for that tool (`"- fetch_url: 23/23 failed"` / `"- read_wiki_page: 12 calls"`), remaining tools rolled into one `"- (+N more tools)"` line. Omitted entirely when `toolCallCount === 0`.
-- An **other failures** bullet list — each `otherFailures` entry as `"- context_length: 3 (e.g. \"<first 120 chars of example>...\")"`,  omitted entirely when `otherFailures` is empty.
+- An **other failures** bullet list — each `otherFailures` entry as `"- context_length: 3 (e.g. \"<first 120 chars of example>...\")"`, omitted entirely when `otherFailures` is empty.
 
 The top-8 cap and "+N more" rollup apply **only** to this rendered text (R2-Q6); the underlying `ThreadReportStats` fields themselves are never truncated or capped. Each rendered example message is cut to its first ~120 characters (R2-Q3); the stored `example` field stays full-length (§2, R5-Q1).
 
