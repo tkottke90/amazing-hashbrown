@@ -93,13 +93,11 @@ One sentence added to the existing prefix, targeting the actual failure mode (no
 - **`lib/thread-reports/test/unit/build.test.ts`**: `computeFailureBreakdown` cases — a tool-call span error (bucketed by tool name, first example kept on repeat), an llm-call span error, an attachment span error, a turn-level `trace.error` with no span errors (mirroring the existing mutual-exclusivity rule), a `ContextBudgetExceededError`-shaped message matched to `context_length`, an unmatched message falling to `other`, and a trace with both span errors and a `trace.error` (only the span errors count, consistent with existing `failureCount` behavior). Also: the sum of all `toolFailureCounts`/`otherFailures` counts across a fixture equals `stats.failureCount`.
 - **`lib/thread-reports/test/unit/render.test.ts`**: extend existing fixtures with the three new required `ThreadReportStats` fields (breaking change — every existing fixture constructing `ThreadReportStats` must add them); new cases asserting the Tool Calls / Other Failures sections render, including the omit-when-empty case.
 - **`api/src/agents/workspace-retrospective-narrative.test.ts`**: orchestration tests on `buildEvidenceSummary`'s new rendering — sub-bullet formatting, top-8 + rollup, ratio phrasing, 120-char truncation, omit-when-empty for both the chat block and a task-run block; a `PROMPT_PREFIX` test confirming the new sentence is present.
-- **New eval suite `suites/workspace-retrospective-narrative.yaml`** (R4-Q2), following `workspace-summary.yaml`'s/`thread-titles.yaml`'s convention (`appliesHarnessSystemPrompt: false`, `input` = the exact prompt this code sends):
-  - `suite.id: workspace-retrospective-narrative`, `purpose` citing issue #401 and this design.
-  - Scenario `bug-401-grounds-cause-in-evidence-not-goal-text`: `type: llm-judge`, `input` built from a hand-written evidence block in the new format (a goal about an unrelated topic, e.g. Gmail labeling; a named tool failing on all its calls, e.g. an MCP tool at 10/10 failed with a real-shaped example message; wiki-research tool calls succeeding normally), rubric asserting the "Likely causes" section names the actually-failing tool/category and does not claim an unsupported activity that merely matches the goal text.
-  - **Hand-off**: per this repo's EDD rule 5, I cannot run this myself (no network path to local model providers). Run with:
-    ```sh
-    npm run eval -- --suite workspace-retrospective-narrative --model ollama --judge-model ollama
-    ```
+- **New eval suite `suites/workspace-retrospective-narrative.yaml`** (R4-Q2), following `workspace-summary.yaml`'s/`thread-titles.yaml`'s convention (`appliesHarnessSystemPrompt: false`, `input` = the exact prompt this code sends). `suite.id: workspace-retrospective-narrative`, `purpose` citing issue #401 and this design. Scenario `bug-401-grounds-cause-in-evidence-not-goal-text`: `type: llm-judge`, `input` built from a hand-written evidence block in the new format (a goal about an unrelated topic, e.g. Gmail labeling; a named tool failing on all its calls, e.g. an MCP tool at 10/10 failed with a real-shaped example message; wiki-research tool calls succeeding normally), rubric asserting the "Likely causes" section names the actually-failing tool/category and does not claim an unsupported activity that merely matches the goal text.
+- **Hand-off**: per this repo's EDD rule 5, I cannot run this myself (no network path to local model providers). Run with:
+  ```sh
+  npm run eval -- --suite workspace-retrospective-narrative --model ollama --judge-model ollama
+  ```
 
 ## 5. Out of scope
 
