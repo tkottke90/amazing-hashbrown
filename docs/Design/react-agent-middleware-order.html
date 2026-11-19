@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ReAct Agent Middleware Order</title>
+<style>
+/* Layout: one wide comparison figure (two columns sharing band rows) between
+   a short intro and a construction-inputs table. Palette: slate neutrals,
+   a hue-shifted band color per middleware hook type, amber accent reserved
+   for the ContextWindow middleware this is really about. */
+:root {
+  --bg: #f6f5f3;
+  --fg: #1c1b1a;
+  --muted: #68635c;
+  --card: #ffffff;
+  --border: #ddd8d0;
+  --once: #ebe6f7;
+  --once-border: #b7a8e0;
+  --once-fg: #4a3a86;
+  --loopb: #e3f1ee;
+  --loopb-border: #8fc3b7;
+  --loopb-fg: #1f5e52;
+  --loopc: #e6edf7;
+  --loopc-border: #9bb6e0;
+  --loopc-fg: #2a4d8a;
+  --none-bg: #f1efeb;
+  --none-border: #cdc7bc;
+  --accent: #f4b740;
+  --accent-border: #c8862a;
+  --accent-fg: #5a3c0a;
+  --model: #efece6;
+  --model-border: #c9c1b2;
+  --tool: #e9e4f9;
+  --tool-border: #b7a8e0;
+  --proposed: #e1f1e4;
+  --proposed-border: #3f8a55;
+  --proposed-fg: #1f5e34;
+  --callout-bg: #fdf0e0;
+  --callout-border: #e0a53f;
+  --callout-fg: #6b4610;
+  --line: #a39c8f;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1a1816;
+    --fg: #ece8e1;
+    --muted: #a39c90;
+    --card: #242220;
+    --border: #3a3733;
+    --once: #2c2544;
+    --once-border: #5c4ea0;
+    --once-fg: #c8bdf0;
+    --loopb: #17302c;
+    --loopb-border: #3a7c6c;
+    --loopb-fg: #9bd8c8;
+    --loopc: #1b2740;
+    --loopc-border: #4a6ba8;
+    --loopc-fg: #a9c3ec;
+    --none-bg: #262320;
+    --none-border: #4a443c;
+    --accent: #7a5418;
+    --accent-border: #c8862a;
+    --accent-fg: #f6dba6;
+    --model: #27241f;
+    --model-border: #4a443a;
+    --tool: #241f3a;
+    --tool-border: #5c4ea0;
+    --proposed: #16301f;
+    --proposed-border: #4a9e63;
+    --proposed-fg: #9adbae;
+    --callout-bg: #332108;
+    --callout-border: #a06a1e;
+    --callout-fg: #f0c680;
+    --line: #6b6459;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1a1816;
+  --fg: #ece8e1;
+  --muted: #a39c90;
+  --card: #242220;
+  --border: #3a3733;
+  --once: #2c2544;
+  --once-border: #5c4ea0;
+  --once-fg: #c8bdf0;
+  --loopb: #17302c;
+  --loopb-border: #3a7c6c;
+  --loopb-fg: #9bd8c8;
+  --loopc: #1b2740;
+  --loopc-border: #4a6ba8;
+  --loopc-fg: #a9c3ec;
+  --none-bg: #262320;
+  --none-border: #4a443c;
+  --accent: #7a5418;
+  --accent-border: #c8862a;
+  --accent-fg: #f6dba6;
+  --model: #27241f;
+  --model-border: #4a443a;
+  --tool: #241f3a;
+  --tool-border: #5c4ea0;
+  --proposed: #16301f;
+  --proposed-border: #4a9e63;
+  --proposed-fg: #9adbae;
+  --callout-bg: #332108;
+  --callout-border: #a06a1e;
+  --callout-fg: #f0c680;
+  --line: #6b6459;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'Inter', system-ui, sans-serif;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px;
+}
+.wrap { max-width: 1120px; margin: 0 auto; }
+.wide { max-width: 1500px; margin: 0 auto; }
+h1 {
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
+  font-size: 1.7rem;
+  margin: 0 0 6px;
+  letter-spacing: -0.01em;
+}
+.kicker {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin: 0 0 4px;
+}
+p { line-height: 1.55; max-width: 66ch; }
+.lede { color: var(--muted); font-size: 1rem; }
+code {
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  font-size: 0.86em;
+  background: var(--none-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 18px 0 8px;
+  font-size: 0.86rem;
+}
+caption {
+  text-align: left;
+  font-weight: 600;
+  margin-bottom: 8px;
+  font-family: 'Space Grotesk', sans-serif;
+}
+th, td {
+  border: 1px solid var(--border);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+  line-height: 1.4;
+}
+th {
+  background: var(--card);
+  font-weight: 600;
+  width: 13%;
+}
+td.wide-col { font-size: 0.82rem; }
+.table-wrap { overflow-x: auto; }
+figure { margin: 28px 0 8px; }
+figcaption {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-top: 10px;
+  max-width: 76ch;
+}
+svg.diagram { width: 100%; height: auto; display: block; }
+
+/* SVG element styling, all via currentColor-friendly fills referencing the
+   same palette so the diagram follows theme too */
+svg.diagram text { fill: var(--fg); font-family: 'Inter', system-ui, sans-serif; }
+svg.diagram .colhead { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 15px; }
+svg.diagram .colsub { font-size: 11.5px; fill: var(--muted); }
+svg.diagram .bandlabel { font-size: 11.5px; fill: var(--muted); letter-spacing: 0.02em; }
+svg.diagram .chiptext { font-size: 11.5px; font-weight: 600; }
+svg.diagram .chipsub { font-size: 10px; fill: var(--muted); }
+svg.diagram .archlabel { font-size: 11.5px; fill: var(--muted); font-style: italic; }
+svg.diagram .loopbacklabel { font-size: 10.5px; fill: var(--muted); }
+svg.diagram .bypasslabel { font-size: 10.5px; fill: var(--muted); }
+svg.diagram .calloutlabel { font-size: 12px; font-weight: 700; fill: var(--callout-fg); }
+svg.diagram .calloutbody { font-size: 11.5px; fill: var(--callout-fg); }
+
+svg.diagram .chip { stroke-width: 1.3; }
+svg.diagram .chip.once { fill: var(--once); stroke: var(--once-border); }
+svg.diagram .chip.once .chiptext, svg.diagram .chip.once + .chiptext { fill: var(--once-fg); }
+svg.diagram .chip.loopB { fill: var(--loopb); stroke: var(--loopb-border); }
+svg.diagram .chip.loopC { fill: var(--loopc); stroke: var(--loopc-border); }
+svg.diagram .chip.none { fill: var(--none-bg); stroke: var(--none-border); stroke-dasharray: 5 4; }
+svg.diagram .chip.accent { fill: var(--accent); stroke: var(--accent-border); stroke-width: 1.6; }
+svg.diagram .chip.modelbox { fill: var(--model); stroke: var(--model-border); }
+svg.diagram .chip.toolnode { fill: var(--tool); stroke: var(--tool-border); }
+svg.diagram .chip.bold { stroke-width: 2.2; }
+svg.diagram .callout { fill: var(--callout-bg); stroke: var(--callout-border); stroke-width: 1.3; }
+
+svg.diagram .loopback, svg.diagram .bypass {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1.6;
+}
+svg.diagram .bypass { stroke-dasharray: 4 4; }
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 22px;
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.swatch { width: 13px; height: 13px; border-radius: 3px; display: inline-block; border: 1px solid var(--border); }
+.sw-once { background: var(--once); border-color: var(--once-border); }
+.sw-loopb { background: var(--loopb); border-color: var(--loopb-border); }
+.sw-loopc { background: var(--loopc); border-color: var(--loopc-border); }
+.sw-accent { background: var(--accent); border-color: var(--accent-border); }
+
+ul.takeaways { padding-left: 1.1em; line-height: 1.55; }
+ul.takeaways li { margin-bottom: 8px; }
+.src { font-size: 0.78rem; color: var(--muted); margin-top: 28px; }
+
+.treewrap { max-width: 740px; margin: 0 auto; }
+svg.tree { width: 100%; height: auto; display: block; }
+svg.tree text { font-family: 'Inter', system-ui, sans-serif; fill: var(--fg); }
+svg.tree .treenode-struct { font-size: 12px; font-weight: 600; fill: var(--muted); }
+svg.tree .treenode { font-size: 12px; font-weight: 500; }
+svg.tree .treesub { font-size: 11px; font-style: italic; fill: var(--muted); }
+svg.tree .treeguide { stroke: var(--border); stroke-width: 1.3; }
+svg.tree .structdot { fill: var(--muted); }
+svg.tree .swn { stroke-width: 1.2; }
+svg.tree .swn.once { fill: var(--once); stroke: var(--once-border); }
+svg.tree .swn.loopB { fill: var(--loopb); stroke: var(--loopb-border); }
+svg.tree .swn.loopC { fill: var(--loopc); stroke: var(--loopc-border); }
+svg.tree .swn.accent { fill: var(--accent); stroke: var(--accent-border); stroke-width: 1.6; }
+svg.tree .swn.none { fill: var(--none-bg); stroke: var(--none-border); stroke-dasharray: 3 2; }
+svg.tree .swn.modelbox { fill: var(--model); stroke: var(--model-border); }
+svg.tree .swn.toolnode { fill: var(--tool); stroke: var(--tool-border); }
+svg.tree .swn.proposed { fill: var(--proposed); stroke: var(--proposed-border); stroke-width: 1.6; stroke-dasharray: 3 2; }
+svg.tree .treenode.is-proposed { font-weight: 700; fill: var(--proposed-fg); }
+.sw-proposed { background: var(--proposed); border-color: var(--proposed-border); border-style: dashed; }
+.is-proposed-label { color: var(--proposed-fg); }
+</style>
+</head>
+<body>
+<p style="max-width:1120px;margin:0 auto 4px;font-size:0.78rem;"><a href="https://github.com/tkottke90/amazing-hashbrown/issues/403">Issue #403</a> reference doc, saved 2026-11-19 for future agent-construction discussions.</p>
+<div class="wrap">
+  <p class="kicker">amazing-hashbrown · api/src/agents</p>
+  <h1>What createAgent() builds, and in what order</h1>
+  <p class="lede">Four builders in <code>chat-agent.ts</code> all call LangChain's <code>createAgent()</code>. The loop itself lives in that library's ReAct graph &mdash; this codebase only shapes what goes in and plugs into three hook points along the way.</p>
+
+  <div class="table-wrap">
+    <table>
+      <caption>What each builder passes to <code>createAgent({ model, tools, systemPrompt, checkpointer, middleware })</code></caption>
+      <thead>
+        <tr><th></th><th>buildChatAgent</th><th>buildWorkspaceChatAgent</th><th>buildTaskAgent</th><th>buildSubAgentAgent</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>model</strong></td>
+          <td colspan="3"><code>createProvider(provider, model)</code></td>
+          <td><code>createProvider(roleConfig.provider, roleConfig.model)</code></td>
+        </tr>
+        <tr>
+          <td><strong>tools</strong></td>
+          <td class="wide-col">shell_exec, get_tool_key, MCP search/use, static chat tools, wakeup tools, skill/gated/created/scoped-skill tools, wiki-write tools, MCP tools</td>
+          <td class="wide-col">+ workspace-scoped tools, task-visibility tools, file-conflict tools</td>
+          <td class="wide-col">+ task-scoped &amp; recurrence tools, complete_task / hand_off / block_on_user_action / update_plan, optional read_task_run / task notes</td>
+          <td class="wide-col">config-driven subset of the same pool (<code>getSubAgentToolIds()</code>) + complete_task; ask_user and spawn_sub_agent are hard-excluded</td>
+        </tr>
+        <tr>
+          <td><strong>systemPrompt</strong></td>
+          <td class="wide-col">agent instructions only</td>
+          <td class="wide-col">+ workspace context block</td>
+          <td class="wide-col">+ workspace context (if scoped) + task context block</td>
+          <td class="wide-col">+ workspace/task context + the role's own systemPrompt</td>
+        </tr>
+        <tr>
+          <td><strong>checkpointer</strong></td>
+          <td colspan="4"><code>getCheckpointer()</code> &mdash; one shared SqliteSaver instance</td>
+        </tr>
+        <tr>
+          <td><strong>middleware</strong></td>
+          <td colspan="3">identical 17-entry array (figure below, left column)</td>
+          <td>6-entry array, built by <code>buildSubAgentMiddleware()</code> (figure below, right column)</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="wide">
+<figure>
+<svg class="diagram" viewBox="0 0 1500 930" role="img" aria-label="Two columns show when each middleware's hook fires in a turn: once before the loop (beforeAgent), every loop iteration before the model call (beforeModel, array order) and wrapped around the model call (wrapModelCall, outer to inner), then once after the loop ends (afterAgent). The left column is the identical 17-entry tuple shared by the Chat, Workspace Chat and Task agents; the right is the Sub-agent's shorter 6-entry tuple, which has no beforeAgent or afterAgent middleware at all. ContextWindow is highlighted in amber in both columns because it runs twice per iteration and is the one hook that sees every tool result pile up, which is the gap issue #403 is about.">
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="var(--line)"/>
+  </marker>
+</defs>
+<text x="380.0" y="52" text-anchor="middle" class="colhead">Chat · Workspace Chat · Task agents</text>
+<text x="380.0" y="72" text-anchor="middle" class="colsub">identical 17-entry middleware tuple</text>
+<text x="1100.0" y="52" text-anchor="middle" class="colhead">Sub-agent</text>
+<text x="1100.0" y="72" text-anchor="middle" class="colsub">6-entry middleware tuple, escalationMode: throw</text>
+<text x="40" y="111" class="bandlabel">beforeAgent — once, before the loop starts</text>
+<text x="760.0" y="111" class="bandlabel">beforeAgent — once, before the loop starts</text>
+<rect x="40.0" y="127" width="162.5" height="46" rx="8" class="chip once"/>
+<text x="121.25" y="154.0" text-anchor="middle" class="chiptext">SkillExpansion</text>
+<rect x="212.5" y="127" width="162.5" height="46" rx="8" class="chip once"/>
+<text x="293.75" y="154.0" text-anchor="middle" class="chiptext">AttachmentAwareness</text>
+<rect x="385.0" y="127" width="162.5" height="46" rx="8" class="chip once"/>
+<text x="466.25" y="154.0" text-anchor="middle" class="chiptext">WikiReferenceExpansion</text>
+<rect x="557.5" y="127" width="162.5" height="46" rx="8" class="chip once"/>
+<text x="638.75" y="154.0" text-anchor="middle" class="chiptext">ToolSyntax</text>
+<rect x="760.0" y="127" width="680.0" height="46" rx="8" class="chip none"/>
+<text x="1100.0" y="155" text-anchor="middle" class="chipsub">— none —</text>
+<text x="40" y="215" class="bandlabel">beforeModel — every loop iteration, array order</text>
+<text x="760.0" y="215" class="bandlabel">beforeModel — every loop iteration, array order</text>
+<rect x="40.0" y="231" width="128.0" height="46" rx="8" class="chip loopB"/>
+<text x="104.0" y="258.0" text-anchor="middle" class="chiptext">ContentBlockSanitizer</text>
+<rect x="178.0" y="231" width="128.0" height="46" rx="8" class="chip loopB"/>
+<text x="242.0" y="254.0" text-anchor="middle" class="chiptext">RecursionGuard</text>
+<text x="242.0" y="268.0" text-anchor="middle" class="chipsub">interrupt mode</text>
+<rect x="316.0" y="231" width="128.0" height="46" rx="8" class="chip loopB"/>
+<text x="380.0" y="258.0" text-anchor="middle" class="chiptext">TaskFileState</text>
+<rect x="454.0" y="231" width="128.0" height="46" rx="8" class="chip loopB"/>
+<text x="518.0" y="258.0" text-anchor="middle" class="chiptext">BinaryContentFetch</text>
+<rect x="592.0" y="231" width="128.0" height="46" rx="8" class="chip accent"/>
+<text x="656.0" y="254.0" text-anchor="middle" class="chiptext">ContextWindow</text>
+<text x="656.0" y="268.0" text-anchor="middle" class="chipsub">coarse trim</text>
+<rect x="760.0" y="231" width="220.0" height="46" rx="8" class="chip loopB"/>
+<text x="870.0" y="258.0" text-anchor="middle" class="chiptext">ContentBlockSanitizer</text>
+<rect x="990.0" y="231" width="220.0" height="46" rx="8" class="chip loopB"/>
+<text x="1100.0" y="254.0" text-anchor="middle" class="chiptext">RecursionGuard</text>
+<text x="1100.0" y="268.0" text-anchor="middle" class="chipsub">throw mode</text>
+<rect x="1220.0" y="231" width="220.0" height="46" rx="8" class="chip accent"/>
+<text x="1330.0" y="254.0" text-anchor="middle" class="chiptext">ContextWindow</text>
+<text x="1330.0" y="268.0" text-anchor="middle" class="chipsub">coarse trim</text>
+<text x="40" y="319" class="bandlabel">wrapModelCall — every iteration, outer → inner onion around the real call</text>
+<text x="760.0" y="319" class="bandlabel">wrapModelCall — every iteration, outer → inner onion</text>
+<rect x="40.0" y="335" width="162.5" height="46" rx="8" class="chip loopC"/>
+<text x="121.25" y="362.0" text-anchor="middle" class="chiptext">SkillGatedTools</text>
+<rect x="212.5" y="335" width="162.5" height="46" rx="8" class="chip loopC"/>
+<text x="293.75" y="362.0" text-anchor="middle" class="chiptext">SkillScopedTools</text>
+<rect x="385.0" y="335" width="162.5" height="46" rx="8" class="chip loopC"/>
+<text x="466.25" y="362.0" text-anchor="middle" class="chiptext">ToolAccess</text>
+<rect x="557.5" y="335" width="162.5" height="46" rx="8" class="chip loopC"/>
+<text x="638.75" y="362.0" text-anchor="middle" class="chiptext">McpToolDiscovery</text>
+<rect x="40.0" y="393" width="162.5" height="46" rx="8" class="chip loopC"/>
+<text x="121.25" y="420.0" text-anchor="middle" class="chiptext">AmbientContext</text>
+<rect x="212.5" y="393" width="162.5" height="46" rx="8" class="chip loopC"/>
+<text x="293.75" y="420.0" text-anchor="middle" class="chiptext">WikiOrientationContext</text>
+<rect x="385.0" y="393" width="162.5" height="46" rx="8" class="chip accent"/>
+<text x="466.25" y="416.0" text-anchor="middle" class="chiptext">ContextWindow</text>
+<text x="466.25" y="430.0" text-anchor="middle" class="chipsub">schema-aware trim</text>
+<rect x="557.5" y="393" width="162.5" height="46" rx="8" class="chip loopC bold"/>
+<text x="638.75" y="416.0" text-anchor="middle" class="chiptext">ModelInputSnapshot</text>
+<text x="638.75" y="430.0" text-anchor="middle" class="chipsub">innermost, must be last</text>
+<rect x="760.0" y="335" width="162.5" height="46" rx="8" class="chip accent"/>
+<text x="841.25" y="358.0" text-anchor="middle" class="chiptext">ContextWindow</text>
+<text x="841.25" y="372.0" text-anchor="middle" class="chipsub">schema-aware trim</text>
+<rect x="932.5" y="335" width="162.5" height="46" rx="8" class="chip loopC"/>
+<text x="1013.75" y="362.0" text-anchor="middle" class="chiptext">ToolAccess</text>
+<rect x="1105.0" y="335" width="162.5" height="46" rx="8" class="chip loopC"/>
+<text x="1186.25" y="362.0" text-anchor="middle" class="chiptext">McpToolDiscovery</text>
+<rect x="1277.5" y="335" width="162.5" height="46" rx="8" class="chip loopC"/>
+<text x="1358.75" y="362.0" text-anchor="middle" class="chiptext">AmbientContext</text>
+<rect x="114.80000000000001" y="489" width="530.4" height="44" rx="8" class="chip modelbox"/>
+<text x="380.0" y="516" text-anchor="middle" class="chiptext">model.invoke()</text>
+<rect x="834.8" y="489" width="530.4" height="44" rx="8" class="chip modelbox"/>
+<text x="1100.0" y="516" text-anchor="middle" class="chiptext">model.invoke()</text>
+<text x="380.0" y="555" text-anchor="middle" class="archlabel">has tool_calls?</text>
+<text x="1100.0" y="555" text-anchor="middle" class="archlabel">has tool_calls?</text>
+<rect x="189.056" y="575" width="381.888" height="48" rx="8" class="chip toolnode"/>
+<text x="380.0" y="597" text-anchor="middle" class="chiptext">ToolNode</text>
+<text x="380.0" y="613" text-anchor="middle" class="chipsub">runs tools, appends ToolMessages</text>
+<rect x="909.0559999999999" y="575" width="381.888" height="48" rx="8" class="chip toolnode"/>
+<text x="1100.0" y="597" text-anchor="middle" class="chiptext">ToolNode</text>
+<text x="1100.0" y="613" text-anchor="middle" class="chipsub">runs tools, appends ToolMessages</text>
+<path d="M 183.056 599 C 12 599, 12 254, 34 254" class="loopback" marker-end="url(#arrow)"/>
+<text x="16" y="426.5" transform="rotate(-90 16 426.5)" text-anchor="middle" class="loopbacklabel">loop back</text>
+<path d="M 903.0559999999999 599 C 732.0 599, 732.0 254, 754.0 254" class="loopback" marker-end="url(#arrow)"/>
+<text x="736.0" y="426.5" transform="rotate(-90 736.0 426.5)" text-anchor="middle" class="loopbacklabel">loop back</text>
+<path d="M 663.2 499 L 663.2 645" class="bypass" marker-end="url(#arrow)"/>
+<text x="671.2" y="532.0" class="bypasslabel">no tool_calls →</text>
+<path d="M 1383.1999999999998 499 L 1383.1999999999998 645" class="bypass" marker-end="url(#arrow)"/>
+<text x="1391.1999999999998" y="532.0" class="bypasslabel">no tool_calls →</text>
+<rect x="40" y="653" width="1400.0" height="58" rx="10" class="callout"/>
+<text x="58" y="677" class="calloutlabel">#403 — the gap</text>
+<text x="58" y="697" class="calloutbody">Every loop pass goes through the ContextWindow chips above, but only to trim/stub oversized history — nothing here summarizes it.</text>
+<text x="40" y="757" class="bandlabel">afterAgent — once, after the loop exits</text>
+<text x="760.0" y="757" class="bandlabel">afterAgent — once, after the loop exits</text>
+<rect x="40.0" y="773" width="335.0" height="46" rx="8" class="chip once"/>
+<text x="207.5" y="796.0" text-anchor="middle" class="chiptext">TaskFileState</text>
+<text x="207.5" y="810.0" text-anchor="middle" class="chipsub">persists Task File</text>
+<rect x="385.0" y="773" width="335.0" height="46" rx="8" class="chip once"/>
+<text x="552.5" y="796.0" text-anchor="middle" class="chiptext">AfterAgentMiddleware</text>
+<text x="552.5" y="810.0" text-anchor="middle" class="chipsub">fires wiki-write pipeline</text>
+<rect x="760.0" y="773" width="680.0" height="46" rx="8" class="chip none"/>
+<text x="1100.0" y="795" text-anchor="middle" class="chipsub">— none, deliberately —</text>
+<text x="1100.0" y="811" text-anchor="middle" class="chipsub">(ADR-0063: a sub-agent run never triggers it)</text>
+<text x="380.0" y="865" text-anchor="middle" class="archlabel">↓ final reply returned to the turn that called this agent</text>
+<text x="1100.0" y="865" text-anchor="middle" class="archlabel">↓ StagnationLimitError thrown, or complete_task delivered</text>
+</svg>
+<figcaption>
+  Both columns share the same four bands, top to bottom: <strong>beforeAgent</strong> fires once before the loop starts; <strong>beforeModel</strong> and <strong>wrapModelCall</strong> both fire on every pass through the loop (beforeModel in plain array order, wrapModelCall as nested layers &mdash; the first entry wraps outermost, the last wraps tightest around the real model call); <strong>afterAgent</strong> fires once after the loop exits. ContextWindow (amber) is the only middleware that runs in both loop stages, and the only thing that ever revisits the growing tool-call history &mdash; today only to trim or stub it, never to summarize it.
+  <div class="legend">
+    <span><i class="swatch sw-once"></i> once per turn</span>
+    <span><i class="swatch sw-loopb"></i> beforeModel, every iteration</span>
+    <span><i class="swatch sw-loopc"></i> wrapModelCall, every iteration</span>
+    <span><i class="swatch sw-accent"></i> ContextWindow (both stages)</span>
+  </div>
+</figcaption>
+</figure>
+</div>
+
+<div class="wrap">
+  <h2 style="font-family:'Space Grotesk',sans-serif;font-size:1.15rem;margin-top:36px;">Why this shape matters for #403</h2>
+  <ul class="takeaways">
+    <li><strong>There's no fourth hook family.</strong> LangChain's middleware gives this codebase exactly four insertion points &mdash; once-at-start, once-at-end, and two per-iteration hooks. A mid-loop compactor has to be one more <code>beforeModel</code> or <code>wrapModelCall</code> entry; there's no separate "after each tool result" hook to attach to.</li>
+    <li><strong>ContextWindow already proves the pattern works.</strong> It's the only middleware here that runs in two hook stages and reads the accumulating message list on every single loop pass &mdash; which is exactly the access a summarizer would need. The gap isn't access, it's that both of its passes are reactive truncation (<code>boundaryAwareTrim</code> / <code>recoverTurnOverflow</code>), never proactive summarization.</li>
+    <li><strong>Position isn't fixed across agent types.</strong> In the Chat/Workspace/Task tuple, ContextWindow sits near the <em>inner</em> end of the wrapModelCall onion (position 15 of 17, just before the innermost ModelInputSnapshot). In the Sub-agent's shorter tuple it's the <em>outermost</em> wrapModelCall layer. Any new compaction middleware needs to pick its array position deliberately per builder, not assume one relative order.</li>
+    <li><strong>Sub-agent runs have no afterAgent exit hook at all</strong> (deliberately, per ADR-0063) &mdash; so whatever #403 adds has to do its real work inside the loop body, not lean on a turn-end hook the way the wiki-write pipeline does.</li>
+  </ul>
+  <h2 style="font-family:'Space Grotesk',sans-serif;font-size:1.15rem;margin-top:36px;">The same thing, as a call tree</h2>
+  <p>The bands above group by hook type; these group by what actually contains what. <code>beforeAgent</code>/<code>beforeModel</code>/<code>afterAgent</code> entries are just a numbered sequence &mdash; siblings that each run and return. <code>wrapModelCall</code> entries are different: each one is a function that receives the next one as its <code>handler</code> argument, so the array becomes a single chain of one-child nodes, each literally wrapping the next, bottoming out at the real <code>model.invoke()</code>.</p>
+  <p>Both trees below now also carry where a new <strong class="is-proposed-label">HistoryCompaction</strong> middleware for issue #403 would slot in (dashed, green &mdash; nothing with that name exists yet). It only needs a <code>beforeModel</code> hook, placed immediately before ContextWindow's own <code>beforeModel</code> stage: late enough that it's working with whatever the rest of beforeModel already did to the message list, early enough that ContextWindow's trim is always the last line of defense, never the first. It gets no <code>wrapModelCall</code> stage and never touches the onion.</p>
+</div>
+
+<div class="wide treewrap">
+<figure>
+<svg class="tree" viewBox="0 0 700 1004" role="img" aria-label="Call tree for the Chat, Workspace Chat and Task agents' shared middleware tuple, with a proposed HistoryCompaction middleware added. Turn has three ordered children: beforeAgent (4 middlewares, once), loop (repeats), and afterAgent (2 middlewares, once). Inside loop, beforeModel's 6 middlewares are siblings in array order, with the new proposed HistoryCompaction sitting fifth, immediately before ContextWindow; wrapModelCall's 8 middlewares nest one inside the next, outer to inner, ending in model.invoke; then a has-tool_calls branch either runs ToolNode and loops back, or exits.">
+<g transform="translate(20,24)">
+<circle cx="13.5" cy="0" r="3" class="structdot"/>
+<text x="25" y="4" class="treenode-struct">Turn — one user-facing message, many model/tool round trips</text>
+<line x1="24" y1="32" x2="24" y2="864" class="treeguide"/>
+<line x1="24" y1="32" x2="33" y2="32" class="treeguide"/>
+<circle cx="40.5" cy="32" r="3" class="structdot"/>
+<text x="52" y="36" class="treenode-struct">beforeAgent — once, before the loop starts</text>
+<line x1="51" y1="64" x2="51" y2="160" class="treeguide"/>
+<line x1="51" y1="64" x2="62" y2="64" class="treeguide"/>
+<rect x="64" y="57.5" width="13" height="13" rx="3" class="swn once"/>
+<text x="84" y="68" class="treenode">1  SkillExpansion</text>
+<line x1="51" y1="96" x2="62" y2="96" class="treeguide"/>
+<rect x="64" y="89.5" width="13" height="13" rx="3" class="swn once"/>
+<text x="84" y="100" class="treenode">2  AttachmentAwareness</text>
+<line x1="51" y1="128" x2="62" y2="128" class="treeguide"/>
+<rect x="64" y="121.5" width="13" height="13" rx="3" class="swn once"/>
+<text x="84" y="132" class="treenode">3  WikiReferenceExpansion</text>
+<line x1="51" y1="160" x2="62" y2="160" class="treeguide"/>
+<rect x="64" y="153.5" width="13" height="13" rx="3" class="swn once"/>
+<text x="84" y="164" class="treenode">4  ToolSyntax</text>
+<line x1="24" y1="192" x2="33" y2="192" class="treeguide"/>
+<circle cx="40.5" cy="192" r="3" class="structdot"/>
+<text x="52" y="196" class="treenode-struct">loop — repeats until a plain-text reply, or recursionLimit</text>
+<line x1="51" y1="224" x2="51" y2="768" class="treeguide"/>
+<line x1="51" y1="224" x2="60" y2="224" class="treeguide"/>
+<circle cx="67.5" cy="224" r="3" class="structdot"/>
+<text x="79" y="228" class="treenode-struct">beforeModel — every pass, array order</text>
+<line x1="78" y1="256" x2="78" y2="416" class="treeguide"/>
+<line x1="78" y1="256" x2="89" y2="256" class="treeguide"/>
+<rect x="91" y="249.5" width="13" height="13" rx="3" class="swn loopB"/>
+<text x="111" y="260" class="treenode">1  ContentBlockSanitizer</text>
+<line x1="78" y1="288" x2="89" y2="288" class="treeguide"/>
+<rect x="91" y="281.5" width="13" height="13" rx="3" class="swn loopB"/>
+<text x="111" y="292" class="treenode">2  RecursionGuard</text>
+<text x="640" y="292" text-anchor="end" class="treesub">interrupt mode</text>
+<line x1="78" y1="320" x2="89" y2="320" class="treeguide"/>
+<rect x="91" y="313.5" width="13" height="13" rx="3" class="swn loopB"/>
+<text x="111" y="324" class="treenode">3  TaskFileState</text>
+<line x1="78" y1="352" x2="89" y2="352" class="treeguide"/>
+<rect x="91" y="345.5" width="13" height="13" rx="3" class="swn loopB"/>
+<text x="111" y="356" class="treenode">4  BinaryContentFetch</text>
+<line x1="78" y1="384" x2="89" y2="384" class="treeguide"/>
+<rect x="91" y="377.5" width="13" height="13" rx="3" class="swn proposed"/>
+<text x="111" y="388" class="treenode is-proposed">5  HistoryCompaction</text>
+<text x="640" y="388" text-anchor="end" class="treesub">proposed — summarizes older ToolMessages</text>
+<line x1="78" y1="416" x2="89" y2="416" class="treeguide"/>
+<rect x="91" y="409.5" width="13" height="13" rx="3" class="swn accent"/>
+<text x="111" y="420" class="treenode">6  ContextWindow</text>
+<text x="640" y="420" text-anchor="end" class="treesub">coarse trim</text>
+<line x1="51" y1="448" x2="60" y2="448" class="treeguide"/>
+<circle cx="67.5" cy="448" r="3" class="structdot"/>
+<text x="79" y="452" class="treenode-struct">wrapModelCall — each layer wraps the next, outer → inner</text>
+<line x1="78" y1="480" x2="89" y2="480" class="treeguide"/>
+<rect x="91" y="473.5" width="13" height="13" rx="3" class="swn loopC"/>
+<text x="111" y="484" class="treenode">SkillGatedTools</text>
+<line x1="105" y1="512" x2="116" y2="512" class="treeguide"/>
+<rect x="118" y="505.5" width="13" height="13" rx="3" class="swn loopC"/>
+<text x="138" y="516" class="treenode">SkillScopedTools</text>
+<line x1="132" y1="544" x2="143" y2="544" class="treeguide"/>
+<rect x="145" y="537.5" width="13" height="13" rx="3" class="swn loopC"/>
+<text x="165" y="548" class="treenode">ToolAccess</text>
+<line x1="159" y1="576" x2="170" y2="576" class="treeguide"/>
+<rect x="172" y="569.5" width="13" height="13" rx="3" class="swn loopC"/>
+<text x="192" y="580" class="treenode">McpToolDiscovery</text>
+<line x1="186" y1="608" x2="197" y2="608" class="treeguide"/>
+<rect x="199" y="601.5" width="13" height="13" rx="3" class="swn loopC"/>
+<text x="219" y="612" class="treenode">AmbientContext</text>
+<line x1="213" y1="640" x2="224" y2="640" class="treeguide"/>
+<rect x="226" y="633.5" width="13" height="13" rx="3" class="swn loopC"/>
+<text x="246" y="644" class="treenode">WikiOrientationContext</text>
+<line x1="240" y1="672" x2="251" y2="672" class="treeguide"/>
+<rect x="253" y="665.5" width="13" height="13" rx="3" class="swn accent"/>
+<text x="273" y="676" class="treenode">ContextWindow</text>
+<text x="640" y="676" text-anchor="end" class="treesub">schema-aware trim</text>
+<line x1="267" y1="704" x2="278" y2="704" class="treeguide"/>
+<rect x="280" y="697.5" width="13" height="13" rx="3" class="swn loopC"/>
+<text x="300" y="708" class="treenode">ModelInputSnapshot</text>
+<text x="640" y="708" text-anchor="end" class="treesub">innermost, pinned last</text>
+<line x1="294" y1="736" x2="305" y2="736" class="treeguide"/>
+<rect x="307" y="729.5" width="13" height="13" rx="3" class="swn modelbox"/>
+<text x="327" y="740" class="treenode">model.invoke()</text>
+<line x1="51" y1="768" x2="60" y2="768" class="treeguide"/>
+<circle cx="67.5" cy="768" r="3" class="structdot"/>
+<text x="79" y="772" class="treenode-struct">has tool_calls?</text>
+<line x1="78" y1="800" x2="78" y2="832" class="treeguide"/>
+<line x1="78" y1="800" x2="89" y2="800" class="treeguide"/>
+<rect x="91" y="793.5" width="13" height="13" rx="3" class="swn toolnode"/>
+<text x="111" y="804" class="treenode">yes → ToolNode runs tools, appends ToolMessages, loop back</text>
+<line x1="78" y1="832" x2="89" y2="832" class="treeguide"/>
+<rect x="91" y="825.5" width="13" height="13" rx="3" class="swn none"/>
+<text x="111" y="836" class="treenode">no → exit loop</text>
+<line x1="24" y1="864" x2="33" y2="864" class="treeguide"/>
+<circle cx="40.5" cy="864" r="3" class="structdot"/>
+<text x="52" y="868" class="treenode-struct">afterAgent — once, after the loop exits</text>
+<line x1="51" y1="896" x2="51" y2="928" class="treeguide"/>
+<line x1="51" y1="896" x2="62" y2="896" class="treeguide"/>
+<rect x="64" y="889.5" width="13" height="13" rx="3" class="swn once"/>
+<text x="84" y="900" class="treenode">1  TaskFileState</text>
+<text x="640" y="900" text-anchor="end" class="treesub">persists Task File</text>
+<line x1="51" y1="928" x2="62" y2="928" class="treeguide"/>
+<rect x="64" y="921.5" width="13" height="13" rx="3" class="swn once"/>
+<text x="84" y="932" class="treenode">2  AfterAgentMiddleware</text>
+<text x="640" y="932" text-anchor="end" class="treesub">fires wiki-write pipeline</text>
+</g>
+</svg>
+<figcaption>Chat / Workspace Chat / Task agent as a call tree, with the proposed <strong class="is-proposed-label">HistoryCompaction</strong> middleware (dashed, green) slotted in. It's a <code>beforeModel</code>-only sibling &mdash; it needs no <code>wrapModelCall</code> stage, so the onion underneath is untouched. It sits fifth of six, immediately before ContextWindow: late enough to see everything the rest of beforeModel has already done to the message list, early enough that ContextWindow's trim only ever sees history this has already condensed. Indentation under <strong>wrapModelCall</strong> is real nesting &mdash; each middleware wraps the next as its handler, down to <code>model.invoke()</code>. Indentation under <strong>beforeAgent</strong>/<strong>beforeModel</strong>/<strong>afterAgent</strong> is just array order; those run as a flat sequence, nothing wraps anything.</figcaption>
+</figure>
+</div>
+
+<div class="wide treewrap">
+<figure>
+<svg class="tree" viewBox="0 0 700 620" role="img" aria-label="Call tree for the Sub-agent's shorter middleware tuple, with the proposed HistoryCompaction middleware added. Turn has three ordered children: beforeAgent (none), loop (repeats), and afterAgent (none, deliberately). Inside loop, beforeModel has 4 sibling middlewares, with the new proposed HistoryCompaction sitting third, immediately before ContextWindow; wrapModelCall nests ContextWindow as the outermost layer wrapping ToolAccess wrapping McpToolDiscovery wrapping AmbientContext wrapping model.invoke; then a has-tool_calls branch either runs ToolNode and loops back, or exits.">
+<g transform="translate(20,24)">
+<circle cx="13.5" cy="0" r="3" class="structdot"/>
+<text x="25" y="4" class="treenode-struct">Sub-agent run — one spawn_sub_agent dispatch</text>
+<line x1="24" y1="32" x2="24" y2="544" class="treeguide"/>
+<line x1="24" y1="32" x2="35" y2="32" class="treeguide"/>
+<rect x="37" y="25.5" width="13" height="13" rx="3" class="swn none"/>
+<text x="57" y="36" class="treenode">beforeAgent — none</text>
+<line x1="24" y1="64" x2="33" y2="64" class="treeguide"/>
+<circle cx="40.5" cy="64" r="3" class="structdot"/>
+<text x="52" y="68" class="treenode-struct">loop — repeats until complete_task or StagnationLimitError</text>
+<line x1="51" y1="96" x2="51" y2="448" class="treeguide"/>
+<line x1="51" y1="96" x2="60" y2="96" class="treeguide"/>
+<circle cx="67.5" cy="96" r="3" class="structdot"/>
+<text x="79" y="100" class="treenode-struct">beforeModel — every pass, array order</text>
+<line x1="78" y1="128" x2="78" y2="224" class="treeguide"/>
+<line x1="78" y1="128" x2="89" y2="128" class="treeguide"/>
+<rect x="91" y="121.5" width="13" height="13" rx="3" class="swn loopB"/>
+<text x="111" y="132" class="treenode">1  ContentBlockSanitizer</text>
+<line x1="78" y1="160" x2="89" y2="160" class="treeguide"/>
+<rect x="91" y="153.5" width="13" height="13" rx="3" class="swn loopB"/>
+<text x="111" y="164" class="treenode">2  RecursionGuard</text>
+<text x="640" y="164" text-anchor="end" class="treesub">throw mode</text>
+<line x1="78" y1="192" x2="89" y2="192" class="treeguide"/>
+<rect x="91" y="185.5" width="13" height="13" rx="3" class="swn proposed"/>
+<text x="111" y="196" class="treenode is-proposed">3  HistoryCompaction</text>
+<text x="640" y="196" text-anchor="end" class="treesub">proposed — summarizes older ToolMessages</text>
+<line x1="78" y1="224" x2="89" y2="224" class="treeguide"/>
+<rect x="91" y="217.5" width="13" height="13" rx="3" class="swn accent"/>
+<text x="111" y="228" class="treenode">4  ContextWindow</text>
+<text x="640" y="228" text-anchor="end" class="treesub">coarse trim</text>
+<line x1="51" y1="256" x2="60" y2="256" class="treeguide"/>
+<circle cx="67.5" cy="256" r="3" class="structdot"/>
+<text x="79" y="260" class="treenode-struct">wrapModelCall — each layer wraps the next, outer → inner</text>
+<line x1="78" y1="288" x2="89" y2="288" class="treeguide"/>
+<rect x="91" y="281.5" width="13" height="13" rx="3" class="swn accent"/>
+<text x="111" y="292" class="treenode">ContextWindow</text>
+<text x="640" y="292" text-anchor="end" class="treesub">schema-aware trim — outermost here</text>
+<line x1="105" y1="320" x2="116" y2="320" class="treeguide"/>
+<rect x="118" y="313.5" width="13" height="13" rx="3" class="swn loopC"/>
+<text x="138" y="324" class="treenode">ToolAccess</text>
+<line x1="132" y1="352" x2="143" y2="352" class="treeguide"/>
+<rect x="145" y="345.5" width="13" height="13" rx="3" class="swn loopC"/>
+<text x="165" y="356" class="treenode">McpToolDiscovery</text>
+<line x1="159" y1="384" x2="170" y2="384" class="treeguide"/>
+<rect x="172" y="377.5" width="13" height="13" rx="3" class="swn loopC"/>
+<text x="192" y="388" class="treenode">AmbientContext</text>
+<line x1="186" y1="416" x2="197" y2="416" class="treeguide"/>
+<rect x="199" y="409.5" width="13" height="13" rx="3" class="swn modelbox"/>
+<text x="219" y="420" class="treenode">model.invoke()</text>
+<line x1="51" y1="448" x2="60" y2="448" class="treeguide"/>
+<circle cx="67.5" cy="448" r="3" class="structdot"/>
+<text x="79" y="452" class="treenode-struct">has tool_calls?</text>
+<line x1="78" y1="480" x2="78" y2="512" class="treeguide"/>
+<line x1="78" y1="480" x2="89" y2="480" class="treeguide"/>
+<rect x="91" y="473.5" width="13" height="13" rx="3" class="swn toolnode"/>
+<text x="111" y="484" class="treenode">yes → ToolNode runs tools, loop back</text>
+<line x1="78" y1="512" x2="89" y2="512" class="treeguide"/>
+<rect x="91" y="505.5" width="13" height="13" rx="3" class="swn none"/>
+<text x="111" y="516" class="treenode">no → exit loop</text>
+<line x1="24" y1="544" x2="35" y2="544" class="treeguide"/>
+<rect x="37" y="537.5" width="13" height="13" rx="3" class="swn none"/>
+<text x="57" y="548" class="treenode">afterAgent — none, deliberately (ADR-0063)</text>
+</g>
+</svg>
+<figcaption>Sub-agent as the same kind of call tree, with the same proposed <strong class="is-proposed-label">HistoryCompaction</strong> added third of four in its beforeModel sequence &mdash; still immediately before ContextWindow, still no wrapModelCall stage of its own. Everything else is shorter here, and empty on two branches &mdash; but notice ContextWindow is the <em>outermost</em> wrapModelCall layer in this tree, where in the one above it sits eight layers deep, second-to-last. Same middleware, same two hooks, different depth in each tree; the new middleware's rule (&ldquo;right before ContextWindow's beforeModel stage&rdquo;) has to be stated relative to ContextWindow, not as a fixed array index, because that index isn't the same in both tuples.</figcaption>
+</figure>
+</div>
+
+<div class="wrap">
+  <p class="src">Sources: <code>api/src/agents/chat-agent.ts</code> (builder middleware arrays, lines 696&ndash;727, 878&ndash;904, 1066&ndash;1106, 1210&ndash;1234), <code>api/src/agents/summary-boundary.ts</code> (trim/recovery logic), <code>api/src/config/env.ts:352&ndash;364</code> (context budget, default 32000 tokens).</p>
+</div>
+</body>
+</html>
