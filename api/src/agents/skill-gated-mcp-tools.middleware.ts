@@ -27,7 +27,7 @@ import { env, type ToolEntry } from '../config/env.js';
 // A skill-gated MCP tool binds directly the instant its skill is Active —
 // no search_mcp_tools/use_mcp_tools round-trip, unlike a Discovered Tool
 // (GLOSSARY.md § MCP Tool Discovery) — EXCEPT that an admin's explicit
-// disable still wins (ADR-0071), checked here via
+// disable still wins (ADR-0074), checked here via
 // getGloballyEnabledToolIds(): the same global-only check
 // use_mcp_tools/search_mcp_tools already use, deliberately not
 // resolveEffectiveToolIds(threadId) — intersecting with a thread's
@@ -58,7 +58,7 @@ export function createSkillGatedMcpToolsMiddleware(
       const mcpDisplayIds = active.toolNames.filter((name) => name.includes(':'));
       if (mcpDisplayIds.length === 0) return handler(request);
 
-      // ADR-0071: an admin's explicit disable still wins over the gate.
+      // ADR-0074: an admin's explicit disable still wins over the gate.
       const enabledIds = getGloballyEnabledToolIds(getToolsConfig());
       const allowedDisplayIds = new Set(mcpDisplayIds.filter((id) => enabledIds.has(id)));
       if (allowedDisplayIds.size === 0) return handler(request);

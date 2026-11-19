@@ -67,7 +67,10 @@ skillsRouter.delete('/:name', async (req: Request, res: Response) => {
   // now declared on each skill's own `tools` frontmatter field (issue
   // #409), so which names are protected can change the moment a skill is
   // edited, not just at server start.
-  const gatedNames = skillsManager.list().filter((s) => s.tools).map((s) => s.name);
+  const gatedNames = skillsManager
+    .list()
+    .filter((s) => s.tools)
+    .map((s) => s.name);
   const result = await deleteSkillHandler(skillsManager, req.params['name'] as string, gatedNames);
   if (!result.ok) {
     sendFailure(res, result);

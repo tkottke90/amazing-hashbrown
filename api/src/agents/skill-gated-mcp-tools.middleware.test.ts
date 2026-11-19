@@ -27,7 +27,7 @@ describe('agents/skill-gated-mcp-tools.middleware', () => {
   let db: SqliteDatabase;
   let toolsConfig: Record<string, ToolEntry>;
 
-  // getGloballyEnabledToolIds() (ADR-0071 enforcement) reads the real
+  // getGloballyEnabledToolIds() (ADR-0074 enforcement) reads the real
   // ToolSettingsStore singleton, so every test here needs a real sqlite
   // temp-dir db — there is no "pure fake" tier the way
   // mcp-tool-discovery.middleware.test.ts has, since that middleware never
@@ -111,7 +111,7 @@ describe('agents/skill-gated-mcp-tools.middleware', () => {
     expect(tools).to.not.include('create_workspace');
   });
 
-  it("ADR-0071: an admin's explicit disable still wins, even while the skill is Active", async () => {
+  it("ADR-0074: an admin's explicit disable still wins, even while the skill is Active", async () => {
     toolsConfig['n8n:workflow_search'] = { enabled: false };
     const tools = await runStandalone('n8n-workflow-sync');
     expect(tools).to.not.include('n8n__workflow_search');

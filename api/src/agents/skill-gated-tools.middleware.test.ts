@@ -78,7 +78,7 @@ describe('agents/skill-gated-tools.middleware', () => {
     expect(seenTools.map((t) => t.name)).to.deep.equal(['ask_user', 'wiki_search']);
   });
 
-  it('never exposes the MCP (colon-containing) half of a skill\'s declared tools — that is skill-gated-mcp-tools.middleware.ts\'s job', async () => {
+  it("never exposes the MCP (colon-containing) half of a skill's declared tools — that is skill-gated-mcp-tools.middleware.ts's job", async () => {
     const getMixedSkills = fixtureSkills([
       { name: 'n8n-workflow-sync', tools: 'create_workspace,n8n:workflow_search' },
     ]);
@@ -100,7 +100,11 @@ describe('agents/skill-gated-tools.middleware', () => {
     // create_workspace (built-in) passes through; nothing here ever adds
     // n8n:workflow_search (it was never present in request.tools to begin
     // with, and this middleware only filters, never adds).
-    expect(seenTools.map((t) => t.name)).to.deep.equal(['ask_user', 'wiki_search', 'create_workspace']);
+    expect(seenTools.map((t) => t.name)).to.deep.equal([
+      'ask_user',
+      'wiki_search',
+      'create_workspace',
+    ]);
   });
 
   // These describe blocks exercise the exact tool sets the previously

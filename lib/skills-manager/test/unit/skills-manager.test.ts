@@ -161,7 +161,7 @@ describe('SkillsManager', () => {
   });
 
   describe('boot (tools frontmatter)', () => {
-    it('populates SkillSummary.tools from an on-disk SKILL.md, not just create()/edit()\'s cache-set', async () => {
+    it("populates SkillSummary.tools from an on-disk SKILL.md, not just create()/edit()'s cache-set", async () => {
       await manager.create({ name: 'boot-gated-skill', description: 'x', body: 'y' });
       await manager.edit('boot-gated-skill', { tools: 'propose_file_merge' });
 

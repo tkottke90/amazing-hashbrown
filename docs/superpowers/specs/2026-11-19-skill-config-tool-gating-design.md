@@ -14,29 +14,29 @@ Move Skill-Gated Tools (GLOSSARY.md § Skill Invocation & Runtime Access) off a 
 
 See issue #409 for the full write-up: `GATED_SKILL_REGISTRATIONS` requires a code change to add or edit a binding, and the Settings UI's `skill-details-tab.tsx` has a commented-out field and TODO waiting on exactly this. Not repeated here.
 
-**Correction found during the architecture pass:** the natural-looking fix — moving `skill-gated-tools.middleware.ts` to run after `toolAccessMiddleware` so it can add back a skill-gated MCP tool the same way `createMcpToolDiscoveryMiddleware` does — breaks `tool-access.middleware.ts`'s own `boundIds` computation (used for `#tool-name`'s required-tool-block injection and `filterHarnessSections`), which explicitly depends on an *inactive* skill-gated tool already being stripped out of `request.tools` by the time it runs. Built-in gating stays exactly where it is; MCP gating is added as a second, separate middleware positioned where `createMcpToolDiscoveryMiddleware` already is. See Architecture §4.
+**Correction found during the architecture pass:** the natural-looking fix — moving `skill-gated-tools.middleware.ts` to run after `toolAccessMiddleware` so it can add back a skill-gated MCP tool the same way `createMcpToolDiscoveryMiddleware` does — breaks `tool-access.middleware.ts`'s own `boundIds` computation (used for `#tool-name`'s required-tool-block injection and `filterHarnessSections`), which explicitly depends on an _inactive_ skill-gated tool already being stripped out of `request.tools` by the time it runs. Built-in gating stays exactly where it is; MCP gating is added as a second, separate middleware positioned where `createMcpToolDiscoveryMiddleware` already is. See Architecture §4.
 
 ---
 
 ## Decisions (settled via grilling)
 
-| Question | Decision |
-| --- | --- |
+| Question                                            | Decision                                                                                                                                                                                    |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Replace or coexist with `GATED_SKILL_REGISTRATIONS` | Replace entirely. `gated-skill-registrations.ts` is deleted; every app-level skill (including the 4 existing registrations) declares its own gated tools in its own `SKILL.md` frontmatter. |
-| Which skills can gate tools | App-level/system skills only for this issue. Workspace-authored skills are out of scope — a follow-up, with its own trust-model design, since gating bypasses Tool Access. |
-| MCP tools in scope | Yes. A skill's tools can include MCP tools, not just built-ins. |
-| Bind shape for a skill-gated MCP tool | Direct bind — bound automatically whenever its skill is Active, same as a built-in skill-gated tool. No `search_mcp_tools`/`use_mcp_tools` round-trip. |
-| Admin disable vs. skill-gating, for MCP tools | Admin disable wins (ADR-0071) — asymmetric with a built-in skill-gated tool's full exemption from Tool Access. |
-| Unknown tool name in a skill's declaration | Silently dropped at reconciliation time, not a skill-boot failure. The Settings UI flags it as unknown. |
-| Frontmatter field shape | Comma-separated string — same shape the existing (unrelated) `allowed-tools` field already has. |
-| Frontmatter field name | `tools`. Deliberately not `allowed-tools` (reserved, ecosystem-standard *restrictive* meaning) or `gated-tools`. User-facing label: "Tools this skill has access to." |
-| Freshness | Recomputed live from `SkillsManager` on every model call — an edit takes effect on the next turn, no restart. |
-| MCP id format inside `tools` | The existing display-id convention (`server:tool`, e.g. `n8n:workflow_search`) — no new id scheme. |
-| Delete protection | Dynamic: any skill whose own `tools` field is non-empty is undeletable. `GATED_SKILL_NAMES` is removed, no replacement hardcoded list. |
-| Agent-settable via chat | Not in this issue. `create_app_skill`/`edit_app_skill` keep their current parameters; `tools` is UI-only for now. |
-| Settings UI picker grouping | Grouped by source: Built-in, then each connected MCP server. |
-| Disabled tool visibility in the picker | Shown, grayed out ("disabled — won't take effect") — not hidden. |
-| AlwaysOn tools in the picker | Included as selectable, even though gating one is a no-op. |
+| Which skills can gate tools                         | App-level/system skills only for this issue. Workspace-authored skills are out of scope — a follow-up, with its own trust-model design, since gating bypasses Tool Access.                  |
+| MCP tools in scope                                  | Yes. A skill's tools can include MCP tools, not just built-ins.                                                                                                                             |
+| Bind shape for a skill-gated MCP tool               | Direct bind — bound automatically whenever its skill is Active, same as a built-in skill-gated tool. No `search_mcp_tools`/`use_mcp_tools` round-trip.                                      |
+| Admin disable vs. skill-gating, for MCP tools       | Admin disable wins (ADR-0074) — asymmetric with a built-in skill-gated tool's full exemption from Tool Access.                                                                              |
+| Unknown tool name in a skill's declaration          | Silently dropped at reconciliation time, not a skill-boot failure. The Settings UI flags it as unknown.                                                                                     |
+| Frontmatter field shape                             | Comma-separated string — same shape the existing (unrelated) `allowed-tools` field already has.                                                                                             |
+| Frontmatter field name                              | `tools`. Deliberately not `allowed-tools` (reserved, ecosystem-standard _restrictive_ meaning) or `gated-tools`. User-facing label: "Tools this skill has access to."                       |
+| Freshness                                           | Recomputed live from `SkillsManager` on every model call — an edit takes effect on the next turn, no restart.                                                                               |
+| MCP id format inside `tools`                        | The existing display-id convention (`server:tool`, e.g. `n8n:workflow_search`) — no new id scheme.                                                                                          |
+| Delete protection                                   | Dynamic: any skill whose own `tools` field is non-empty is undeletable. `GATED_SKILL_NAMES` is removed, no replacement hardcoded list.                                                      |
+| Agent-settable via chat                             | Not in this issue. `create_app_skill`/`edit_app_skill` keep their current parameters; `tools` is UI-only for now.                                                                           |
+| Settings UI picker grouping                         | Grouped by source: Built-in, then each connected MCP server.                                                                                                                                |
+| Disabled tool visibility in the picker              | Shown, grayed out ("disabled — won't take effect") — not hidden.                                                                                                                            |
+| AlwaysOn tools in the picker                        | Included as selectable, even though gating one is a no-op.                                                                                                                                  |
 
 ---
 
@@ -57,7 +57,7 @@ A new, dependency-light module (mirrors the `tool-syntax.ts`/`mcp-tool-discovery
 ```ts
 export function resolveSkillGatedRegistrations(
   skills: Pick<SkillSummary, 'name' | 'tools'>[],
-): SkillGatedToolRegistration[]
+): SkillGatedToolRegistration[];
 ```
 
 Parses each skill's raw `tools` string (split on comma, trim, drop empties) and returns one registration per skill with a non-empty list — the exact same `SkillGatedToolRegistration[]` shape `createSkillGatedToolsMiddleware` already takes today, so that factory's signature for the built-in half doesn't change shape, only how its input is produced. Deliberately does **not** touch `TOOL_CATALOG`, the live MCP catalog, or `tool-config.ts` — "is this name real" and "is this MCP tool disabled" are resolved downstream, at the point of use, not here. This is what keeps `bin/eval.ts`'s import light (per `gated-skill-registrations.ts`'s own existing header comment on why it was split out of `chat-agent.ts` in the first place): the eval harness calls `resolveSkillGatedRegistrations(evalSkillsManager.list())` once at setup and passes the result into the unchanged middleware factory, exactly as it passes `GATED_SKILL_REGISTRATIONS` today.
@@ -71,7 +71,7 @@ Stays exactly where it runs today (before `toolAccessMiddleware`) and keeps its 
 ```ts
 export function createSkillGatedToolsMiddleware(
   getSkills: () => Pick<SkillsManager, 'list'> = () => skillsManager,
-)
+);
 ```
 
 — and calls `resolveSkillGatedRegistrations(getSkills().list())` fresh inside `wrapModelCall`, filtered to the colon-free (built-in) half of each registration's `toolNames`. `list()` reads `SkillsManager`'s in-memory cache, so this is cheap on every call, and an edit made through the Settings UI (which calls `SkillsManager.edit()`, updating that cache synchronously) is visible on the very next model call with no agent-cache bust needed.
@@ -86,10 +86,10 @@ A second, separate middleware, not a change to §3's existing one, because of th
 export function createSkillGatedMcpToolsMiddleware(
   getSkills: () => Pick<SkillsManager, 'list'>,
   mcpTools: ClientTool[],
-)
+);
 ```
 
-On each `wrapModelCall`: resolve the active skill's registration (same `resolveSkillGatedRegistrations` call, filtered to the colon-containing/MCP half this time); convert each display id forward to its `boundName` via `toBoundMatchKeys()` (never the reverse, same rule every other MCP-aware middleware in this codebase already follows); check each against `getGloballyEnabledToolIds()`/`resolveEffectiveToolIds(threadId)` (`request.runtime.configurable?.thread_id`, same read `toolAccessMiddleware` does) and drop any that resolve to disabled — this is where ADR-0071 is actually enforced; look up the survivors in `mcpTools` by `boundName` and add any not already in `request.tools`, same addition shape `createMcpToolDiscoveryMiddleware` already uses.
+On each `wrapModelCall`: resolve the active skill's registration (same `resolveSkillGatedRegistrations` call, filtered to the colon-containing/MCP half this time); convert each display id forward to its `boundName` via `toBoundMatchKeys()` (never the reverse, same rule every other MCP-aware middleware in this codebase already follows); check each against `getGloballyEnabledToolIds()`/`resolveEffectiveToolIds(threadId)` (`request.runtime.configurable?.thread_id`, same read `toolAccessMiddleware` does) and drop any that resolve to disabled — this is where ADR-0074 is actually enforced; look up the survivors in `mcpTools` by `boundName` and add any not already in `request.tools`, same addition shape `createMcpToolDiscoveryMiddleware` already uses.
 
 Placed immediately after `toolAccessMiddleware`, alongside `createMcpToolDiscoveryMiddleware` (order between the two doesn't matter — both only add tools, never remove). Wired into `buildChatAgent`, `buildWorkspaceChatAgent`, and `buildTaskAgent`'s middleware arrays; **not** added to `buildSubAgentMiddleware`, which doesn't carry `skillGatedToolsMiddleware` or `skillScopedToolsMiddleware` today either — sub-agents don't support skill-gating at all, unchanged by this design.
 
@@ -128,7 +128,7 @@ On load, the skill's own `frontmatter.tools` (comma string) is parsed into selec
 Per root `AGENTS.md` and `api/AGENTS.md`:
 
 - **Unit**: `resolveSkillGatedRegistrations` (comma parsing, empty/whitespace handling, colon-based built-in/MCP partition).
-- **Orchestration**: `skill-gated-tools.middleware.test.ts` updated for the live-accessor signature (same filter assertions as today, now against a stubbed `getSkills`). New `skill-gated-mcp-tools.middleware.test.ts` mirroring `mcp-tool-discovery.middleware.test.ts`'s pattern — real `toolAccessMiddleware` chained with the new one, asserting: a skill-gated MCP tool is bound while its skill is Active, absent otherwise, and absent even while Active if the admin has disabled it (ADR-0071's actual enforcement point).
+- **Orchestration**: `skill-gated-tools.middleware.test.ts` updated for the live-accessor signature (same filter assertions as today, now against a stubbed `getSkills`). New `skill-gated-mcp-tools.middleware.test.ts` mirroring `mcp-tool-discovery.middleware.test.ts`'s pattern — real `toolAccessMiddleware` chained with the new one, asserting: a skill-gated MCP tool is bound while its skill is Active, absent otherwise, and absent even while Active if the admin has disabled it (ADR-0074's actual enforcement point).
 - **External-orchestration / handler tests**: `skills.handlers.test.ts`'s `deleteSkillHandler` tests updated for the dynamic `gatedNames` computation; `workspace-skills.test.ts` updated for the dynamic `reserved` list.
 - **UI**: `skill-details-tab` tests for the new multi-select (selection round-trips to frontmatter `tools`, an unknown id renders as flagged, a disabled MCP tool renders grayed out).
 
@@ -149,5 +149,5 @@ A skill-gated MCP tool binding directly, with no `search_mcp_tools`/`use_mcp_too
 ## See also
 
 - GLOSSARY.md § Skill Invocation & Runtime Access (**Skill-Gated Tools**, **Skill Tools Field**) and § MCP Tool Discovery (**Discovered Tool**).
-- ADR-0071 (skill-gated MCP tools still respect an admin's explicit disable).
+- ADR-0074 (skill-gated MCP tools still respect an admin's explicit disable).
 - `docs/superpowers/specs/2026-11-11-mcp-tool-discovery-design.md` (the design this one's MCP half builds directly on top of, and whose "Out of scope" section named this issue as the follow-up).

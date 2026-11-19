@@ -75,9 +75,7 @@ describe('services/skills-manager — seedDefaultSkills', () => {
     await seedDefaultSkills(manager);
 
     const skill = await manager.load('create-workspace');
-    expect(skill.frontmatter.tools, 'a deliberate clear must never be re-overwritten').to.equal(
-      '',
-    );
+    expect(skill.frontmatter.tools, 'a deliberate clear must never be re-overwritten').to.equal('');
   });
 
   it("never overwrites a skill's own existing, non-empty tools value [unit]", async () => {

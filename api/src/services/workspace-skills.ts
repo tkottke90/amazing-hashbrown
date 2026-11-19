@@ -46,7 +46,10 @@ export async function resolveWorkspaceSkills(
     // rather than a hardcoded array — any app-level skill that currently
     // declares tools in its frontmatter stays reserved, with no separate
     // list to keep in sync.
-    reserved: manager.list().filter((s) => s.tools).map((s) => s.name),
+    reserved: manager
+      .list()
+      .filter((s) => s.tools)
+      .map((s) => s.name),
   });
   const { skipped } = await child.boot();
   for (const entry of skipped) {
