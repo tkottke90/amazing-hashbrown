@@ -72,6 +72,10 @@ describe('ToolsPanel', () => {
     render(<ToolsPanel />);
     await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument());
 
+    // The table now defaults to the "Enabled" status filter, so a disabled
+    // tool isn't visible until the "All" filter is selected.
+    fireEvent.click(screen.getByTestId('tool-status-filter-all'));
+
     expect(screen.getByText('(disabled)')).toBeInTheDocument();
   });
 });

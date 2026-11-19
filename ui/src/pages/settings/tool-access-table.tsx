@@ -4,6 +4,7 @@ import { Loader2, RefreshCcw } from 'lucide-preact';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ClearableInput, Input } from '@/components/ui/input';
+import { ToolStatusFilter, type ToolStatusFilterValue } from '@/components/ui/tool-status-filter';
 import { showToast } from '@/lib/toast';
 import { ToolSettingsDrawer } from '@/components/tool-settings-drawer';
 import {
@@ -90,6 +91,7 @@ export function ToolAccessTable() {
   const loadError = useSignal<string | null>(null);
   const refreshing = useSignal(false);
   const search = useSignal('');
+  const statusFilter = useSignal<ToolStatusFilterValue>('enabled');
 
   async function load() {
     tools.value = await fetchToolSettings();
@@ -123,10 +125,23 @@ export function ToolAccessTable() {
   const filtered = useComputed(() => {
     const query = search.value.trim().toLowerCase();
     const sorted = [...tools.value].sort((a, b) => a.name.localeCompare(b.name));
-    if (!query) return sorted;
-    return sorted.filter(
+    const byStatus = sorted.filter((t) => {
+      if (statusFilter.value === 'enabled') return t.enabled;
+      if (statusFilter.value === 'disabled') return !t.enabled;
+      return true;
+    });
+    if (!query) return byStatus;
+    return byStatus.filter(
       (t) => t.name.toLowerCase().includes(query) || t.description.toLowerCase().includes(query),
     );
+  });
+
+  const emptyMessage = useComputed(() => {
+    if (search.value.trim()) return 'No tools match your search.';
+    if (statusFilter.value === 'enabled') return 'No enabled tools.';
+    if (statusFilter.value === 'disabled')
+      return 'No disabled tools. Every tool is currently enabled.';
+    return 'No tools match your search.';
   });
 
   if (loadError.value) {
@@ -177,17 +192,18 @@ export function ToolAccessTable() {
         </CardTitle>
       </CardHeader>
       <CardContent class="space-y-3">
-        <ClearableInput
-          value={search.value}
-          onInput={(e) => (search.value = (e.target as HTMLInputElement).value)}
-          placeholder="Search tools"
-          aria-label="Search tools"
-          className="max-w-[60ch]"
-        />
-        <br />
-        <br />
+        <div class="flex flex-wrap items-center gap-3">
+          <ClearableInput
+            value={search.value}
+            onInput={(e) => (search.value = (e.target as HTMLInputElement).value)}
+            placeholder="Search tools"
+            aria-label="Search tools"
+            className="max-w-[60ch]"
+          />
+          <ToolStatusFilter value={statusFilter.value} onChange={(v) => (statusFilter.value = v)} />
+        </div>
         {filtered.value.length === 0 ? (
-          <p class="py-4 text-center text-sm text-muted-foreground">No tools match your search.</p>
+          <p class="py-4 text-center text-sm text-muted-foreground">{emptyMessage.value}</p>
         ) : (
           <div class="rounded-md border border-border">
             <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto] gap-3 border-b border-border bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground">

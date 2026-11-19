@@ -206,6 +206,16 @@ _Avoid_: Skill file, resource
 A block of text computed fresh from disk and appended after a skill's authored body on every invocation, listing every Skill Artifact currently present and the exact `read_skill_reference`/`run_skill_script` call needed to use it. Never written back into `SKILL.md` — regenerated every time so it can't drift from what's actually on disk (see ADR-0022).
 _Avoid_: Artifact manifest, script list
 
+# Tool Enablement
+
+Which catalog tools a user can turn on or off for this app's agents (surfaced on the Settings → Tools admin page), and which ones no setting ever controls.
+
+## Language
+
+**Always-On Tool**:
+A catalog tool (the wiki tools, `complete_task`) whose enabled state is permanently `true` no matter what's stored in config — there is no toggle for it anywhere, including the Tool Settings admin page. Distinct from a Skill-Gated/Skill-Scoped Tool, whose enabled state is a real, independently resolved `true`/`false` — just not one a direct toggle on that page controls.
+_Avoid_: Forced-on tool, locked tool, non-configurable tool
+
 # Provider Authentication
 
 How a configured LLM Provider authenticates its outbound requests, and the OIDC credential lifecycle shared by the Azure OpenAI Provider and the OpenAI-Compatible Provider.
