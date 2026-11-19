@@ -39,8 +39,22 @@ function render(markdown: string): string {
 // `type: 'raw'` node (rehypeRaw never ran) or real `element` nodes with
 // `tagName: 'svg'` (rehypeRaw worked, bug is downstream). Remove once the
 // real cause is found and the suite below is green again.
+function describeShape(value: unknown): { type: string; keys: string[] | null } {
+  return {
+    type: typeof value,
+    keys: value && typeof value === 'object' ? Object.keys(value) : null,
+  };
+}
+
 describe('DIAGNOSTIC', () => {
   it('logs the hast tree immediately after rehypeRaw [unit]', () => {
+    console.log(
+      'REHYPE_RAW_SHAPE=' +
+        JSON.stringify({
+          rehypeRaw: describeShape(rehypeRaw),
+          rehypeSanitize: describeShape(rehypeSanitize),
+        }),
+    );
     const processor = unified()
       .use(remarkParse)
       .use(remarkRehype, { allowDangerousHtml: true })
