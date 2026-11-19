@@ -81,19 +81,20 @@ interface FakeSkill {
     description: string;
     license?: string;
     'allowed-tools'?: string;
+    tools?: string;
   };
   body: string;
   scripts: Record<string, string>;
   references: Record<string, string>;
 }
 
-function makeSkill(name: string, description: string, enabled = true): FakeSkill {
+function makeSkill(name: string, description: string, enabled = true, tools?: string): FakeSkill {
   return {
     name,
     slashCommand: `/${name}`,
     enabled,
     path: `/skills/${name}`,
-    frontmatter: { name, description },
+    frontmatter: { name, description, ...(tools ? { tools } : {}) },
     body: `${name} body.`,
     scripts: {},
     references: {},
@@ -111,6 +112,7 @@ async function mockSkillsApi(page: Page, seed: FakeSkill[]) {
       slashCommand: s.slashCommand,
       enabled: s.enabled,
       largeDesc: false,
+      tools: s.frontmatter.tools,
     };
     if (!withBadges) return base;
     return {
@@ -178,12 +180,13 @@ async function mockSkillsApi(page: Page, seed: FakeSkill[]) {
         if (typeof body.license === 'string') skill.frontmatter.license = body.license;
         if (typeof body.allowedTools === 'string')
           skill.frontmatter['allowed-tools'] = body.allowedTools;
+        if (typeof body.tools === 'string') skill.frontmatter.tools = body.tools;
         if (typeof body.enabled === 'boolean') skill.enabled = body.enabled;
         await route.fulfill({ json: skill });
         return;
       }
       if (method === 'DELETE') {
-        if (name === 'create-workspace' || name === 'create-project') {
+        if (skill?.frontmatter.tools) {
           await route.fulfill({
             status: 409,
             json: { error: `Skill "${name}" is required by tool-gating and cannot be deleted` },
@@ -246,8 +249,13 @@ async function mockSkillsApi(page: Page, seed: FakeSkill[]) {
 }
 
 const SEED = () => [
-  makeSkill('create-workspace', 'Create a new workspace conversationally.'),
-  makeSkill('create-project', 'Create a new project conversationally.'),
+  makeSkill(
+    'create-workspace',
+    'Create a new workspace conversationally.',
+    true,
+    'create_workspace',
+  ),
+  makeSkill('create-project', 'Create a new project conversationally.', true, 'create_project'),
   makeSkill('brainstorming', 'Turn ideas into designs.'),
 ];
 
