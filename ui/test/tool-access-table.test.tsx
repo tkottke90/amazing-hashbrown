@@ -152,4 +152,93 @@ describe('ToolAccessTable', () => {
     await waitFor(() => expect(screen.getByText('Get Forecast')).toBeInTheDocument());
     expect(mockRefresh).toHaveBeenCalled();
   });
+
+  it('defaults to showing only enabled tools on initial render', async () => {
+    mockFetch.mockResolvedValue([
+      tool({ toolId: 'web_fetch', name: 'Web Fetch', enabled: true }),
+      tool({ toolId: 'rlm_query', name: 'RLM Query', enabled: false }),
+    ]);
+    render(<ToolAccessTable />);
+    await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument());
+
+    expect(screen.getByText('Web Fetch')).toBeInTheDocument();
+    expect(screen.queryByText('RLM Query')).not.toBeInTheDocument();
+  });
+
+  it('the Disabled filter shows only disabled tools, excluding alwaysOn tools', async () => {
+    mockFetch.mockResolvedValue([
+      tool({ toolId: 'web_fetch', name: 'Web Fetch', enabled: true }),
+      tool({ toolId: 'wiki_search', name: 'Wiki Search', alwaysOn: true, enabled: true }),
+      tool({ toolId: 'rlm_query', name: 'RLM Query', enabled: false }),
+    ]);
+    render(<ToolAccessTable />);
+    await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('tool-status-filter-disabled'));
+
+    expect(screen.getByText('RLM Query')).toBeInTheDocument();
+    expect(screen.queryByText('Web Fetch')).not.toBeInTheDocument();
+    expect(screen.queryByText('Wiki Search')).not.toBeInTheDocument();
+  });
+
+  it('the All filter shows every tool regardless of enabled/alwaysOn/category', async () => {
+    mockFetch.mockResolvedValue([
+      tool({ toolId: 'web_fetch', name: 'Web Fetch', enabled: true }),
+      tool({ toolId: 'wiki_search', name: 'Wiki Search', alwaysOn: true, enabled: true }),
+      tool({ toolId: 'rlm_query', name: 'RLM Query', enabled: false }),
+    ]);
+    render(<ToolAccessTable />);
+    await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('tool-status-filter-all'));
+
+    expect(screen.getByText('Web Fetch')).toBeInTheDocument();
+    expect(screen.getByText('Wiki Search')).toBeInTheDocument();
+    expect(screen.getByText('RLM Query')).toBeInTheDocument();
+  });
+
+  it('combines the status filter with the search text (AND)', async () => {
+    mockFetch.mockResolvedValue([
+      tool({ toolId: 'web_fetch', name: 'Web Fetch', enabled: false }),
+      tool({ toolId: 'rlm_query', name: 'RLM Query', enabled: false }),
+    ]);
+    render(<ToolAccessTable />);
+    await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('tool-status-filter-disabled'));
+    fireEvent.input(screen.getByLabelText('Search tools'), { target: { value: 'web' } });
+
+    expect(screen.getByText('Web Fetch')).toBeInTheDocument();
+    expect(screen.queryByText('RLM Query')).not.toBeInTheDocument();
+  });
+
+  it('shows a filter-specific empty message when no tools match the status filter', async () => {
+    mockFetch.mockResolvedValue([tool({ toolId: 'web_fetch', name: 'Web Fetch', enabled: false })]);
+    render(<ToolAccessTable />);
+    await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument());
+
+    expect(screen.getByText('No enabled tools.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('tool-status-filter-disabled'));
+    expect(screen.queryByText('No enabled tools.')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('tool-status-filter-enabled'));
+    await waitFor(() => expect(screen.getByText('No enabled tools.')).toBeInTheDocument());
+  });
+
+  it('Refresh leaves a non-default status filter selection untouched', async () => {
+    mockFetch.mockResolvedValue([tool({ toolId: 'web_fetch', name: 'Web Fetch', enabled: true })]);
+    mockRefresh.mockResolvedValue([
+      tool({ toolId: 'web_fetch', name: 'Web Fetch', enabled: true }),
+      tool({ toolId: 'rlm_query', name: 'RLM Query', enabled: false }),
+    ]);
+    render(<ToolAccessTable />);
+    await waitFor(() => expect(screen.queryByText('Loading…')).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('tool-status-filter-all'));
+    fireEvent.click(screen.getByRole('button', { name: /Refresh/ }));
+
+    await waitFor(() => expect(screen.getByText('RLM Query')).toBeInTheDocument());
+    expect(screen.getByTestId('tool-status-filter-all')).toHaveAttribute('aria-checked', 'true');
+  });
 });

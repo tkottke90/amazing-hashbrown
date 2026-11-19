@@ -3,12 +3,16 @@ import { useSignal } from '@preact/signals';
 import { memo } from 'preact/compat';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
+import rehypeSanitize from 'rehype-sanitize';
 import rehypeHighlight from 'rehype-highlight';
 import { Check, Copy } from 'lucide-preact';
 
 import { cn } from '@/lib/utils';
 import { codeBlockWrap } from '@/hooks/use-chat-display-settings';
+import { markdownSanitizeSchema } from '@/lib/markdown-sanitize-schema';
 import { ArtifactImage } from './artifact-image';
+import { SvgSandbox } from './svg-sandbox';
 
 // ---- helpers ----
 
@@ -107,6 +111,16 @@ const markdownComponents: MarkdownReactMarkdownComponents = {
   pre: ({ node: _node, ...props }) => <CodeBlock {...props} />,
   img: (props) => <MarkdownImg {...(props as Record<string, unknown>)} />,
   a: ({ node: _node, ...props }) => <MarkdownLink {...props} />,
+  // SvgSandbox is a generic shadow-DOM portal wrapper — it knows nothing
+  // about SVG specifically, so the real <svg> element (with its own
+  // viewBox/width/height/etc. attributes, already-sanitized) is built here
+  // and handed to it as children, same as react-markdown's node props on
+  // any other element override.
+  svg: ({ node: _node, children, ...props }) => (
+    <SvgSandbox>
+      <svg {...(props as Record<string, unknown>)}>{children}</svg>
+    </SvgSandbox>
+  ),
 };
 
 // ---- public ----
@@ -121,7 +135,13 @@ function MarkdownImpl({ children, className }: MarkdownProps) {
     <div className={cn('prose prose-sm dark:prose-invert max-w-none', className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight]}
+        // Order matters: raw HTML must be expanded before it can be
+        // sanitized (an unexpanded `raw` node falls through sanitize's
+        // transform untouched), and highlighting must run last so its own
+        // injected hljs-* token spans never pass through the sanitize pass
+        // at all — no need to allowlist highlight.js's class-naming scheme
+        // (ADR-0071, GLOSSARY.md "Markdown Sanitize Schema").
+        rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSanitizeSchema], rehypeHighlight]}
         components={markdownComponents}
       >
         {children}

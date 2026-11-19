@@ -210,6 +210,16 @@ _Avoid_: Skill file, resource
 A block of text computed fresh from disk and appended after a skill's authored body on every invocation, listing every Skill Artifact currently present and the exact `read_skill_reference`/`run_skill_script` call needed to use it. Never written back into `SKILL.md` — regenerated every time so it can't drift from what's actually on disk (see ADR-0022).
 _Avoid_: Artifact manifest, script list
 
+# Tool Enablement
+
+Which catalog tools a user can turn on or off for this app's agents (surfaced on the Settings → Tools admin page), and which ones no setting ever controls.
+
+## Language
+
+**Always-On Tool**:
+A catalog tool (the wiki tools, `complete_task`) whose enabled state is permanently `true` no matter what's stored in config — there is no toggle for it anywhere, including the Tool Settings admin page. Distinct from a Skill-Gated/Skill-Scoped Tool, whose enabled state is a real, independently resolved `true`/`false` — just not one a direct toggle on that page controls.
+_Avoid_: Forced-on tool, locked tool, non-configurable tool
+
 # Provider Authentication
 
 How a configured LLM Provider authenticates its outbound requests, and the OIDC credential lifecycle shared by the Azure OpenAI Provider and the OpenAI-Compatible Provider.
@@ -641,3 +651,17 @@ _Avoid_: Failure taxonomy, error taxonomy, failure categories
 **Tool-Call Distribution**:
 A Thread Report's full per-tool-name call-count map — previously collapsed down to just its single most-called tool, now exposed in full. Not itself a failure signal; pairs with a Failure Breakdown's tool-keyed failure counts (same tool names) to show a failure rate per tool, e.g. "`fetch_url`: 23/23 failed".
 _Avoid_: Tool usage stats, tool histogram
+
+# Markdown Rendering & Inline SVG
+
+How the shared `Markdown` component decides which raw HTML written directly in Markdown source — including inline SVG — survives into the rendered DOM, instead of being escaped as literal text.
+
+## Language
+
+**Markdown Sanitize Schema**:
+The explicit allowlist (tags, attributes, URL protocols) `rehype-sanitize` enforces on the whole rendered tree once raw HTML parsing is enabled — built by enumerating exactly what the existing Markdown rendering pipeline can already produce (CommonMark/GFM syntax output, including `rehype-highlight`'s own injected token `<span>`s) plus the newly-supported SVG tags, rather than inheriting `rehype-sanitize`'s own `defaultSchema` wholesale. Decides _what_ survives into the tree; see SVG Sandbox for _where_ an SVG subtree ends up mounted. Distinct from `content-block-sanitizer.middleware.ts`'s unrelated sanitizer, which strips malformed LangChain streaming content blocks — nothing to do with HTML or XSS.
+_Avoid_: Sanitizer, sanitize schema (ambiguous with the API's own differently-scoped sanitizer)
+
+**SVG Sandbox**:
+The custom element + open Shadow DOM wrapper every rendered inline SVG is mounted into — `markdownComponents`'s `svg` override creates it and portals the SVG's already-sanitized, already-rendered subtree into its shadow root (`preact/compat`'s `createPortal`). Exists specifically so SVG-scoped `<style>` and internal `<use href="#id">` references can be allowed by the Markdown Sanitize Schema without reopening page-wide CSS injection or DOM-clobbering risk (see ADR-0072) — a separate mechanism from the Schema itself, applied uniformly to every rendered SVG regardless of whether that particular one uses `<style>`.
+_Avoid_: Shadow wrapper, SVG host, sandbox (bare — ambiguous once more than one sandboxing mechanism could exist)

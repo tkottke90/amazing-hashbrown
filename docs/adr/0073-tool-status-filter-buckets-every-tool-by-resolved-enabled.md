@@ -1,0 +1,5 @@
+# Tool status filter buckets every tool by its resolved `enabled`, no special-casing by category
+
+The Settings → Tools page's new All/Enabled/Disabled filter uses a single predicate, `tool.enabled`, across every row — including Always-On Tools and Skill-Gated/Skill-Scoped Tools, neither of which the page lets a user toggle directly.
+
+We considered carving out an exception so non-directly-toggleable tools only ever appear under "All," on the reasoning that "Enabled"/"Disabled" implies a state the user controls here. We rejected it: `enabled` is already a single resolved boolean (`resolveToolSettings`, `api/src/agents/tool-config.ts`) that reflects what's actually bound to the model right now, regardless of _why_ — a user filtering to "Enabled" wants to see what's currently active, not an inventory of what this page can edit. A category-based exception would also force the filter to know about `alwaysOn`/`category` instead of reading the one field every other part of the app already treats as the source of truth for "is this tool on."
