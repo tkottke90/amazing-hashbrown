@@ -61,6 +61,39 @@ describe('DIAGNOSTIC', () => {
       .use(rehypeRaw);
     const mdast = processor.parse('<svg><circle cx="1" cy="1" r="1"/></svg>');
     const hastTree = processor.runSync(mdast);
+
+    // Bypass unified's .use()/.run() chaining entirely: call the rehypeRaw
+    // attacher directly to get its transformer, then invoke that
+    // transformer directly on the EXACT tree captured above (hardcoded) to
+    // see whether hast-util-raw itself can expand it in isolation.
+    const transformer = rehypeRaw() as (tree: unknown) => unknown;
+    console.log('REHYPE_RAW_TRANSFORMER_TYPE=' + typeof transformer);
+    const manualTree = {
+      type: 'root',
+      children: [
+        {
+          type: 'element',
+          tagName: 'p',
+          properties: {},
+          children: [
+            { type: 'raw', value: '<svg>' },
+            { type: 'raw', value: '<circle cx="1" cy="1" r="1"/>' },
+            { type: 'raw', value: '</svg>' },
+          ],
+        },
+      ],
+    };
+    const manualResult = transformer(manualTree);
+    console.log(
+      'MANUAL_RESULT_TYPE=' +
+        typeof manualResult +
+        ' isThenable=' +
+        Boolean(manualResult && typeof (manualResult as { then?: unknown }).then === 'function'),
+    );
+    console.log(
+      'MANUAL_TRANSFORMER_RESULT=' +
+        JSON.stringify(manualResult, (key, value) => (key === 'position' ? undefined : value)),
+    );
     console.log(
       'DIAGNOSTIC_TREE_AFTER_REHYPE_RAW=' +
         JSON.stringify(hastTree, (key, value) => (key === 'position' ? undefined : value), 2),
