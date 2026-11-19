@@ -1,3 +1,12 @@
+// `rehype-raw`/`rehype-sanitize` are mapped to a no-op stub in jest.config.js's
+// moduleNameMapper for every other test file's sake (they never need the real
+// plugin behavior). A file-scoped jest.mock() always wins over
+// moduleNameMapper (see markdown.test.tsx), so this file opts back into the
+// real packages via jest.requireActual — the whole point of this test is to
+// exercise their actual stripping behavior, not a stub.
+jest.mock('rehype-raw', () => jest.requireActual('rehype-raw'));
+jest.mock('rehype-sanitize', () => jest.requireActual('rehype-sanitize'));
+
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkRehype from 'remark-rehype';

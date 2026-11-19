@@ -1,3 +1,19 @@
+// The unified/remark/rehype ecosystem `markdown-sanitize-schema.test.ts`
+// imports directly (bypassing the mocks above, on purpose — see that file)
+// ships ESM-only in its current major versions, same root cause as the
+// D3-packages override below. Computed from package-lock.json's real
+// dependency closure for unified/remark-parse/remark-rehype/rehype-raw/
+// rehype-sanitize/rehype-stringify, not guessed — `@types/*`, `debug`, and
+// `ms` are excluded: the former are type-only (never required at runtime),
+// the latter two are plain old CommonJS already.
+const ESM_MARKDOWN_DEPS =
+  'unified|bail|trough|extend|dequal|devlop|is-plain-obj|entities|parse5|hastscript|' +
+  'html-void-elements|web-namespaces|zwitch|trim-lines|property-information|' +
+  'space-separated-tokens|comma-separated-tokens|decode-named-character-reference|' +
+  'stringify-entities|ccount|character-entities[a-z0-9-]*|unist-util-[a-z-]+|' +
+  'vfile[a-z-]*|mdast-util-[a-z-]+|hast-util-[a-z-]+|micromark[a-z-]*|remark-[a-z-]+|' +
+  'rehype-[a-z-]+|@ungap/structured-clone';
+
 /** @type {import('jest').Config} */
 export default {
   preset: 'ts-jest',
@@ -42,8 +58,12 @@ export default {
       'ts-jest',
       { tsconfig: { allowJs: true, module: 'commonjs', target: 'es2019' } },
     ],
+    [`/node_modules/(${ESM_MARKDOWN_DEPS})/.+\\.js$`]: [
+      'ts-jest',
+      { tsconfig: { allowJs: true, module: 'commonjs', target: 'es2019' } },
+    ],
   },
-  transformIgnorePatterns: ['/node_modules/(?!d3-[a-z-]+|internmap)'],
+  transformIgnorePatterns: [`/node_modules/(?!d3-[a-z-]+|internmap|${ESM_MARKDOWN_DEPS})`],
   testMatch: ['<rootDir>/test/**/*.test.tsx', '<rootDir>/test/**/*.test.ts'],
   collectCoverageFrom: ['src/**/*.{ts,tsx}', '!src/**/*.d.ts'],
   coverageReporters: ['lcov', 'text'],
