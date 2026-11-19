@@ -45,6 +45,7 @@ The wrapper div carries `prose prose-sm dark:prose-invert max-w-none` from `@tai
 - All standard CommonMark (headings, paragraphs, lists, blockquotes, links, images, inline code, bold, italic, etc.)
 - **GitHub Flavored Markdown** via `remark-gfm`: tables, task lists, strikethrough, autolinks
 - **Fenced code blocks** with syntax highlighting via `rehype-highlight` (highlight.js token classes)
+- **Inline SVG**: a raw `<svg>...</svg>` block written directly in Markdown source renders as real SVG. See "Inline SVG" below.
 
 ## Code blocks
 
@@ -89,6 +90,15 @@ plain text block — no highlighting, no language label
 
 Absolute `http://`/`https://` links open in a new tab (`target="_blank" rel="noopener noreferrer"`) so clicking a link in a chat message or wiki page doesn't navigate the current tab away from the app. Relative links (e.g. in-app wiki navigation links), `mailto:`, `tel:`, and anchor (`#...`) links are left unchanged — same tab, no `rel`.
 
+## Inline SVG
+
+A raw `<svg>...</svg>` block written directly in Markdown source renders as real SVG, in both consumers of this component (chat bubbles and the wiki page preview). Two mechanisms work together — see `GLOSSARY.md`'s "Markdown Rendering & Inline SVG" section, ADR-0071, and ADR-0072 for the full rationale, not repeated here:
+
+- **Markdown Sanitize Schema** (`src/lib/markdown-sanitize-schema.ts`) — an explicit allowlist of exactly which SVG tags/attributes survive. Not every SVG element is supported; `<script>`, `<iframe>`, `<image>`, `<foreignObject>`, `on*` handlers, and any externally-resolving URL (not just `javascript:`) are stripped. SMIL animation (`animate`/`animateTransform`/`animateMotion`/`set`) is allowed with no duration/repeat-count enforcement — an accepted, undefended risk.
+- **SVG Sandbox** (`svg-sandbox.tsx`) — every rendered SVG is mounted inside a custom element with its own open Shadow DOM, uniformly (not only ones using `<style>`). This is what lets `<style>` be allowed at all (genuinely CSS-scoped to that SVG, not page-wide) and lets `<use href="#id">` internal references resolve.
+
+Known limitations: an SVG's authored colors render as-is, identically in light and dark mode (no color adaptation); oversized SVGs are capped to their container's width via a stylesheet the Sandbox injects into its own shadow root, since the normal `prose`/Tailwind cascade can't reach across the shadow boundary.
+
 ## Themes
 
 Syntax highlighting uses the [github](https://highlightjs.org/) highlight.js theme in light mode and a matching github-dark palette in dark mode. The theme switches automatically with the `.dark` class — no extra configuration needed.
@@ -101,6 +111,8 @@ The light-mode code block background is `#f6f8fa` (GitHub's standard code surfac
 | ------------------------- | ----------------------------------------------------- |
 | `react-markdown`          | Markdown → JSX renderer                               |
 | `remark-gfm`              | GitHub Flavored Markdown parser plugin                |
+| `rehype-raw`              | Parses raw HTML embedded in Markdown source (including `<svg>`) into the render tree |
+| `rehype-sanitize`         | Enforces the Markdown Sanitize Schema on the whole tree once raw HTML is enabled |
 | `rehype-highlight`        | Syntax highlighting (adds highlight.js token classes) |
 | `highlight.js`            | Token class definitions and CSS theme                 |
 | `@tailwindcss/typography` | `prose` utility class                                 |
