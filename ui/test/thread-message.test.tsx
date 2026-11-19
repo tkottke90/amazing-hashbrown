@@ -70,3 +70,20 @@ describe('ThreadMessageItem — wiki_update prop threading', () => {
     expect(screen.getByText('Add to Message')).toBeInTheDocument();
   });
 });
+
+describe('ThreadMessageItem — summary dispatch', () => {
+  it("renders a kind: 'summary' message as WorkspaceSummaryMessage", () => {
+    const message: ThreadMessage = {
+      kind: 'summary',
+      id: 's1',
+      content: '## Summary',
+      summaryPath: '.hashbrown/summaries/one.md',
+      workspaceId: 'ws-1',
+    };
+
+    render(<ThreadMessageItem message={message} onHitlAnswer={jest.fn()} />);
+
+    expect(screen.getByTestId('workspace-summary-marker')).toBeInTheDocument();
+    expect(screen.getByText('Earlier messages were summarised')).toBeInTheDocument();
+  });
+});

@@ -222,6 +222,21 @@ export type ThreadMessage =
       wikiId?: string;
       wikiDescription?: string;
       seq?: number;
+    }
+  | {
+      // A Workspace Chat Summary (see GLOSSARY.md "Workspace Chat
+      // Continuity Across Threads") — the one, current summary a thread's
+      // lastSummarizedMessageId cursor points to, surfaced here as a
+      // collapsible marker rather than hidden behind the cursor filter.
+      // workspaceId travels on the message itself (same pattern as
+      // resource_card below) so the card can build its own "view raw
+      // file" link without a separate prop.
+      kind: 'summary';
+      id: string;
+      content: string;
+      summaryPath: string;
+      workspaceId: string;
+      seq?: number;
     };
 
 export type WakeupState = 'pending' | 'fired' | 'cancelled';
@@ -241,3 +256,4 @@ export type SubAgentMarkerThreadMessage = Extract<ThreadMessage, { kind: 'sub_ag
 export type WakeupThreadMessage = Extract<ThreadMessage, { kind: 'wakeup' }>;
 export type WakeupFiredThreadMessage = Extract<ThreadMessage, { kind: 'wakeup_fired' }>;
 export type WikiOrientationThreadMessage = Extract<ThreadMessage, { kind: 'wiki_orientation' }>;
+export type WorkspaceSummaryThreadMessage = Extract<ThreadMessage, { kind: 'summary' }>;

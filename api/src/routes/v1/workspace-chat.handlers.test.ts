@@ -15,7 +15,11 @@ import {
   getWakeupStore,
   type WakeupCancelSource,
 } from '../../services/wakeup-store.js';
-import { replaceThreadHandler, type WakeupCanceler } from './workspace-chat.handlers.js';
+import {
+  getWorkspaceChatThreadHandler,
+  replaceThreadHandler,
+  type WakeupCanceler,
+} from './workspace-chat.handlers.js';
 
 function fakeRegistry(impl?: (id: string, by: WakeupCancelSource) => void): {
   canceler: WakeupCanceler;
@@ -222,5 +226,143 @@ describe('routes/v1/workspace-chat.handlers: replaceThreadHandler', () => {
     );
 
     expect(result.ok).to.equal(true);
+  });
+});
+
+describe('routes/v1/workspace-chat.handlers: getWorkspaceChatThreadHandler', () => {
+  let dir: string;
+  let threadId: string;
+  let workspace: Workspace;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'workspace-chat-handlers-thread-test-'));
+    const threadDb = openDatabase(join(dir, 'threads.db'));
+    bootThreadStore(threadDb);
+    const workspaceDb = openDatabase(join(dir, 'workspaces.db'));
+    bootWorkspaceStore(workspaceDb);
+
+    threadId = 'thread-1';
+    getThreadStore().upsertThreadOnFirstMessage(threadId, 'Thread', 'workspace-chat');
+    const created = getWorkspaceStore().createWorkspace({ name: 'W', location: '/tmp/ws' });
+    workspace = getWorkspaceStore().patchWorkspace(created.id, { threadId })!;
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const isTurnActive = () => false;
+
+  it('returns an empty-history fallback when the thread has no first message yet', () => {
+    const result = getWorkspaceChatThreadHandler(getThreadStore(), threadId, workspace, {
+      isTurnActive,
+    });
+
+    expect(result.ok).to.equal(true);
+    if (!result.ok) throw new Error('expected success');
+    expect(result.data).to.deep.equal({
+      messages: [],
+      summaryPath: null,
+      summarizedAt: null,
+    });
+  });
+
+  it('passes the tail through unchanged when there is no summary cursor', () => {
+    getThreadStore().insertMessage(threadId, {
+      id: 'u1',
+      kind: 'user',
+      payload: { content: 'hi' },
+    });
+    getThreadStore().insertMessage(threadId, {
+      id: 'a1',
+      kind: 'assistant',
+      status: 'done',
+      payload: { content: 'hello' },
+    });
+
+    const result = getWorkspaceChatThreadHandler(getThreadStore(), threadId, workspace, {
+      isTurnActive,
+    });
+
+    expect(result.ok).to.equal(true);
+    if (!result.ok) throw new Error('expected success');
+    if (!('id' in result.data)) throw new Error('expected a ClientThreadDetail shape');
+    expect(result.data.messages.map((m) => m['id'])).to.deep.equal(['u1', 'a1']);
+    expect(result.data.summarizedAt).to.equal(null);
+  });
+
+  it('prepends the current summary message ahead of the post-cursor tail', () => {
+    getThreadStore().insertMessage(threadId, {
+      id: 'u1',
+      kind: 'user',
+      payload: { content: 'hi' },
+    });
+    const summaryRecord = getThreadStore().insertMessage(threadId, {
+      id: 'summary-1',
+      kind: 'summary',
+      payload: {
+        content: '# Summary',
+        summaryPath: '.hashbrown/summaries/one.md',
+        workspaceId: workspace.id,
+      },
+    });
+    getWorkspaceStore().patchWorkspace(workspace.id, {
+      summaryPath: '.hashbrown/summaries/one.md',
+      lastSummarizedMessageId: summaryRecord.id,
+    });
+    const refreshed = getWorkspaceStore().getWorkspace(workspace.id)!;
+    getThreadStore().insertMessage(threadId, {
+      id: 'u2',
+      kind: 'user',
+      payload: { content: 'what next' },
+    });
+
+    const result = getWorkspaceChatThreadHandler(getThreadStore(), threadId, refreshed, {
+      isTurnActive,
+    });
+
+    expect(result.ok).to.equal(true);
+    if (!result.ok) throw new Error('expected success');
+    if (!('id' in result.data)) throw new Error('expected a ClientThreadDetail shape');
+    expect(result.data.messages.map((m) => m['id'])).to.deep.equal(['summary-1', 'u2']);
+    expect(result.data.messages[0]).to.deep.include({
+      kind: 'summary',
+      content: '# Summary',
+      summaryPath: '.hashbrown/summaries/one.md',
+      workspaceId: workspace.id,
+    });
+    expect(result.data.summaryPath).to.equal('.hashbrown/summaries/one.md');
+    expect(result.data.summarizedAt).to.equal(summaryRecord.createdAt);
+  });
+
+  it('returns exactly the summary message when nothing has been sent since', () => {
+    getThreadStore().insertMessage(threadId, {
+      id: 'u1',
+      kind: 'user',
+      payload: { content: 'hi' },
+    });
+    const summaryRecord = getThreadStore().insertMessage(threadId, {
+      id: 'summary-1',
+      kind: 'summary',
+      payload: {
+        content: '# Summary',
+        summaryPath: '.hashbrown/summaries/one.md',
+        workspaceId: workspace.id,
+      },
+    });
+    getWorkspaceStore().patchWorkspace(workspace.id, {
+      summaryPath: '.hashbrown/summaries/one.md',
+      lastSummarizedMessageId: summaryRecord.id,
+    });
+    const refreshed = getWorkspaceStore().getWorkspace(workspace.id)!;
+
+    const result = getWorkspaceChatThreadHandler(getThreadStore(), threadId, refreshed, {
+      isTurnActive,
+    });
+
+    expect(result.ok).to.equal(true);
+    if (!result.ok) throw new Error('expected success');
+    if (!('id' in result.data)) throw new Error('expected a ClientThreadDetail shape');
+    expect(result.data.messages.map((m) => m['id'])).to.deep.equal(['summary-1']);
   });
 });

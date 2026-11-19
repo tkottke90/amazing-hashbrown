@@ -272,20 +272,6 @@ export function WorkspaceChatTab({
           </div>
         )}
 
-        {thread.summaryPath.value && (
-          <div class="border-b border-border bg-muted px-3 py-1.5 text-xs text-muted-foreground">
-            Earlier messages were summarised —{' '}
-            <a
-              href={`/api/v1/workspaces/${workspace.id}/files/${thread.summaryPath.value}`}
-              target="_blank"
-              rel="noreferrer"
-              class="underline"
-            >
-              view summary
-            </a>
-          </div>
-        )}
-
         <ChatMessageScrollWrapper
           className="min-h-0 flex-1"
           forceScrollTrigger={forceScrollTrigger.value}
