@@ -1,12 +1,3 @@
-// `rehype-raw`/`rehype-sanitize` are mapped to a no-op stub in jest.config.js's
-// moduleNameMapper for every other test file's sake (they never need the real
-// plugin behavior). A file-scoped jest.mock() always wins over
-// moduleNameMapper (see markdown.test.tsx), so this file opts back into the
-// real packages via jest.requireActual — the whole point of this test is to
-// exercise their actual stripping behavior, not a stub.
-jest.mock('rehype-raw', () => jest.requireActual('rehype-raw'));
-jest.mock('rehype-sanitize', () => jest.requireActual('rehype-sanitize'));
-
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkRehype from 'remark-rehype';
@@ -31,75 +22,6 @@ function render(markdown: string): string {
     .processSync(markdown);
   return String(file).trim();
 }
-
-// TEMPORARY DIAGNOSTIC — every real-pipeline assertion below is failing:
-// the raw SVG survives as HTML-entity-escaped text instead of being parsed
-// into real elements at all. This logs the tree right after rehypeRaw
-// (before sanitize/stringify) to see whether it's still an unexpanded
-// `type: 'raw'` node (rehypeRaw never ran) or real `element` nodes with
-// `tagName: 'svg'` (rehypeRaw worked, bug is downstream). Remove once the
-// real cause is found and the suite below is green again.
-function describeShape(value: unknown): { type: string; keys: string[] | null } {
-  return {
-    type: typeof value,
-    keys: value && typeof value === 'object' ? Object.keys(value) : null,
-  };
-}
-
-describe('DIAGNOSTIC', () => {
-  it('logs the hast tree immediately after rehypeRaw [unit]', () => {
-    console.log(
-      'REHYPE_RAW_SHAPE=' +
-        JSON.stringify({
-          rehypeRaw: describeShape(rehypeRaw),
-          rehypeSanitize: describeShape(rehypeSanitize),
-        }),
-    );
-    const processor = unified()
-      .use(remarkParse)
-      .use(remarkRehype, { allowDangerousHtml: true })
-      .use(rehypeRaw);
-    const mdast = processor.parse('<svg><circle cx="1" cy="1" r="1"/></svg>');
-    const hastTree = processor.runSync(mdast);
-
-    // Bypass unified's .use()/.run() chaining entirely: call the rehypeRaw
-    // attacher directly to get its transformer, then invoke that
-    // transformer directly on the EXACT tree captured above (hardcoded) to
-    // see whether hast-util-raw itself can expand it in isolation.
-    const transformer = rehypeRaw() as (tree: unknown) => unknown;
-    console.log('REHYPE_RAW_TRANSFORMER_TYPE=' + typeof transformer);
-    const manualTree = {
-      type: 'root',
-      children: [
-        {
-          type: 'element',
-          tagName: 'p',
-          properties: {},
-          children: [
-            { type: 'raw', value: '<svg>' },
-            { type: 'raw', value: '<circle cx="1" cy="1" r="1"/>' },
-            { type: 'raw', value: '</svg>' },
-          ],
-        },
-      ],
-    };
-    const manualResult = transformer(manualTree);
-    console.log(
-      'MANUAL_RESULT_TYPE=' +
-        typeof manualResult +
-        ' isThenable=' +
-        Boolean(manualResult && typeof (manualResult as { then?: unknown }).then === 'function'),
-    );
-    console.log(
-      'MANUAL_TRANSFORMER_RESULT=' +
-        JSON.stringify(manualResult, (key, value) => (key === 'position' ? undefined : value)),
-    );
-    console.log(
-      'DIAGNOSTIC_TREE_AFTER_REHYPE_RAW=' +
-        JSON.stringify(hastTree, (key, value) => (key === 'position' ? undefined : value), 2),
-    );
-  });
-});
 
 describe('markdownSanitizeSchema', () => {
   it('renders a representative safe SVG intact (shapes, gradient, internal use/defs/symbol reference) [unit]', () => {

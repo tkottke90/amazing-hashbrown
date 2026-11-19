@@ -30,8 +30,6 @@ export default {
     '^react-markdown$': '<rootDir>/test/__mocks__/react-markdown.tsx',
     '^remark-gfm$': '<rootDir>/test/__mocks__/esm-plugin.tsx',
     '^rehype-highlight$': '<rootDir>/test/__mocks__/esm-plugin.tsx',
-    '^rehype-raw$': '<rootDir>/test/__mocks__/esm-plugin.tsx',
-    '^rehype-sanitize$': '<rootDir>/test/__mocks__/esm-plugin.tsx',
     '^@/components/markdown$': '<rootDir>/test/__mocks__/markdown.tsx',
     '^preact-iso$': '<rootDir>/test/__mocks__/preact-iso.tsx',
     '^@/pages/wiki$': '<rootDir>/test/__mocks__/wiki-view.tsx',
