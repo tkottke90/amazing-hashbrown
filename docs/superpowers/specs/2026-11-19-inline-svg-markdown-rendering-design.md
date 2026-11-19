@@ -38,7 +38,7 @@ New component `ui/src/components/svg-sandbox.tsx`:
 ## 4. Pipeline order
 
 ```ts
-rehypePlugins: [rehypeRaw, [rehypeSanitize, markdownSanitizeSchema], rehypeHighlight]
+rehypePlugins: [rehypeRaw, [rehypeSanitize, markdownSanitizeSchema], rehypeHighlight];
 ```
 
 `rehypeRaw` must run before `rehypeSanitize` — an unexpanded `raw` hast node (what `remark-rehype` leaves for embedded HTML strings) isn't one of the node types `hast-util-sanitize`'s `transform()` recognizes and is silently dropped if sanitize runs first. Running `rehypeHighlight` _last_, after sanitize, means its injected `hljs-*` token `<span className>`s never pass through a sanitize pass at all — no need to allowlist highlight.js's internal class-naming scheme in the schema, and no risk of a future highlight.js theme change silently breaking under an outdated regex.
