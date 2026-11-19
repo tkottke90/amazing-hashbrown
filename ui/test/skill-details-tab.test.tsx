@@ -1,4 +1,5 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/preact';
+import { ThemeProvider } from '@/hooks/use-theme';
 
 jest.mock('@/hooks/use-skills-panel', () => {
   const actual = jest.requireActual('@/hooks/use-skills-panel');
@@ -62,6 +63,17 @@ function tool(overrides: Partial<ToolSettingItem> = {}): ToolSettingItem {
   };
 }
 
+// CodeEditor (rendered by SkillDetailsTab for the skill body) reads the
+// active theme via useTheme(), which throws outside a ThemeProvider — same
+// requirement code-editor.test.tsx/files-tab.test.tsx already have.
+function renderSkill(skill: SkillDetail) {
+  return render(
+    <ThemeProvider>
+      <SkillDetailsTab skill={skill} />
+    </ThemeProvider>,
+  );
+}
+
 describe('SkillDetailsTab', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -72,7 +84,7 @@ describe('SkillDetailsTab', () => {
   it('renders the skill name, description, and license fields', () => {
     mockFetchToolSettings.mockResolvedValue([]);
     const skill = skillDetail({ frontmatter: { ...skillDetail().frontmatter, license: 'MIT' } });
-    render(<SkillDetailsTab skill={skill} />);
+    renderSkill(skill);
 
     expect(screen.getByDisplayValue('create-workspace')).toBeInTheDocument();
     expect(
@@ -89,7 +101,7 @@ describe('SkillDetailsTab', () => {
     const skill = skillDetail({
       frontmatter: { ...skillDetail().frontmatter, tools: 'create_workspace' },
     });
-    render(<SkillDetailsTab skill={skill} />);
+    renderSkill(skill);
     await waitFor(() => expect(screen.getByText('Create Workspace')).toBeInTheDocument());
 
     const checkboxes = screen.getAllByRole('checkbox');
@@ -116,7 +128,7 @@ describe('SkillDetailsTab', () => {
         tools: 'create_workspace,some_removed_tool',
       },
     });
-    render(<SkillDetailsTab skill={skill} />);
+    renderSkill(skill);
 
     await waitFor(() => expect(screen.getByText(/Unknown tool/)).toBeInTheDocument());
     expect(screen.getByText('Unknown tool: some_removed_tool')).toBeInTheDocument();
@@ -133,7 +145,7 @@ describe('SkillDetailsTab', () => {
       }),
     ]);
     const skill = skillDetail();
-    render(<SkillDetailsTab skill={skill} />);
+    renderSkill(skill);
 
     await waitFor(() => expect(screen.getByText('Workflow Search')).toBeInTheDocument());
     expect(screen.getByText("(disabled — won't take effect)")).toBeInTheDocument();
@@ -149,7 +161,7 @@ describe('SkillDetailsTab', () => {
     const skill = skillDetail({
       frontmatter: { ...skillDetail().frontmatter, tools: 'create_workspace' },
     });
-    render(<SkillDetailsTab skill={skill} />);
+    renderSkill(skill);
     await waitFor(() => expect(screen.getByText('Create Project')).toBeInTheDocument());
 
     const createProjectCheckbox = screen
@@ -172,7 +184,7 @@ describe('SkillDetailsTab', () => {
     const skill = skillDetail({
       frontmatter: { ...skillDetail().frontmatter, tools: 'create_workspace' },
     });
-    render(<SkillDetailsTab skill={skill} />);
+    renderSkill(skill);
 
     const deleteButton = screen.getByRole('button', { name: 'Delete' });
     expect(deleteButton).toBeDisabled();
@@ -186,7 +198,7 @@ describe('SkillDetailsTab', () => {
     mockFetchToolSettings.mockResolvedValue([]);
     const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
     const skill = skillDetail();
-    render(<SkillDetailsTab skill={skill} />);
+    renderSkill(skill);
 
     const deleteButton = screen.getByRole('button', { name: 'Delete' });
     expect(deleteButton).not.toBeDisabled();
