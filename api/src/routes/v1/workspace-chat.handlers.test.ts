@@ -254,9 +254,21 @@ describe('routes/v1/workspace-chat.handlers: getWorkspaceChatThreadHandler', () 
   const isTurnActive = () => false;
 
   it('returns an empty-history fallback when the thread has no first message yet', () => {
-    const result = getWorkspaceChatThreadHandler(getThreadStore(), threadId, workspace, {
-      isTurnActive,
-    });
+    // beforeEach's upsertThreadOnFirstMessage already created `threadId` —
+    // use a thread id that was never created, so getThreadHandler's
+    // underlying store.getThread() genuinely finds nothing, matching the
+    // real pre-first-message scenario this case targets.
+    const neverCreatedThreadId = 'no-such-thread';
+    const bareWorkspace = getWorkspaceStore().patchWorkspace(workspace.id, {
+      threadId: neverCreatedThreadId,
+    })!;
+
+    const result = getWorkspaceChatThreadHandler(
+      getThreadStore(),
+      neverCreatedThreadId,
+      bareWorkspace,
+      { isTurnActive },
+    );
 
     expect(result.ok).to.equal(true);
     if (!result.ok) throw new Error('expected success');
