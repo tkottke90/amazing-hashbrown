@@ -645,5 +645,5 @@ How the shared `Markdown` component decides which raw HTML written directly in M
 ## Language
 
 **Markdown Sanitize Schema**:
-The explicit allowlist (tags, attributes, URL protocols) `rehype-sanitize` enforces on the whole rendered tree once raw HTML parsing is enabled — built by enumerating exactly what Markdown/GFM syntax itself can already produce, plus the newly-supported SVG tags, rather than inheriting `rehype-sanitize`'s own `defaultSchema` wholesale. Distinct from `content-block-sanitizer.middleware.ts`'s unrelated sanitizer, which strips malformed LangChain streaming content blocks — nothing to do with HTML or XSS.
+The explicit allowlist (tags, attributes, URL protocols) `rehype-sanitize` enforces on the whole rendered tree once raw HTML parsing is enabled — built by enumerating exactly what the existing Markdown rendering pipeline can already produce (CommonMark/GFM syntax output, including `rehype-highlight`'s own injected token `<span>`s) plus the newly-supported SVG tags, rather than inheriting `rehype-sanitize`'s own `defaultSchema` wholesale. Distinct from `content-block-sanitizer.middleware.ts`'s unrelated sanitizer, which strips malformed LangChain streaming content blocks — nothing to do with HTML or XSS.
 _Avoid_: Sanitizer, sanitize schema (ambiguous with the API's own differently-scoped sanitizer)
