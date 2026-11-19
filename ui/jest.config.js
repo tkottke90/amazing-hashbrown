@@ -2,17 +2,18 @@
 // imports directly (bypassing the mocks above, on purpose — see that file)
 // ships ESM-only in its current major versions, same root cause as the
 // D3-packages override below. Computed from package-lock.json's real
-// dependency closure for unified/remark-parse/remark-rehype/rehype-raw/
-// rehype-sanitize/rehype-stringify, not guessed — `@types/*`, `debug`, and
-// `ms` are excluded: the former are type-only (never required at runtime),
-// the latter two are plain old CommonJS already.
+// dependency closure for unified/remark-parse/remark-gfm/remark-rehype/
+// rehype-raw/rehype-sanitize/rehype-stringify, not guessed — `@types/*`,
+// `debug`, and `ms` are excluded: the former are type-only (never required
+// at runtime), the latter two are plain old CommonJS already.
 const ESM_MARKDOWN_DEPS =
   'unified|bail|trough|extend|dequal|devlop|is-plain-obj|entities|parse5|hastscript|' +
   'html-void-elements|web-namespaces|zwitch|trim-lines|property-information|' +
   'space-separated-tokens|comma-separated-tokens|decode-named-character-reference|' +
-  'stringify-entities|ccount|character-entities[a-z0-9-]*|unist-util-[a-z0-9-]+|' +
-  'vfile[a-z0-9-]*|mdast-util-[a-z0-9-]+|hast-util-[a-z0-9-]+|micromark[a-z0-9-]*|' +
-  'remark-[a-z0-9-]+|rehype-[a-z0-9-]+|@ungap/structured-clone';
+  'stringify-entities|ccount|escape-string-regexp|longest-streak|markdown-table|' +
+  'character-entities[a-z0-9-]*|unist-util-[a-z0-9-]+|vfile[a-z0-9-]*|' +
+  'mdast-util-[a-z0-9-]+|hast-util-[a-z0-9-]+|micromark[a-z0-9-]*|remark-[a-z0-9-]+|' +
+  'rehype-[a-z0-9-]+|@ungap/structured-clone';
 
 /** @type {import('jest').Config} */
 export default {
@@ -28,7 +29,6 @@ export default {
     '^@tkottke90/amazing-hashbrown-widgets/types$':
       '<rootDir>/test/__mocks__/amazing-hashbrown-widgets-types.ts',
     '^react-markdown$': '<rootDir>/test/__mocks__/react-markdown.tsx',
-    '^remark-gfm$': '<rootDir>/test/__mocks__/esm-plugin.tsx',
     '^rehype-highlight$': '<rootDir>/test/__mocks__/esm-plugin.tsx',
     '^@/components/markdown$': '<rootDir>/test/__mocks__/markdown.tsx',
     '^preact-iso$': '<rootDir>/test/__mocks__/preact-iso.tsx',
