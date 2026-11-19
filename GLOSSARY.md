@@ -191,8 +191,12 @@ The name of whichever skill a slash-command invocation most recently resolved to
 _Avoid_: Current skill, invoked skill, activeGatedSkill
 
 **Skill-Gated Tools**:
-The existing pattern (`skill-gated-tools.middleware.ts`) that hides a specific tool from the model's tool list unless the Active Skill is exactly the one named skill registered for it in `GATED_SKILL_REGISTRATIONS` — e.g. `create_workspace` only shows up while `create-workspace` is the Active Skill. One registration maps one skill to its own tool set.
-_Avoid_: Gated tools (ambiguous with Skill-Scoped Tools)
+The existing pattern (`skill-gated-tools.middleware.ts`) that hides a specific tool from the model's tool list unless the Active Skill is exactly the one skill that declares it — e.g. `create_workspace` only shows up while `create-workspace` is the Active Skill. Which tools a skill gates is declared on the skill itself, in its own `SKILL.md` frontmatter `tools` field (issue #409), reconciled live against the real tool catalog rather than frozen into a centralized registration; a name in `tools` that the catalog doesn't recognize is dropped silently rather than failing the skill's boot. One skill's `tools` field maps that skill to its own gated tool set.
+_Avoid_: Gated tools (ambiguous with Skill-Scoped Tools), allowed-tools (a different, reserved-but-unused frontmatter field — see Skill Tools Field)
+
+**Skill Tools Field**:
+The `tools` frontmatter field on a `SKILL.md` — a comma-separated list of tool names (built-in, e.g. `create_workspace`, or MCP display ids, e.g. `n8n:workflow_search`) the skill declares and that become part of its Skill-Gated Tools set while it is Active. Surfaced to the user as "Tools this skill has access to." Deliberately not named `allowed-tools`: that field already exists on `SkillFrontmatter` with the ecosystem-standard *restrictive* meaning ("only these tools may be used while this skill runs") and is reserved, unused, for that meaning if it's ever implemented — `tools` is additive (it unlocks extra tools on top of the normal set) and would collide with that reading if it reused the name.
+_Avoid_: allowed-tools, gated-tools
 
 **Skill-Scoped Tools**:
 Tools visible whenever any skill is the Active Skill, rather than one specific registered skill — and that resolve "which skill" implicitly from the Active Skill at call time instead of taking a skill name as an argument. `read_skill_reference` and `run_skill_script` are Skill-Scoped Tools.
