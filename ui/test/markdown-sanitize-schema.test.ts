@@ -1,5 +1,6 @@
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
+import remarkGfm from 'remark-gfm';
 import remarkRehype from 'remark-rehype';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
@@ -12,9 +13,13 @@ import { markdownSanitizeSchema } from '../src/lib/markdown-sanitize-schema';
 // `test/__mocks__/react-markdown.tsx` renders `children` into a plain `<div>`
 // and ignores `rehypePlugins`/`components` — the Markdown Sanitize Schema's
 // stripping behavior can't be exercised through `<Markdown>` in Jest at all.
+// Mirrors markdown.tsx's real remarkPlugins list (remarkGfm included) so the
+// "existing non-SVG Markdown unaffected" case below actually reflects what
+// the real component does with GFM tables/task-lists.
 function render(markdown: string): string {
   const file = unified()
     .use(remarkParse)
+    .use(remarkGfm)
     .use(remarkRehype, { allowDangerousHtml: true })
     .use(rehypeRaw)
     .use(rehypeSanitize, markdownSanitizeSchema)
