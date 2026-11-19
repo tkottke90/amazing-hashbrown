@@ -167,6 +167,7 @@ Steps:
 4. Only after explicit confirmation, call create_workspace immediately with exactly the fields you already confirmed — the confirmation was the last checkpoint, not a cue to go looking for more. Pass "name" and "newWikiName" exactly as confirmed, character-for-character — same casing, same wording, same punctuation, for any name at all, not just an example that happens to match one you've seen before: "Image Archive" stays "Image Archive," "Homelab Ops" stays "Homelab Ops," never lowercased or hyphenated into a slug (the tool derives the directory name from it internally, so you never construct that form yourself). Every optional field — goal, git, wikiId, newWikiName, remoteUrl, all of them, not just the ones named explicitly here — follows the same rule: if it wasn't part of what you confirmed in step 3, simply omit it from the tool call. That is never a reason to ask about it now (via ask_user or any other tool), never a reason to invent a plausible-sounding value for it, and never a reason to go looking for one (e.g. calling wiki_locate, wiki_orient, or anything else to find a wikiId). The tool's own description says fields must be "confirmed," not that every optional field must be populated; confirmation already happened in step 3, and whatever wasn't in it stays unset — full stop, no exceptions for any particular field name.
 5. If the tool reports a conflict (name already in use) or a validation error, relay that message to the user as-is and stop — do not retry with a different name or otherwise route around the rejection. Wait for the user's next instruction.
 6. On success, the resource card renders automatically — you don't need to summarize the result yourself beyond a brief confirmation.`,
+    tools: 'create_workspace',
   },
   {
     name: 'create-project',
@@ -192,6 +193,7 @@ Steps:
 4. Only after explicit confirmation, call create_project immediately with exactly the fields you already confirmed — the confirmation was the last checkpoint, not a cue to go collect more. Pass "name" and "winCondition" exactly as confirmed, character-for-character — same casing, same wording, same punctuation. "Ship Homepage Redesign" stays "Ship Homepage Redesign," never lowercased or hyphenated into a slug (the tool derives the directory name from it internally, so you never construct that form yourself), and a winCondition that starts lowercase in the confirmed text stays lowercase in the tool call — restating it as the start of a new sentence and capitalizing it is still a change, even though it reads naturally that way. Optional fields (goal, dueAt, git) that weren't part of what you confirmed are simply omitted; that is not a reason to ask about them now, and it is not a reason to invent a plausible-sounding value for one either — leave it unset.
 5. If the tool reports a conflict (name already in use) or a validation error, relay that message to the user as-is and stop — do not retry with a different name or otherwise route around the rejection. Wait for the user's next instruction.
 6. On success, the resource card renders automatically — you don't need to summarize the result yourself beyond a brief confirmation.`,
+    tools: 'create_project',
   },
   // Tightening, added after a real eval run (suites/file-conflict-
   // resolution.yaml round 3, 2026-10-12) found Lemonade and Ornith both
@@ -224,6 +226,7 @@ Steps:
 4. Do not call any other tool. Do not ask the user a clarifying question first — produce your best merge and let them review and edit it before saving; that review is the whole point of this flow.
 
 This skill has exactly one valid response: a single propose_file_merge tool call carrying the full merged content. Writing the merge out as a chat message — prose, a markdown table, a bullet list, anything — does not satisfy this skill, no matter how correct that text is, because the user's editor only updates from the tool call's arguments; text left in chat is invisible to it. propose_file_merge is already bound and callable the moment this skill is active — if it looks unavailable or absent from your tools for this turn, that reading is wrong; call it anyway, with the real merged content as the mergedContent argument.`,
+    tools: 'propose_file_merge',
   },
   // First draft, structurally complete against the design
   // (docs/superpowers/specs/2026-10-16-create-skill-design.md) but not yet
@@ -269,11 +272,13 @@ Step 1 (always first, before anything else): determine which path applies below.
 4. Only after explicit confirmation: call edit_app_skill (app scope) or edit_workspace_skill (workspace scope) with exactly what was confirmed. If the tool reports a conflict or validation error, relay it as-is and stop — do not retry with a different name or otherwise route around the rejection; wait for the user's next instruction.
 5. If the fix touches scripts or reference files, use update_skill_artifact for an existing file (or create_skill_artifact for a new one) after the SKILL.md edit succeeds. For any script artifact, immediately call #test_skill_artifact to dry-run it and show the result before finishing — a direct tool call, not a prose question asking whether the user wants it tested.
 6. Wrap up with a brief confirmation of what changed. For a workspace-scope write, say plainly that the file is on disk but not committed — the user reviews and commits it through the workspace's own normal git flow, the same as any other change there.`,
+    tools:
+      'create_app_skill,edit_app_skill,create_workspace_skill,edit_workspace_skill,get_skill_source,create_skill_artifact,update_skill_artifact,delete_skill_artifact,test_skill_artifact',
   },
-  // Deliberately not registered in GATED_SKILL_REGISTRATIONS
-  // (gated-skill-registrations.ts) — wiki_create_page/wiki_update_page/etc.
-  // must stay globally visible, not disappear whenever a different skill is
-  // active. See the design doc's Decisions table, "Tool gating" row, for why.
+  // Deliberately given no `tools` value (issue #409) —
+  // wiki_create_page/wiki_update_page/etc. must stay globally visible, not
+  // disappear whenever a different skill is active. See the design doc's
+  // Decisions table, "Tool gating" row, for why.
   //
   // First tightening, added after a real eval run (suites/ingest-document.yaml,
   // 2026-11-16) against four providers:

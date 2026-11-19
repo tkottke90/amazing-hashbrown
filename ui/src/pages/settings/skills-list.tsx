@@ -8,13 +8,15 @@ import {
   startCreateSkill,
   toggleSkillEnabled,
 } from '@/hooks/use-skills-panel';
-import { GATED_SKILL_NAMES, GATED_TOOL_BY_SKILL } from './skill-gated-names';
 
-function handleToggle(name: string, next: boolean) {
-  if (!next && GATED_SKILL_NAMES.includes(name)) {
-    const tool = GATED_TOOL_BY_SKILL[name];
+// `tools` is the skill's own non-empty frontmatter field (issue #409) — a
+// skill can now gate any number of tools, not just the one hardcoded
+// GATED_TOOL_BY_SKILL used to track, so the warning lists whatever it
+// actually declares instead of looking up a single name.
+function handleToggle(name: string, next: boolean, tools?: string) {
+  if (!next && tools) {
     const proceed = confirm(
-      `Disabling "${name}" will hide the ${tool} tool from the assistant. Continue?`,
+      `Disabling "${name}" will hide the following tool(s) from the assistant: ${tools}. Continue?`,
     );
     if (!proceed) return;
   }
@@ -55,7 +57,7 @@ export function SkillsList() {
         )}
         <ul class="divide-y divide-border">
           {(skillList.value ?? []).map((skill) => {
-            const isGated = GATED_SKILL_NAMES.includes(skill.name);
+            const isGated = Boolean(skill.tools);
             return (
               <li
                 key={skill.name}
@@ -68,7 +70,7 @@ export function SkillsList() {
                     {isGated && (
                       <span
                         class="shrink-0 rounded border border-border px-1 py-0.5 text-[10px] text-muted-foreground"
-                        title="Required by tool-gating"
+                        title={`Required by tool-gating — gates: ${skill.tools}`}
                       >
                         gated
                       </span>
@@ -96,7 +98,7 @@ export function SkillsList() {
                     type="button"
                     size="sm"
                     variant={skill.enabled ? 'outline' : 'ghost'}
-                    onClick={() => handleToggle(skill.name, !skill.enabled)}
+                    onClick={() => handleToggle(skill.name, !skill.enabled, skill.tools)}
                   >
                     {skill.enabled ? 'Enabled' : 'Disabled'}
                   </Button>

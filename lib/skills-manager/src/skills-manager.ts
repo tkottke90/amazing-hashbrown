@@ -203,7 +203,8 @@ export class SkillsManager {
 
   async create(input: CreateSkillInput): Promise<Skill> {
     this.assertWritable();
-    const { name, description, body, license, compatibility, metadata, allowedTools } = input;
+    const { name, description, body, license, compatibility, metadata, allowedTools, tools } =
+      input;
     if (!name || name.length > NAME_MAX || !NAME_RE.test(name)) {
       throw new Error(
         `Invalid skill name "${name}": must match /^[a-z0-9][a-z0-9-]*[a-z0-9]$/ and be ≤${NAME_MAX} chars`,
@@ -220,6 +221,7 @@ export class SkillsManager {
     if (license) fm.license = license;
     if (compatibility) fm.compatibility = compatibility;
     if (allowedTools) fm['allowed-tools'] = allowedTools;
+    if (tools) fm.tools = tools;
     if (metadata) fm.metadata = metadata;
 
     const content = serialize(fm, body);
@@ -233,6 +235,7 @@ export class SkillsManager {
       enabled: skill.enabled,
       largeDesc: skill.frontmatter.description.length > DESCRIPTION_MAX,
       source: this.source,
+      tools: skill.frontmatter.tools,
     });
     return skill;
   }
@@ -252,6 +255,7 @@ export class SkillsManager {
     if (changes.license !== undefined) fm.license = changes.license;
     if (changes.compatibility !== undefined) fm.compatibility = changes.compatibility;
     if (changes.allowedTools !== undefined) fm['allowed-tools'] = changes.allowedTools;
+    if (changes.tools !== undefined) fm.tools = changes.tools;
     if (changes.metadata !== undefined) fm.metadata = changes.metadata;
     if (changes.enabled !== undefined) {
       fm.metadata = { ...(fm.metadata ?? {}), enabled: changes.enabled ? 'true' : 'false' };
@@ -271,6 +275,7 @@ export class SkillsManager {
       enabled: skill.enabled,
       largeDesc: skill.frontmatter.description.length > DESCRIPTION_MAX,
       source: this.source,
+      tools: skill.frontmatter.tools,
     });
     return skill;
   }

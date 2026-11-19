@@ -11,6 +11,11 @@ export interface SkillListItem {
   slashCommand: string;
   enabled: boolean;
   largeDesc: boolean;
+  // Mirrors SkillFrontmatter.tools — already included on every response
+  // (searchSkillsHandler's withBadges() spreads the full SkillSummary,
+  // which carries it), not a new backend field. Non-empty means this skill
+  // is gated (issue #409) and can't be deleted while it is.
+  tools?: string;
   // Only populated on the admin (`all=true`) listing — absent on the plain
   // `q=` search response used by the chat slash-command autocomplete.
   hasScripts?: boolean;
@@ -25,6 +30,7 @@ export interface SkillFrontmatter {
   compatibility?: string;
   metadata?: Record<string, string>;
   'allowed-tools'?: string;
+  tools?: string;
 }
 
 export interface SkillDetail {
@@ -46,6 +52,7 @@ export interface CreateSkillInput {
   compatibility?: string;
   metadata?: Record<string, string>;
   allowedTools?: string;
+  tools?: string;
 }
 
 export interface EditSkillInput {
@@ -55,6 +62,7 @@ export interface EditSkillInput {
   compatibility?: string;
   metadata?: Record<string, string>;
   allowedTools?: string;
+  tools?: string;
   enabled?: boolean;
 }
 

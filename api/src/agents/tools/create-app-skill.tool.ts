@@ -35,7 +35,8 @@ function mapCreateError(err: unknown): string {
 // Factory-injected manager (defaulting to the production singleton) so this
 // tool is directly testable against a real, temp-dir-backed SkillsManager —
 // matches create-workspace.tool.ts's pattern. Only available while the
-// create-skill skill is active (see gated-skill-registrations.ts). Returns
+// create-skill skill is active (see its own `tools` frontmatter field,
+// issue #409). Returns
 // a plain string on both success and failure, never a Command — see
 // chat-agent.ts's buildCreateSkillTools() comment on why these tools never
 // close the activeSkill gate themselves.

@@ -1,7 +1,6 @@
 import { join } from 'node:path';
 import type { SkillsManager } from '@tkottke90/skills-manager';
 import { logger } from '../config/logger.js';
-import { GATED_SKILL_REGISTRATIONS } from '../agents/gated-skill-registrations.js';
 import { skillsManager } from './skills-manager.js';
 import { getWorkspaceStore, type WorkspaceStore } from './workspace-store.js';
 
@@ -43,7 +42,11 @@ export async function resolveWorkspaceSkills(
 
   const child = manager.createChild(join(workspace.location, WORKSPACE_SKILLS_DIR), {
     source: 'repo',
-    reserved: GATED_SKILL_REGISTRATIONS.map((r) => r.skillCommand),
+    // Derived live from the global manager's own skill list (issue #409)
+    // rather than a hardcoded array — any app-level skill that currently
+    // declares tools in its frontmatter stays reserved, with no separate
+    // list to keep in sync.
+    reserved: manager.list().filter((s) => s.tools).map((s) => s.name),
   });
   const { skipped } = await child.boot();
   for (const entry of skipped) {

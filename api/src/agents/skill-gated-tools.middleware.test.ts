@@ -1,10 +1,18 @@
 import { describe, it } from 'mocha';
 import { expect } from 'chai';
 import { createSkillGatedToolsMiddleware } from './skill-gated-tools.middleware.js';
-import { GATED_SKILL_REGISTRATIONS } from './gated-skill-registrations.js';
 
 function fakeTool(name: string) {
   return { name } as unknown as { name: string };
+}
+
+// Stands in for SkillsManager.list() — createSkillGatedToolsMiddleware no
+// longer takes a static registrations array (issue #409); it reads
+// resolveSkillGatedRegistrations(getSkills().list()) fresh on every call.
+// Each entry's `tools` mirrors SKILL.md frontmatter: a comma-separated
+// string, not an array.
+function fixtureSkills(entries: { name: string; tools: string }[]) {
+  return () => ({ list: () => entries });
 }
 
 const ALWAYS_ON = [fakeTool('ask_user'), fakeTool('wiki_search')];
@@ -19,13 +27,13 @@ function fakeRequest(activeSkill: string | null) {
 }
 
 describe('agents/skill-gated-tools.middleware', () => {
-  const registrations = [
-    { skillCommand: 'create-workspace', toolNames: ['create_workspace'] },
-    { skillCommand: 'create-project', toolNames: ['create_project'] },
-  ];
+  const getSkills = fixtureSkills([
+    { name: 'create-workspace', tools: 'create_workspace' },
+    { name: 'create-project', tools: 'create_project' },
+  ]);
 
   it('hides gated tools from the model when no skill is active', async () => {
-    const middleware = createSkillGatedToolsMiddleware(registrations);
+    const middleware = createSkillGatedToolsMiddleware(getSkills);
     let seenTools: { name: string }[] = [];
     const handler = async (req: { tools: { name: string }[] }) => {
       seenTools = req.tools;
@@ -39,7 +47,7 @@ describe('agents/skill-gated-tools.middleware', () => {
   });
 
   it("exposes only the matching skill's tools when that skill is active", async () => {
-    const middleware = createSkillGatedToolsMiddleware(registrations);
+    const middleware = createSkillGatedToolsMiddleware(getSkills);
     let seenTools: { name: string }[] = [];
     const handler = async (req: { tools: { name: string }[] }) => {
       seenTools = req.tools;
@@ -57,7 +65,7 @@ describe('agents/skill-gated-tools.middleware', () => {
   });
 
   it('does not expose a gated tool for an unregistered activeSkill value', async () => {
-    const middleware = createSkillGatedToolsMiddleware(registrations);
+    const middleware = createSkillGatedToolsMiddleware(getSkills);
     let seenTools: { name: string }[] = [];
     const handler = async (req: { tools: { name: string }[] }) => {
       seenTools = req.tools;
@@ -70,12 +78,46 @@ describe('agents/skill-gated-tools.middleware', () => {
     expect(seenTools.map((t) => t.name)).to.deep.equal(['ask_user', 'wiki_search']);
   });
 
-  // Exercises the real, production registration array (rather than this
-  // file's own minimal fixture above) so a future edit to
-  // gated-skill-registrations.ts that drops or misnames the
-  // resolve-file-conflict entry fails here, not only in manual testing.
-  describe('propose_file_merge (resolve-file-conflict registration)', () => {
+  it('never exposes the MCP (colon-containing) half of a skill\'s declared tools — that is skill-gated-mcp-tools.middleware.ts\'s job', async () => {
+    const getMixedSkills = fixtureSkills([
+      { name: 'n8n-workflow-sync', tools: 'create_workspace,n8n:workflow_search' },
+    ]);
+    const middleware = createSkillGatedToolsMiddleware(getMixedSkills);
+    const request = {
+      tools: [...ALWAYS_ON, fakeTool('create_workspace')],
+      state: { activeSkill: 'n8n-workflow-sync' },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any;
+    let seenTools: { name: string }[] = [];
+    const handler = async (req: { tools: { name: string }[] }) => {
+      seenTools = req.tools;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return {} as any;
+    };
+
+    await middleware.wrapModelCall!(request, handler);
+
+    // create_workspace (built-in) passes through; nothing here ever adds
+    // n8n:workflow_search (it was never present in request.tools to begin
+    // with, and this middleware only filters, never adds).
+    expect(seenTools.map((t) => t.name)).to.deep.equal(['ask_user', 'wiki_search', 'create_workspace']);
+  });
+
+  // These describe blocks exercise the exact tool sets the previously
+  // hardcoded GATED_SKILL_REGISTRATIONS array encoded for
+  // resolve-file-conflict and create-skill, now expressed as fixture skill
+  // frontmatter instead of a production import — so a future change to
+  // those skills' seeded `tools` values (default-skills.ts) that drops or
+  // misnames one of these tool names is still a one-file skill-fixture
+  // check away from being caught, even though this file no longer imports
+  // the real seed data (gated-skill-registrations.ts was deleted in #409;
+  // the source of truth for these two skills' tools now lives in
+  // default-skills.ts, covered separately).
+  describe('propose_file_merge (resolve-file-conflict)', () => {
     const tools = [...ALWAYS_ON, ...GATED, fakeTool('propose_file_merge')];
+    const getResolveSkills = fixtureSkills([
+      { name: 'resolve-file-conflict', tools: 'propose_file_merge' },
+    ]);
 
     function requestWith(activeSkill: string | null) {
       return {
@@ -86,7 +128,7 @@ describe('agents/skill-gated-tools.middleware', () => {
     }
 
     it('is hidden when resolve-file-conflict is not the active gated skill', async () => {
-      const middleware = createSkillGatedToolsMiddleware(GATED_SKILL_REGISTRATIONS);
+      const middleware = createSkillGatedToolsMiddleware(getResolveSkills);
       let seenTools: { name: string }[] = [];
       const handler = async (req: { tools: { name: string }[] }) => {
         seenTools = req.tools;
@@ -100,7 +142,7 @@ describe('agents/skill-gated-tools.middleware', () => {
     });
 
     it('is exposed once resolve-file-conflict is the active gated skill', async () => {
-      const middleware = createSkillGatedToolsMiddleware(GATED_SKILL_REGISTRATIONS);
+      const middleware = createSkillGatedToolsMiddleware(getResolveSkills);
       let seenTools: { name: string }[] = [];
       const handler = async (req: { tools: { name: string }[] }) => {
         seenTools = req.tools;
@@ -114,10 +156,7 @@ describe('agents/skill-gated-tools.middleware', () => {
     });
   });
 
-  // Same reasoning as the resolve-file-conflict block above, for
-  // create-skill's nine tools — fails here if a future edit to
-  // gated-skill-registrations.ts drops or misnames any of them.
-  describe('create-skill tools (create-skill registration)', () => {
+  describe('create-skill tools', () => {
     const CREATE_SKILL_TOOL_NAMES = [
       'create_app_skill',
       'edit_app_skill',
@@ -130,6 +169,9 @@ describe('agents/skill-gated-tools.middleware', () => {
       'test_skill_artifact',
     ];
     const tools = [...ALWAYS_ON, ...GATED, ...CREATE_SKILL_TOOL_NAMES.map(fakeTool)];
+    const getCreateSkillSkills = fixtureSkills([
+      { name: 'create-skill', tools: CREATE_SKILL_TOOL_NAMES.join(',') },
+    ]);
 
     function requestWith(activeSkill: string | null) {
       return {
@@ -140,7 +182,7 @@ describe('agents/skill-gated-tools.middleware', () => {
     }
 
     it('hides all nine tools when create-skill is not the active gated skill', async () => {
-      const middleware = createSkillGatedToolsMiddleware(GATED_SKILL_REGISTRATIONS);
+      const middleware = createSkillGatedToolsMiddleware(getCreateSkillSkills);
       let seenTools: { name: string }[] = [];
       const handler = async (req: { tools: { name: string }[] }) => {
         seenTools = req.tools;
@@ -156,7 +198,7 @@ describe('agents/skill-gated-tools.middleware', () => {
     });
 
     it('exposes all nine tools together once create-skill is the active gated skill', async () => {
-      const middleware = createSkillGatedToolsMiddleware(GATED_SKILL_REGISTRATIONS);
+      const middleware = createSkillGatedToolsMiddleware(getCreateSkillSkills);
       let seenTools: { name: string }[] = [];
       const handler = async (req: { tools: { name: string }[] }) => {
         seenTools = req.tools;

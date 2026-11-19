@@ -5,6 +5,14 @@ export interface SkillFrontmatter {
   compatibility?: string;
   metadata?: Record<string, string>;
   'allowed-tools'?: string; // parsed and stored as-is; enforcement deferred until tools-manager is built
+  // Comma-separated tool names (built-in names or MCP display ids, e.g.
+  // "create_workspace,n8n:workflow_search") this skill gates — the
+  // additive Skill-Gated Tools mechanism, not a restriction. Deliberately
+  // not `allowed-tools`: that field's ecosystem-standard meaning is
+  // restrictive ("only these tools may be used"), while this one unlocks
+  // extra tools on top of the normal set. See GLOSSARY.md § Skill
+  // Invocation & Runtime Access, Skill Tools Field.
+  tools?: string;
 }
 
 export interface Skill {
@@ -26,6 +34,7 @@ export interface SkillSummary {
   largeDesc: boolean; // true when description.length > DESCRIPTION_MAX (1024)
   source: string; // label of the manager that owns the skill ('global' for a root manager)
   overrides?: boolean; // true on a child manager's skill that shadows a same-named parent skill
+  tools?: string; // mirrors SkillFrontmatter.tools — lets callers read gating without a full load()
 }
 
 export type SkipReason = 'invalid-frontmatter' | 'name-mismatch' | 'reserved';
@@ -48,6 +57,7 @@ export interface CreateSkillInput {
   compatibility?: string;
   metadata?: Record<string, string>;
   allowedTools?: string;
+  tools?: string;
 }
 
 export interface EditSkillInput {
@@ -57,6 +67,7 @@ export interface EditSkillInput {
   compatibility?: string;
   metadata?: Record<string, string>;
   allowedTools?: string;
+  tools?: string;
   enabled?: boolean;
 }
 

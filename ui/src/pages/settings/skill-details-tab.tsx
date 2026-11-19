@@ -9,21 +9,17 @@ import { FormLayout } from '@/components/form-layout';
 import { CodeEditor } from '@/pages/workspaces/code-editor';
 import { saveSkillDetails, deleteSkillAction } from '@/hooks/use-skills-panel';
 import type { SkillDetail } from '@/services/skills-manage-api';
-import { GATED_SKILL_NAMES } from './skill-gated-names';
+import { SkillToolsPicker } from './skill-tools-picker';
 
 export function SkillDetailsTab({ skill }: { skill: SkillDetail }) {
   const description = useSignal(skill.frontmatter.description);
   const license = useSignal(skill.frontmatter.license ?? '');
-  // TODO: Allowed tools needs to become a dropdown over the system's actual
-  // tool set, but the system doesn't yet reconcile/expose that list here.
-  // Field disabled below until that design lands — see skill-gated-names.ts
-  // for the one place tool names currently show up in this app.
-  // const allowedTools = useSignal(skill.frontmatter['allowed-tools'] ?? '');
+  const tools = useSignal(skill.frontmatter.tools ?? '');
   const bodyDirty = useSignal(false);
   const saving = useSignal(false);
   const bodyViewRef = useRef<EditorView | null>(null);
 
-  const isGated = GATED_SKILL_NAMES.includes(skill.name);
+  const isGated = Boolean(skill.frontmatter.tools);
 
   async function handleSave() {
     saving.value = true;
@@ -31,6 +27,7 @@ export function SkillDetailsTab({ skill }: { skill: SkillDetail }) {
       await saveSkillDetails(skill.name, {
         description: description.value,
         license: license.value || undefined,
+        tools: tools.value,
         body: bodyViewRef.current?.state.doc.toString() ?? skill.body,
       });
       bodyDirty.value = false;
@@ -70,19 +67,12 @@ export function SkillDetailsTab({ skill }: { skill: SkillDetail }) {
               onInput={(e) => (license.value = (e.target as HTMLInputElement).value)}
             />
           </div>
-          {/* TODO: Allowed tools should be a dropdown over the system's
-              reconciled tool set once that exists — see the TODO above the
-              (currently unused) allowedTools signal.
-          <div class="space-y-1.5">
-            <Label htmlFor="skill-allowed-tools">Allowed tools</Label>
-            <Input
-              id="skill-allowed-tools"
-              value={allowedTools.value}
-              onInput={(e) => (allowedTools.value = (e.target as HTMLInputElement).value)}
-            />
-          </div>
-          */}
         </FormLayout>
+
+        <div class="space-y-1.5">
+          <Label>Tools this skill has access to</Label>
+          <SkillToolsPicker value={tools.value} onChange={(value) => (tools.value = value)} />
+        </div>
 
         <div class="space-y-1.5">
           <Label>Body</Label>

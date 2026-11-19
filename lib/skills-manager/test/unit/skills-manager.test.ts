@@ -48,6 +48,27 @@ describe('SkillsManager', () => {
       expect((error as Error).message).to.include('already exists');
     });
 
+    it('sets tools and round-trips it through load() and list()', async () => {
+      await manager.create({
+        name: 'gated-skill',
+        description: 'x',
+        body: 'y',
+        tools: 'create_workspace,n8n:workflow_search',
+      });
+      const skill = await manager.load('gated-skill');
+      expect(skill.frontmatter.tools).to.equal('create_workspace,n8n:workflow_search');
+      const summary = manager.list().find((s) => s.name === 'gated-skill');
+      expect(summary?.tools).to.equal('create_workspace,n8n:workflow_search');
+    });
+
+    it('leaves tools unset when not provided', async () => {
+      await manager.create({ name: 'ungated-skill', description: 'x', body: 'y' });
+      const skill = await manager.load('ungated-skill');
+      expect(skill.frontmatter.tools).to.equal(undefined);
+      const summary = manager.list().find((s) => s.name === 'ungated-skill');
+      expect(summary?.tools).to.equal(undefined);
+    });
+
     for (const badName of ['Has Spaces', 'UPPERCASE', '-leading-hyphen', 'a'.repeat(65)]) {
       it(`throws on invalid name "${badName.slice(0, 20)}..."`, async () => {
         let error: unknown;
@@ -94,6 +115,23 @@ describe('SkillsManager', () => {
       expect(error).to.be.instanceOf(Error);
       expect((error as Error).message).to.include('not found');
     });
+
+    it('sets tools on a skill that had none, round-tripping through load() and list()', async () => {
+      await manager.edit('edit-me', { tools: 'create_project' });
+      const skill = await manager.load('edit-me');
+      expect(skill.frontmatter.tools).to.equal('create_project');
+      const summary = manager.list().find((s) => s.name === 'edit-me');
+      expect(summary?.tools).to.equal('create_project');
+    });
+
+    it('clears tools via an empty string', async () => {
+      await manager.edit('edit-me', { tools: 'create_project' });
+      await manager.edit('edit-me', { tools: '' });
+      const skill = await manager.load('edit-me');
+      expect(skill.frontmatter.tools).to.equal('');
+      const summary = manager.list().find((s) => s.name === 'edit-me');
+      expect(summary?.tools).to.equal('');
+    });
   });
 
   describe('delete', () => {
@@ -119,6 +157,21 @@ describe('SkillsManager', () => {
       }
       expect(error).to.be.instanceOf(Error);
       expect((error as Error).message).to.include('not found');
+    });
+  });
+
+  describe('boot (tools frontmatter)', () => {
+    it('populates SkillSummary.tools from an on-disk SKILL.md, not just create()/edit()\'s cache-set', async () => {
+      await manager.create({ name: 'boot-gated-skill', description: 'x', body: 'y' });
+      await manager.edit('boot-gated-skill', { tools: 'propose_file_merge' });
+
+      // A fresh manager against the same root has never called create()/edit()
+      // itself — the only way it can know about `tools` is by actually reading
+      // it back off disk during boot(), via readFrontmatter().
+      const freshManager = new SkillsManager(root);
+      await freshManager.boot();
+      const summary = freshManager.list().find((s) => s.name === 'boot-gated-skill');
+      expect(summary?.tools).to.equal('propose_file_merge');
     });
   });
 

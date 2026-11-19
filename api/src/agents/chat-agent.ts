@@ -54,9 +54,9 @@ import { attachmentAwarenessMiddleware } from './attachment-awareness.middleware
 import { wikiReferenceExpansionMiddleware } from './wiki-reference-expansion.middleware.js';
 import { binaryContentFetchMiddleware } from './binary-content-fetch.middleware.js';
 import { createSkillGatedToolsMiddleware } from './skill-gated-tools.middleware.js';
+import { createSkillGatedMcpToolsMiddleware } from './skill-gated-mcp-tools.middleware.js';
 import { skillScopedToolsMiddleware } from './skill-scoped-tools.middleware.js';
 import { toolSyntaxMiddleware } from './middleware/tool-syntax.middleware.js';
-import { GATED_SKILL_REGISTRATIONS } from './gated-skill-registrations.js';
 import { toolAccessMiddleware } from './tool-access.middleware.js';
 import { ambientContextMiddleware } from './ambient-context.middleware.js';
 import { wikiOrientationContextMiddleware } from './wiki-orientation-context.middleware.js';
@@ -298,7 +298,10 @@ export function createContextWindowMiddleware(cfg?: ContextWindowConfig) {
   });
 }
 
-const skillGatedToolsMiddleware = createSkillGatedToolsMiddleware(GATED_SKILL_REGISTRATIONS);
+// Registrations are resolved live from skillsManager on every model call
+// (issue #409) — no static array to pass in here, the default accessor
+// already reads the real production singleton.
+const skillGatedToolsMiddleware = createSkillGatedToolsMiddleware();
 
 // RegisteredTool.parameters is typed z.ZodType, not ZodObject — most MCP
 // tools' top-level schema happens to be an object schema, but nothing
@@ -502,10 +505,12 @@ function buildSkillTools(skills: SkillSource) {
   return [makeSearchSkillsTool(skills)];
 }
 
-// Skill-gated tools — see GATED_SKILL_REGISTRATIONS below. Graph-registered
-// like STATIC_CHAT_TOOLS (so ToolNode can execute them), but hidden from the
-// model until their matching skill is invoked; gating only affects what
-// skillGatedToolsMiddleware exposes to the model per-call. Built fresh per
+// Skill-gated tools — which skill(s) unlock them is declared on each
+// skill's own SKILL.md frontmatter `tools` field (issue #409), not here.
+// Graph-registered like STATIC_CHAT_TOOLS (so ToolNode can execute them),
+// but hidden from the model until their matching skill is invoked; gating
+// only affects what skillGatedToolsMiddleware exposes to the model
+// per-call. Built fresh per
 // agent construction (not a module-scope constant) — same reason as
 // buildWikiWriteTools() below: create-workspace.tool.ts's own import chain
 // leads back to this file (via workspaces.handlers.ts), so calling the
@@ -514,8 +519,8 @@ function buildGatedTools() {
   return [makeCreateWorkspaceTool(), makeCreateProjectTool()];
 }
 
-// create-skill's own gated tools (gated-skill-registrations.ts) — a
-// deliberate asymmetry from buildGatedTools() above: spread into
+// create-skill's own gated tools (its frontmatter `tools` field, issue
+// #409) — a deliberate asymmetry from buildGatedTools() above: spread into
 // buildChatAgent and buildWorkspaceChatAgent only, NOT buildTaskAgent. This
 // is an interactive, ask_user-driven guided interview, which doesn't fit an
 // automated/background task run the way a one-shot create_workspace/
@@ -722,6 +727,7 @@ async function buildChatAgent(provider?: string, model?: string) {
       skillScopedToolsMiddleware,
       toolAccessMiddleware,
       createMcpToolDiscoveryMiddleware(mcpTools),
+      createSkillGatedMcpToolsMiddleware(mcpTools),
       ambientContextMiddleware,
       wikiOrientationContextMiddleware,
       createHistoryCompactionMiddleware(env.chat?.contextWindow, env.chat?.historyCompaction),
@@ -900,6 +906,7 @@ async function buildWorkspaceChatAgent(
       skillScopedToolsMiddleware,
       toolAccessMiddleware,
       createMcpToolDiscoveryMiddleware(mcpTools),
+      createSkillGatedMcpToolsMiddleware(mcpTools),
       ambientContextMiddleware,
       wikiOrientationContextMiddleware,
       createHistoryCompactionMiddleware(env.chat?.contextWindow, env.chat?.historyCompaction),
@@ -1103,6 +1110,7 @@ export async function buildTaskAgent(
       skillScopedToolsMiddleware,
       toolAccessMiddleware,
       createMcpToolDiscoveryMiddleware(mcpTools),
+      createSkillGatedMcpToolsMiddleware(mcpTools),
       ambientContextMiddleware,
       wikiOrientationContextMiddleware,
       createHistoryCompactionMiddleware(env.chat?.contextWindow, env.chat?.historyCompaction),

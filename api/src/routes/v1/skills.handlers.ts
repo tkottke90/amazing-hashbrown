@@ -76,6 +76,7 @@ const CreateSkillSchema = z.object({
   compatibility: z.string().optional(),
   metadata: MetadataSchema.optional(),
   allowedTools: z.string().optional(),
+  tools: z.string().optional(),
 });
 
 const EditSkillSchema = z.object({
@@ -85,6 +86,7 @@ const EditSkillSchema = z.object({
   compatibility: z.string().optional(),
   metadata: MetadataSchema.optional(),
   allowedTools: z.string().optional(),
+  tools: z.string().optional(),
   enabled: z.boolean().optional(),
 });
 

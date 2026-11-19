@@ -82,13 +82,18 @@ describe('SkillsList', () => {
     expect(screen.getByTitle('Evals: has files')).toBeInTheDocument();
   });
 
-  it('shows the "gated" badge only for skills in GATED_SKILL_NAMES', () => {
-    skillList.value = [skill({ name: 'create-workspace' }), skill({ name: 'ungated-skill' })];
+  it('shows the "gated" badge only for a skill with a non-empty tools field', () => {
+    skillList.value = [
+      skill({ name: 'create-workspace', tools: 'create_workspace' }),
+      skill({ name: 'ungated-skill' }),
+    ];
     render(<SkillsList />);
 
     const rows = document.querySelectorAll('[data-slot="skill-row"]');
-    expect(rows[0].querySelector('[title="Required by tool-gating"]')).toBeInTheDocument();
-    expect(rows[1].querySelector('[title="Required by tool-gating"]')).not.toBeInTheDocument();
+    expect(
+      rows[0].querySelector('[title="Required by tool-gating — gates: create_workspace"]'),
+    ).toBeInTheDocument();
+    expect(rows[1].querySelector('[title^="Required by tool-gating"]')).not.toBeInTheDocument();
   });
 
   it("calls selectSkill with the row's name when Edit is clicked", () => {
@@ -120,19 +125,25 @@ describe('SkillsList', () => {
 
   it('confirms before disabling a gated skill, and proceeds when confirmed', () => {
     const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
-    skillList.value = [skill({ name: 'create-workspace', enabled: true })];
+    skillList.value = [
+      skill({ name: 'create-workspace', enabled: true, tools: 'create_workspace' }),
+    ];
     render(<SkillsList />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Enabled' }));
 
-    expect(confirmSpy).toHaveBeenCalled();
+    expect(confirmSpy).toHaveBeenCalledWith(
+      'Disabling "create-workspace" will hide the following tool(s) from the assistant: create_workspace. Continue?',
+    );
     expect(mockToggleSkillEnabled).toHaveBeenCalledWith('create-workspace', false);
     confirmSpy.mockRestore();
   });
 
   it('does not disable a gated skill when the confirmation is cancelled', () => {
     const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(false);
-    skillList.value = [skill({ name: 'create-workspace', enabled: true })];
+    skillList.value = [
+      skill({ name: 'create-workspace', enabled: true, tools: 'create_workspace' }),
+    ];
     render(<SkillsList />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Enabled' }));
@@ -144,7 +155,9 @@ describe('SkillsList', () => {
 
   it('never calls confirm when enabling a gated skill', () => {
     const confirmSpy = jest.spyOn(window, 'confirm');
-    skillList.value = [skill({ name: 'create-workspace', enabled: false })];
+    skillList.value = [
+      skill({ name: 'create-workspace', enabled: false, tools: 'create_workspace' }),
+    ];
     render(<SkillsList />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Disabled' }));
