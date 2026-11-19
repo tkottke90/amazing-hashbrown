@@ -93,7 +93,9 @@ describe('markdownSanitizeSchema', () => {
   });
 
   it('allows <style> only when nested inside an svg [unit]', () => {
-    const out = render('<svg><style>circle{fill:red}</style><circle cx="1" cy="1" r="1"/></svg>').toLowerCase();
+    const out = render(
+      '<svg><style>circle{fill:red}</style><circle cx="1" cy="1" r="1"/></svg>',
+    ).toLowerCase();
     expect(out).toContain('<style');
   });
 

@@ -9,7 +9,7 @@ Applied uniformly — every SVG gets the Sandbox, not only ones that happen to u
 ## Considered Options
 
 - **Reject `<style>` outright, rely on SVG presentation attributes only** — simpler, no Shadow DOM build cost, but forecloses any future legitimate need for grouped/reused styling inside a diagram; superseded once Shadow DOM made real scoping cheap enough to build.
-- **Schema-restrict `<style>`'s CSS *content* (parse and validate selectors)** — not pursued: `hast-util-sanitize` only polices tags/attributes, not a `<style>` element's text content, so this would require a separate CSS parser/validator with no existing precedent in this codebase.
+- **Schema-restrict `<style>`'s CSS _content_ (parse and validate selectors)** — not pursued: `hast-util-sanitize` only polices tags/attributes, not a `<style>` element's text content, so this would require a separate CSS parser/validator with no existing precedent in this codebase.
 
 ## Consequences
 

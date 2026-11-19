@@ -41,7 +41,8 @@ const SAFE_SVG =
 const STYLE_SVG =
   '<svg viewBox="0 0 20 20"><style>circle{fill:red}</style><circle cx="10" cy="10" r="8"/></svg>';
 
-const OVERSIZED_SVG = '<svg width="2000" height="2000" viewBox="0 0 2000 2000"><rect x="0" y="0" width="2000" height="2000" fill="#09c"/></svg>';
+const OVERSIZED_SVG =
+  '<svg width="2000" height="2000" viewBox="0 0 2000 2000"><rect x="0" y="0" width="2000" height="2000" fill="#09c"/></svg>';
 
 const THREAD_ID = 'thread-inline-svg-test';
 
@@ -118,7 +119,9 @@ async function mockWikiDocumentView(page: Page, content: string): Promise<void> 
 const svgSandbox = (page: Page) => page.getByTestId('svg-sandbox');
 
 test.describe('@user-workflow', { annotation: suiteAnnotations(suite) }, () => {
-  test('renders as a real SVGElement in a chat bubble @user-workflow', async ({ page }, testInfo) => {
+  test('renders as a real SVGElement in a chat bubble @user-workflow', async ({
+    page,
+  }, testInfo) => {
     await mockChatApis(page, [
       {
         kind: 'assistant',
@@ -139,7 +142,9 @@ test.describe('@user-workflow', { annotation: suiteAnnotations(suite) }, () => {
     await expect(sandbox.locator('use')).toHaveCount(1);
   });
 
-  test('renders as a real SVGElement in the wiki page preview @user-workflow', async ({ page }, testInfo) => {
+  test('renders as a real SVGElement in the wiki page preview @user-workflow', async ({
+    page,
+  }, testInfo) => {
     await mockWikiDocumentView(page, `Here is a diagram:\n\n${SAFE_SVG}`);
     await page.goto(`/wiki?view=document&domain=${WIKI_DOMAIN.id}`);
 

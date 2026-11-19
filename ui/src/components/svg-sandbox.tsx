@@ -15,7 +15,7 @@ const TAG_NAME = 'markdown-svg-sandbox';
 // developer-authored CSS, unrelated to the Markdown Sanitize Schema.
 const HOST_STYLE = ':host svg { max-width: 100%; height: auto; }';
 
-class MarkdownSvgSandboxElement extends HTMLElement {
+export class MarkdownSvgSandboxElement extends HTMLElement {
   connectedCallback() {
     if (this.shadowRoot) return;
     const root = this.attachShadow({ mode: 'open' });

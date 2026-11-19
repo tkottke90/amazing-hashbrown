@@ -111,8 +111,8 @@ The light-mode code block background is `#f6f8fa` (GitHub's standard code surfac
 | ------------------------- | ----------------------------------------------------- |
 | `react-markdown`          | Markdown → JSX renderer                               |
 | `remark-gfm`              | GitHub Flavored Markdown parser plugin                |
-| `rehype-raw`              | Parses raw HTML embedded in Markdown source (including `<svg>`) into the render tree |
-| `rehype-sanitize`         | Enforces the Markdown Sanitize Schema on the whole tree once raw HTML is enabled |
+| `rehype-raw`              | Parses raw HTML in Markdown source (incl. SVG)        |
+| `rehype-sanitize`         | Enforces the Markdown Sanitize Schema on the tree     |
 | `rehype-highlight`        | Syntax highlighting (adds highlight.js token classes) |
 | `highlight.js`            | Token class definitions and CSS theme                 |
 | `@tailwindcss/typography` | `prose` utility class                                 |
