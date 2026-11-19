@@ -386,6 +386,7 @@ implementation details that change without notice.
 | `green-room-lane`                    | `ui/src/pages/monitoring/provider-activity-monitor.tsx`   | A provider's own Green Room lane; pair with `data-provider`                                                                                    |
 | `green-room-chip-ready`              | `ui/src/pages/monitoring/provider-activity-monitor.tsx`   | A ready (not-yet-dequeued) task's draggable chip inside a Green Room lane                                                                      |
 | `green-room-chip-live`               | `ui/src/pages/monitoring/provider-activity-monitor.tsx`   | A real ProviderQueue waiter's chip inside a Green Room lane — not draggable                                                                    |
+| `svg-sandbox`                        | `ui/src/components/svg-sandbox.tsx`                       | The Shadow-DOM host every rendered SVG mounts into (ADR-0072); `.locator('svg')` reaches it — Playwright pierces open shadow roots             |
 
 When you add a new `data-testid` to a UI source file, record it in the table
 above so future test authors can discover it without grepping the whole
