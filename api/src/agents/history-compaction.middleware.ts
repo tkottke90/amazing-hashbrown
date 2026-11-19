@@ -86,13 +86,13 @@ const HistoryCompactionContextSchema = z.object({
 // fields — the eval suite tests this exact prompt template.
 const SUMMARY_PROMPT_PREFIX =
   'Condense this tool call result so the agent can keep working without the full output in ' +
-  'context. Capture: the specific facts, identifiers, file paths, and values a later step ' +
-  'might still need — especially anything unusual, such as an error or an outlier. When many ' +
-  'results are uniform and unremarkable (e.g. a run of identical successes), report them as a ' +
-  "count rather than listing each one's identifier; name individual identifiers only when " +
-  'they are tied to something noteworthy. Drop formatting, repeated boilerplate, and anything ' +
-  'already obvious from the tool name. Write it as plain prose, a few sentences at most. Do ' +
-  'not include pleasantries or restate these instructions.\n\n';
+  'context. If several results share the same outcome (e.g. a run of identical successes), ' +
+  'report only how many there were — never list their individual identifiers, not even as a ' +
+  'range. Name an identifier only when it is tied to something unusual, like an error or an ' +
+  'outlier. Otherwise capture the specific facts, file paths, and values a later step might ' +
+  'still need. Drop formatting, repeated boilerplate, and anything already obvious from the ' +
+  'tool name. Write it as plain prose, a few sentences at most. Do not include pleasantries ' +
+  'or restate these instructions.\n\n';
 
 interface SummarizeToolMessageOptions {
   threadId: string;
