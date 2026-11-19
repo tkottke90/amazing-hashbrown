@@ -637,3 +637,13 @@ _Avoid_: Failure taxonomy, error taxonomy, failure categories
 **Tool-Call Distribution**:
 A Thread Report's full per-tool-name call-count map — previously collapsed down to just its single most-called tool, now exposed in full. Not itself a failure signal; pairs with a Failure Breakdown's tool-keyed failure counts (same tool names) to show a failure rate per tool, e.g. "`fetch_url`: 23/23 failed".
 _Avoid_: Tool usage stats, tool histogram
+
+# Markdown Rendering & Inline SVG
+
+How the shared `Markdown` component decides which raw HTML written directly in Markdown source — including inline SVG — survives into the rendered DOM, instead of being escaped as literal text.
+
+## Language
+
+**Markdown Sanitize Schema**:
+The explicit allowlist (tags, attributes, URL protocols) `rehype-sanitize` enforces on the whole rendered tree once raw HTML parsing is enabled — built by enumerating exactly what Markdown/GFM syntax itself can already produce, plus the newly-supported SVG tags, rather than inheriting `rehype-sanitize`'s own `defaultSchema` wholesale. Distinct from `content-block-sanitizer.middleware.ts`'s unrelated sanitizer, which strips malformed LangChain streaming content blocks — nothing to do with HTML or XSS.
+_Avoid_: Sanitizer, sanitize schema (ambiguous with the API's own differently-scoped sanitizer)
