@@ -32,6 +32,28 @@ function render(markdown: string): string {
   return String(file).trim();
 }
 
+// TEMPORARY DIAGNOSTIC — every real-pipeline assertion below is failing:
+// the raw SVG survives as HTML-entity-escaped text instead of being parsed
+// into real elements at all. This logs the tree right after rehypeRaw
+// (before sanitize/stringify) to see whether it's still an unexpanded
+// `type: 'raw'` node (rehypeRaw never ran) or real `element` nodes with
+// `tagName: 'svg'` (rehypeRaw worked, bug is downstream). Remove once the
+// real cause is found and the suite below is green again.
+describe('DIAGNOSTIC', () => {
+  it('logs the hast tree immediately after rehypeRaw [unit]', () => {
+    const processor = unified()
+      .use(remarkParse)
+      .use(remarkRehype, { allowDangerousHtml: true })
+      .use(rehypeRaw);
+    const mdast = processor.parse('<svg><circle cx="1" cy="1" r="1"/></svg>');
+    const hastTree = processor.runSync(mdast);
+    console.log(
+      'DIAGNOSTIC_TREE_AFTER_REHYPE_RAW=' +
+        JSON.stringify(hastTree, (key, value) => (key === 'position' ? undefined : value), 2),
+    );
+  });
+});
+
 describe('markdownSanitizeSchema', () => {
   it('renders a representative safe SVG intact (shapes, gradient, internal use/defs/symbol reference) [unit]', () => {
     const svg =
