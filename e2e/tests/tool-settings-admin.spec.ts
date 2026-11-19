@@ -35,6 +35,12 @@ const suite: TestSuite = {
       expectedOutcome: 'DELETE is sent for that tool',
       test: () => {},
     },
+    {
+      tags: ['@user-workflow'],
+      action: 'Switch between All/Enabled/Disabled tool filters',
+      expectedOutcome: 'Each view shows only the matching rows, defaulting to Enabled on load',
+      test: () => {},
+    },
   ],
 };
 
@@ -206,6 +212,48 @@ test.describe('Settings Tools admin drawer', { annotation: suiteAnnotations(suit
       drawer.getByRole('button', { name: 'Reset Defaults' }).click(),
     ]);
     expect(deleteRequest.method()).toBe('DELETE');
+  });
+
+  test('the status filter defaults to Enabled and switches between All/Enabled/Disabled @user-workflow', async ({
+    page,
+  }, testInfo) => {
+    // Own fixture, not INITIAL_TOOLS — INITIAL_TOOLS has no disabled tool, so
+    // it can't tell "Enabled" apart from "All". Includes an alwaysOn tool to
+    // confirm it's bucketed by its resolved `enabled` like everything else
+    // (ADR-0071 — no exemption for Always-On Tools).
+    await mockToolSettingsApi(page, [
+      tool({ toolId: 'web_fetch', name: 'Web Fetch', enabled: true }),
+      tool({
+        toolId: 'wiki_search',
+        name: 'Wiki Search',
+        category: 'wiki',
+        alwaysOn: true,
+        enabled: true,
+      }),
+      tool({ toolId: 'legacy_search', name: 'Legacy Search', enabled: false }),
+    ]);
+    await page.goto('/settings?section=tools');
+    await pauseBeforeAction(page, testInfo);
+
+    // Default view is "Enabled": the disabled tool is hidden, the always-on
+    // one is shown.
+    await expect(page.getByTestId('tool-status-filter-enabled')).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    await expect(toolRow(page, 'Web Fetch')).toBeVisible();
+    await expect(toolRow(page, 'Wiki Search')).toBeVisible();
+    await expect(toolRow(page, 'Legacy Search')).not.toBeVisible();
+
+    await page.getByTestId('tool-status-filter-disabled').click();
+    await expect(toolRow(page, 'Legacy Search')).toBeVisible();
+    await expect(toolRow(page, 'Web Fetch')).not.toBeVisible();
+    await expect(toolRow(page, 'Wiki Search')).not.toBeVisible();
+
+    await page.getByTestId('tool-status-filter-all').click();
+    await expect(toolRow(page, 'Web Fetch')).toBeVisible();
+    await expect(toolRow(page, 'Wiki Search')).toBeVisible();
+    await expect(toolRow(page, 'Legacy Search')).toBeVisible();
   });
 });
 

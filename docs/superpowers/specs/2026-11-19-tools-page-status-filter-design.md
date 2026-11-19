@@ -22,7 +22,7 @@ const TOOL_STATUS_OPTIONS = [
 export type ToolStatusFilterValue = 'all' | 'enabled' | 'disabled';
 ```
 
-Same props shape as `DensityToggle` (`value`, `onChange`, `className`, rest spread onto `Root`), `data-slot="tool-status-filter"` / `"tool-status-filter-item"`, and `data-testid={\`tool-status-filter-${option.value}\`}` on each `Item` (record the three new testids in `e2e/AGENTS.md`'s data-testid table per that file's own instruction). Placed in `components/ui/` rather than `pages/settings/`, matching the existing precedent that `DensityToggle` lives there too despite having exactly one current caller (`dashboard-settings-panel.tsx`) — these are generic segmented-toggle atoms, not page-specific logic.
+Same props shape as `DensityToggle` (`value`, `onChange`, `className`, rest spread onto `Root`), `data-slot="tool-status-filter"` / `"tool-status-filter-item"`, and ``data-testid={`tool-status-filter-${option.value}`}`` on each `Item` (record the three new testids in `e2e/AGENTS.md`'s data-testid table per that file's own instruction). Placed in `components/ui/` rather than `pages/settings/`, matching the existing precedent that `DensityToggle` lives there too despite having exactly one current caller (`dashboard-settings-panel.tsx`) — these are generic segmented-toggle atoms, not page-specific logic.
 
 ## Wiring into `ToolAccessTable`
 
