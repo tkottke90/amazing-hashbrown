@@ -21,10 +21,7 @@ import { getWorkspaceStore, type Workspace } from '../../services/workspace-stor
 import { getThreadStore } from '../../services/thread-store.js';
 import { getWakeupStore } from '../../services/wakeup-store.js';
 import { getWakeupRegistry } from '../../services/wakeup-registry.js';
-import {
-  getWorkspaceChatThreadHandler,
-  replaceThreadHandler,
-} from './workspace-chat.handlers.js';
+import { getWorkspaceChatThreadHandler, replaceThreadHandler } from './workspace-chat.handlers.js';
 import { respondIfTaskPrompt } from './task-prompt-answer.js';
 import { serializeError } from '../../config/logger.js';
 

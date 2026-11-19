@@ -83,7 +83,7 @@ function getWorkspaceChatThreadHandler(
   threadId: string,
   workspace: Workspace,
   opts: { isTurnActive: (id: string) => boolean },
-): HandlerResult<ClientThreadDetail & { summaryPath: string | null; summarizedAt: string | null }>
+): HandlerResult<ClientThreadDetail & { summaryPath: string | null; summarizedAt: string | null }>;
 ```
 
 Behavior:

@@ -3,11 +3,7 @@ import { logger, serializeError } from '../../config/logger.js';
 import type { ThreadStore } from '../../services/thread-store.js';
 import type { Workspace, WorkspaceStore } from '../../services/workspace-store.js';
 import type { Wakeup, WakeupCancelSource, WakeupStore } from '../../services/wakeup-store.js';
-import {
-  getThreadHandler,
-  toClientMessage,
-  type ClientThreadDetail,
-} from './threads.handlers.js';
+import { getThreadHandler, toClientMessage, type ClientThreadDetail } from './threads.handlers.js';
 
 // Narrowed to the one method this handler actually calls — the real
 // WakeupRegistry class (whose other fields are private, so a plain test

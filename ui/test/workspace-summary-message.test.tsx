@@ -28,8 +28,13 @@ describe('WorkspaceSummaryMessage', () => {
 
     fireEvent.click(screen.getByTestId('workspace-summary-toggle'));
 
-    expect(screen.getByText('Continuity Summary')).toBeInTheDocument();
-    expect(screen.getByText('Key decision: use SQLite.')).toBeInTheDocument();
+    // react-markdown is mocked to a plain passthrough in tests (see
+    // test/__mocks__/react-markdown.tsx) — it renders the raw markdown
+    // source as one text node rather than parsed HTML, so assert on the
+    // container's text content rather than matching individual elements.
+    const content = screen.getByTestId('workspace-summary-content');
+    expect(content.textContent).toContain('Continuity Summary');
+    expect(content.textContent).toContain('Key decision: use SQLite.');
     const link = screen.getByTestId('workspace-summary-raw-link');
     expect(link).toHaveAttribute(
       'href',
