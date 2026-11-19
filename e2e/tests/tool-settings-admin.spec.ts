@@ -220,7 +220,7 @@ test.describe('Settings Tools admin drawer', { annotation: suiteAnnotations(suit
     // Own fixture, not INITIAL_TOOLS — INITIAL_TOOLS has no disabled tool, so
     // it can't tell "Enabled" apart from "All". Includes an alwaysOn tool to
     // confirm it's bucketed by its resolved `enabled` like everything else
-    // (ADR-0071 — no exemption for Always-On Tools).
+    // (ADR-0073 — no exemption for Always-On Tools).
     await mockToolSettingsApi(page, [
       tool({ toolId: 'web_fetch', name: 'Web Fetch', enabled: true }),
       tool({

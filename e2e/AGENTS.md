@@ -389,6 +389,7 @@ implementation details that change without notice.
 | `tool-status-filter-all`             | `ui/src/components/ui/tool-status-filter.tsx`             | Settings → Tools status filter's "All" segment                                                                                                 |
 | `tool-status-filter-enabled`         | `ui/src/components/ui/tool-status-filter.tsx`             | Settings → Tools status filter's "Enabled" segment (default on load)                                                                           |
 | `tool-status-filter-disabled`        | `ui/src/components/ui/tool-status-filter.tsx`             | Settings → Tools status filter's "Disabled" segment                                                                                            |
+| `svg-sandbox`                        | `ui/src/components/svg-sandbox.tsx`                       | The Shadow-DOM host every rendered SVG mounts into (ADR-0072); `.locator('svg')` reaches it — Playwright pierces open shadow roots             |
 
 When you add a new `data-testid` to a UI source file, record it in the table
 above so future test authors can discover it without grepping the whole

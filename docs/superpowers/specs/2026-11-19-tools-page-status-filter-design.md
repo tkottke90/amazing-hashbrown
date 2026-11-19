@@ -2,7 +2,7 @@
 
 Today `ToolAccessTable` (`ui/src/pages/settings/tool-access-table.tsx`) always renders every catalog/MCP tool — enabled, disabled, Always-On Tool, Skill-Gated/Skill-Scoped alike — sorted alphabetically, narrowed only by the existing text search. A user who just wants to see what's active has to read past every disabled row to find it.
 
-This adds a three-way All/Enabled/Disabled status filter, defaulting to "Enabled," that composes with the existing search (AND) and reads off the same `tool.enabled` field everywhere else in the app already treats as the source of truth — see `GLOSSARY.md`'s "Always-On Tool" and ADR-0071 for why that one field, with no category special-casing, is what the filter buckets on.
+This adds a three-way All/Enabled/Disabled status filter, defaulting to "Enabled," that composes with the existing search (AND) and reads off the same `tool.enabled` field everywhere else in the app already treats as the source of truth — see `GLOSSARY.md`'s "Always-On Tool" and ADR-0073 for why that one field, with no category special-casing, is what the filter buckets on.
 
 ## Scope
 

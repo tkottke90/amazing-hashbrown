@@ -16,7 +16,7 @@ export type ToolStatusFilterValue = 'all' | 'enabled' | 'disabled';
 // widening either of those for a one-off reuse — the three controls have
 // unrelated option sets). Buckets tools purely by their resolved `enabled`
 // field, including Always-On Tools and Skill-Gated/Skill-Scoped Tools — see
-// GLOSSARY.md's "Always-On Tool" and ADR-0071 for why there's no
+// GLOSSARY.md's "Always-On Tool" and ADR-0073 for why there's no
 // category-based exception here.
 function ToolStatusFilter({
   value,
