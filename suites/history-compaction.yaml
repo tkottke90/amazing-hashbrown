@@ -69,6 +69,12 @@ scenarios:
       higher than 3/10 if this specific value is missing, wrong, or only vaguely gestured at
       ("some config options were found").
 
+      Whether the other ~8 file paths from the `find` command are listed individually,
+      condensed to a count, or omitted does not affect this score either way — that
+      dimension (aggregating uniform/repeated results) is what hc-002-omits-boilerplate
+      tests specifically. Score this scenario purely on whether the defaultCaseSensitive
+      value and its file attribution survive.
+
       Given that's met, a summary that also names search.config.ts as the file it came from
       (so a later get_tool_key lookup or re-reference makes sense) has done its job fully:
       score it 8 or higher. A summary that gets the value right but loses which file it came
