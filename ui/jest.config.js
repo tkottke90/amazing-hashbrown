@@ -10,9 +10,9 @@ const ESM_MARKDOWN_DEPS =
   'unified|bail|trough|extend|dequal|devlop|is-plain-obj|entities|parse5|hastscript|' +
   'html-void-elements|web-namespaces|zwitch|trim-lines|property-information|' +
   'space-separated-tokens|comma-separated-tokens|decode-named-character-reference|' +
-  'stringify-entities|ccount|character-entities[a-z0-9-]*|unist-util-[a-z-]+|' +
-  'vfile[a-z-]*|mdast-util-[a-z-]+|hast-util-[a-z-]+|micromark[a-z-]*|remark-[a-z-]+|' +
-  'rehype-[a-z-]+|@ungap/structured-clone';
+  'stringify-entities|ccount|character-entities[a-z0-9-]*|unist-util-[a-z0-9-]+|' +
+  'vfile[a-z0-9-]*|mdast-util-[a-z0-9-]+|hast-util-[a-z0-9-]+|micromark[a-z0-9-]*|' +
+  'remark-[a-z0-9-]+|rehype-[a-z0-9-]+|@ungap/structured-clone';
 
 /** @type {import('jest').Config} */
 export default {
