@@ -44,6 +44,11 @@ export const TraceSourceSchema = z.enum([
   // (api/src/agents/sub-agent-task-title.ts). See ADR-0059,
   // GLOSSARY.md § Generated Title.
   'sub-agent-task-title',
+  // A single ToolMessage's condensation call, made mid-loop by the History
+  // Compaction middleware once a turn is heading toward its context budget
+  // (api/src/agents/history-compaction.middleware.ts). See issue #403,
+  // docs/superpowers/specs/2026-11-19-history-compaction-middleware-design.md.
+  'history-compaction',
 ]);
 
 export const SpanRecordSchema = z.object({

@@ -46,6 +46,7 @@ import { makeUpdateWidgetContentTool } from './tools/update-widget-content.tool.
 import { getAfterAgentContextSchema, runAfterAgentPipeline } from './after-agent.js';
 import { buildSystemPrompt } from './system-prompt.js';
 import { boundaryAwareTrim } from './summary-boundary.js';
+import { createHistoryCompactionMiddleware } from './history-compaction.middleware.js';
 import { contentBlockSanitizerMiddleware } from './content-block-sanitizer.middleware.js';
 import { createRecursionGuardMiddleware } from './recursion-guard.middleware.js';
 import { createSkillExpansionMiddleware } from './skill-expansion.middleware.js';
@@ -168,8 +169,11 @@ const afterAgentMiddleware = createMiddleware({
 // Sums the shared per-text estimate (@tkottke90/llm-common-types/tokens)
 // across a message list. Used by the context window middleware to avoid a
 // model round-trip for counting — accurate enough for the purpose of
-// keeping context below a configurable ceiling.
-function estimateTokens(messages: BaseMessage[]): number {
+// keeping context below a configurable ceiling. Exported so
+// history-compaction.middleware.ts's proactive threshold check measures the
+// same thing ContextWindowMiddleware's reactive trim measures, rather than a
+// second, driftable copy of this reducer.
+export function estimateTokens(messages: BaseMessage[]): number {
   return messages.reduce((sum, m) => {
     const text = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
     return sum + estimateTokensForText(text);
@@ -720,6 +724,7 @@ async function buildChatAgent(provider?: string, model?: string) {
       createMcpToolDiscoveryMiddleware(mcpTools),
       ambientContextMiddleware,
       wikiOrientationContextMiddleware,
+      createHistoryCompactionMiddleware(env.chat?.contextWindow, env.chat?.historyCompaction),
       createContextWindowMiddleware(env.chat?.contextWindow),
       afterAgentMiddleware,
       // Innermost wrapModelCall — must stay last (see its header comment).
@@ -897,6 +902,7 @@ async function buildWorkspaceChatAgent(
       createMcpToolDiscoveryMiddleware(mcpTools),
       ambientContextMiddleware,
       wikiOrientationContextMiddleware,
+      createHistoryCompactionMiddleware(env.chat?.contextWindow, env.chat?.historyCompaction),
       createContextWindowMiddleware(env.chat?.contextWindow),
       afterAgentMiddleware,
       // Innermost wrapModelCall — must stay last (see its header comment).
@@ -1099,6 +1105,7 @@ export async function buildTaskAgent(
       createMcpToolDiscoveryMiddleware(mcpTools),
       ambientContextMiddleware,
       wikiOrientationContextMiddleware,
+      createHistoryCompactionMiddleware(env.chat?.contextWindow, env.chat?.historyCompaction),
       createContextWindowMiddleware(env.chat?.contextWindow),
       afterAgentMiddleware,
       // Innermost wrapModelCall — must stay last (see its header comment).
@@ -1226,6 +1233,7 @@ export function buildSubAgentMiddleware(options: {
       escalationMode: 'throw',
       hasDelivered: options.hasDelivered,
     }),
+    createHistoryCompactionMiddleware(env.chat?.contextWindow, env.chat?.historyCompaction),
     createContextWindowMiddleware(env.chat?.contextWindow),
     toolAccessMiddleware,
     createMcpToolDiscoveryMiddleware(options.mcpTools ?? []),

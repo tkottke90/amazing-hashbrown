@@ -1,0 +1,179 @@
+suite:
+  id: history-compaction
+  name: History Compaction — condensed tool result summary
+  purpose: >
+    Verify history-compaction.middleware.ts's summarizeToolMessage() actually condenses an
+    oversized ToolMessage into something the agent can keep working from — not a generic
+    "a tool ran" restatement — before it's relied on in production. See issue #403,
+    docs/superpowers/specs/2026-11-19-history-compaction-middleware-design.md §2.4.
+    Everything else the middleware does (the proactive threshold check, candidate
+    selection, offload/tag mechanics) is deterministic and is covered by Mocha unit/
+    integration tests instead — this suite exists only for the one genuinely
+    LLM-quality-facing piece, same reasoning as suites/workspace-summary.yaml and
+    suites/exhausted-run-retry.yaml.
+  passingThreshold: 0.75
+  # summarizeToolMessage() is a bare, non-agentic model.invoke(prompt) call (no tool
+  # harness, no chat-agent system prompt, no checkpointer) — the `input` field on every
+  # scenario below already IS that exact production prompt (SUMMARY_PROMPT_PREFIX +
+  # "Tool: <name>\n\nResult:\n" + the tail-capped original content). Keep these in sync if
+  # the prompt template changes. Applying the chat harness's own system prompt on top
+  # would test a combination that never happens.
+  appliesHarnessSystemPrompt: false
+
+scenarios:
+  - id: hc-001-retains-buried-fact
+    name: Summary retains one specific fact buried in a long, mostly-irrelevant tool result
+    type: llm-judge
+    purpose: >
+      The whole point of compacting instead of stubbing-to-nothing is that the agent can
+      still work from the summary later in the same turn. A summary that only captures the
+      tool's general shape ("this was a directory listing") and drops the one concrete
+      answer buried inside it defeats that — the agent would have to re-run the tool call
+      it just paid for.
+    input: >
+      Condense this tool call result so the agent can keep working without the full output
+      in context. If several results share the same outcome (e.g. a run of identical
+      successes), report only how many there were — never list their individual
+      identifiers, not even as a range. Name an identifier only when it is tied to something
+      unusual, like an error or an outlier. Otherwise capture the specific facts, file paths,
+      and values a later step might still need. Drop formatting, repeated boilerplate, and
+      anything already obvious from the tool name. Write it as plain prose, a few sentences
+      at most. Do not include pleasantries or restate these instructions.
+
+
+      Tool: shell_exec
+
+      Result:
+      $ find . -name "*.config.ts" -not -path "*/node_modules/*"
+      ./api/src/config/env.config.ts
+      ./api/src/agents/tools/search.config.ts
+      ./ui/src/vite.config.ts
+      ./ui/src/theme.config.ts
+      ./lib/llm-common-types/jest.config.ts
+      ./lib/evaluations/mocha.config.ts
+      ./e2e/playwright.config.ts
+      ./scripts/release.config.ts
+      $ cat ./api/src/agents/tools/search.config.ts
+      export const SEARCH_CONFIG = {
+        provider: 'ripgrep',
+        maxResults: 200,
+        timeoutMs: 8000,
+        excludeDirs: ['node_modules', 'dist', '.git', 'coverage'],
+        // This one value is the thing that actually matters for the question
+        // the agent was asked — everything else here is routine config noise.
+        defaultCaseSensitive: false,
+      };
+    rubric: >
+      Hard requirement: the summary must state that search.config.ts's defaultCaseSensitive
+      is false (or equivalently, that the search tool defaults to case-insensitive). Score no
+      higher than 3/10 if this specific value is missing, wrong, or only vaguely gestured at
+      ("some config options were found").
+
+      Whether the other ~8 file paths from the `find` command are listed individually,
+      condensed to a count, or omitted does not affect this score either way — that
+      dimension (aggregating uniform/repeated results) is what hc-002-omits-boilerplate
+      tests specifically. Score this scenario purely on whether the defaultCaseSensitive
+      value and its file attribution survive.
+
+      Given that's met, a summary that also names search.config.ts as the file it came from
+      (so a later get_tool_key lookup or re-reference makes sense) has done its job fully:
+      score it 8 or higher. A summary that gets the value right but loses which file it came
+      from should still score at least 6.
+    minScore: 6
+
+  - id: hc-002-omits-boilerplate
+    name: Summary focuses on substance, not the repeated scaffolding around it
+    type: llm-judge
+    purpose: >
+      Mirrors suites/workspace-summary.yaml's wsum-002 — a summary that gives equal or
+      greater weight to repeated, low-information boilerplate than to the few real facts
+      defeats the point of compacting at all; it's no shorter in substance than the
+      original, just shorter in characters.
+    input: >
+      Condense this tool call result so the agent can keep working without the full output
+      in context. If several results share the same outcome (e.g. a run of identical
+      successes), report only how many there were — never list their individual
+      identifiers, not even as a range. Name an identifier only when it is tied to something
+      unusual, like an error or an outlier. Otherwise capture the specific facts, file paths,
+      and values a later step might still need. Drop formatting, repeated boilerplate, and
+      anything already obvious from the tool name. Write it as plain prose, a few sentences
+      at most. Do not include pleasantries or restate these instructions.
+
+
+      Tool: get_tool_key
+
+      Result:
+      ## Content
+      {"status": "ok", "requestId": "a1b2c3d4-0001", "durationMs": 42}
+      {"status": "ok", "requestId": "a1b2c3d4-0002", "durationMs": 39}
+      {"status": "ok", "requestId": "a1b2c3d4-0003", "durationMs": 41}
+      {"status": "ok", "requestId": "a1b2c3d4-0004", "durationMs": 45}
+      {"status": "ok", "requestId": "a1b2c3d4-0005", "durationMs": 40}
+      {"status": "error", "requestId": "a1b2c3d4-0006", "durationMs": 38, "error": "rate_limited: retry after 30s, endpoint /v2/batch-import exceeded 100 req/min"}
+      {"status": "ok", "requestId": "a1b2c3d4-0007", "durationMs": 44}
+      {"status": "ok", "requestId": "a1b2c3d4-0008", "durationMs": 43}
+      {"status": "ok", "requestId": "a1b2c3d4-0009", "durationMs": 40}
+      {"status": "ok", "requestId": "a1b2c3d4-0010", "durationMs": 42}
+    rubric: >
+      Hard requirement: the summary must call out the one failed request (requestId
+      a1b2c3d4-0006, or just "request 6") and its rate_limited error on the /v2/batch-import
+      endpoint. Score no higher than 3/10 if the one failure is missing entirely, or if the
+      summary just reports an aggregate ("10 requests were made") with no mention that one
+      of them failed.
+
+      Given that's met, a concise summary that doesn't also enumerate every successful
+      request's individual requestId/duration (nine near-identical "ok" lines carry no
+      information beyond "it worked") has done its job: score it 8 or higher. A summary that
+      restates most or all of the successful requests individually, in addition to the
+      failure, should score no higher than 5 — it kept the signal but didn't actually
+      compact the noise.
+    minScore: 6
+
+  - id: hc-003-preserves-identifier-verbatim
+    name: Summary preserves an exact identifier verbatim, not paraphrased
+    type: llm-judge
+    purpose: >
+      Some facts are only useful if copied exactly — a path, a key, a hash. A summary that
+      correctly conveys "there's an API key in here" but mangles or drops the actual string
+      is useless if a later step needs to pass that exact value somewhere (e.g. quoting it
+      back to the user, or using it in a subsequent tool call).
+    input: >
+      Condense this tool call result so the agent can keep working without the full output
+      in context. If several results share the same outcome (e.g. a run of identical
+      successes), report only how many there were — never list their individual
+      identifiers, not even as a range. Name an identifier only when it is tied to something
+      unusual, like an error or an outlier. Otherwise capture the specific facts, file paths,
+      and values a later step might still need. Drop formatting, repeated boilerplate, and
+      anything already obvious from the tool name. Write it as plain prose, a few sentences
+      at most. Do not include pleasantries or restate these instructions.
+
+
+      Tool: read_file
+
+      Result:
+      # Deployment Notes — staging environment
+
+      This document covers the standard rollout checklist for the staging cluster,
+      including health-check timings, rollback steps, and on-call escalation paths.
+      Most of this is routine and unchanged from prior deployments.
+
+      One thing specific to this rollout: the new feature-flag service's bootstrap
+      token for staging is `ffs_stg_7K2m9QxZvL4pR8nT`. It is only valid for the next
+      24 hours and must be passed as the `X-Bootstrap-Token` header on the service's
+      first registration call — after that it rotates automatically and this value
+      stops working.
+
+      The rest of the rollout checklist (health checks, rollback, escalation) follows
+      the same steps documented in the general on-call runbook and is not repeated here.
+    rubric: >
+      Hard requirement: the summary must include the exact token string
+      `ffs_stg_7K2m9QxZvL4pR8nT`, character-for-character, and must mention it is time
+      -limited (expires / only valid for 24 hours) and goes in the X-Bootstrap-Token
+      header. Score no higher than 2/10 if the token string is missing, truncated, or
+      altered in any way — a paraphrase like "a bootstrap token was provided" does not
+      satisfy this, since the exact value is the only thing that matters here.
+
+      Given the token is reproduced exactly and its usage/expiry is captured, score 8 or
+      higher regardless of how much of the surrounding routine checklist text is omitted —
+      omitting it is correct, not a deduction.
+    minScore: 7
