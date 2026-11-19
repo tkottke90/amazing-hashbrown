@@ -36,7 +36,6 @@ function stubThreadInstance(overrides: Partial<ThreadInstance> = {}): ThreadInst
     activeThreadModel: signal(null),
     modelHydrated: signal(true),
     isSummarizing: signal(false),
-    summaryPath: signal(null),
     isWaitingForProvider: signal(false),
     waitingProviderName: signal(null),
     threadType: signal(null),

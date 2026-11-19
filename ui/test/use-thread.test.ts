@@ -840,3 +840,45 @@ describe('use-thread — background turns', () => {
     expect(thread.backgroundTurnActive.value).toBe(true);
   });
 });
+
+describe('use-thread — hydrate() vs. a live stream', () => {
+  function hydrateWith(body: Record<string, unknown>) {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ messages: [], ...body }),
+    }) as unknown as typeof fetch;
+  }
+
+  it('does not overwrite messages when isStreaming is already true at call time [unit]', async () => {
+    hydrateWith({ messages: [{ kind: 'user', id: 'u1', content: 'before', seq: 1 }] });
+    const thread = newThread('t-hydrate-race-call-time');
+    thread.isStreaming.value = true;
+
+    await thread.hydrate();
+
+    expect(thread.messages.value).toEqual([]);
+    expect(thread.modelHydrated.value).toBe(true);
+  });
+
+  it('does not overwrite messages when isStreaming becomes true while the fetch is still in flight [unit]', async () => {
+    let resolveFetch: (value: { ok: true; json: () => Promise<unknown> }) => void = () => {};
+    global.fetch = jest.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        }),
+    ) as unknown as typeof fetch;
+    const thread = newThread('t-hydrate-race-resolve-time');
+
+    const hydratePromise = thread.hydrate();
+    thread.isStreaming.value = true;
+    resolveFetch({
+      ok: true,
+      json: async () => ({ messages: [{ kind: 'user', id: 'u1', content: 'before', seq: 1 }] }),
+    });
+    await hydratePromise;
+
+    expect(thread.messages.value).toEqual([]);
+    expect(thread.modelHydrated.value).toBe(true);
+  });
+});

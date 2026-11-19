@@ -222,7 +222,6 @@ export interface ThreadInstance {
   // simply never receives summarizing_start/summarizing_end events, since
   // only the workspace-chat backend route emits them.
   isSummarizing: Signal<boolean>;
-  summaryPath: Signal<string | null>;
   // Set while a sync (interactive) turn is queued behind a provider's
   // maxConcurrency gate — see provider_wait in handleEvent below. Always
   // false again by the time stream_done/stream_error land, since the gate
@@ -313,7 +312,6 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
   const activeThreadModel = signal<{ provider: string; model: string } | null>(null);
   const modelHydrated = signal(false);
   const isSummarizing = signal(false);
-  const summaryPath = signal<string | null>(null);
   const isWaitingForProvider = signal(false);
   const waitingProviderName = signal<string | null>(null);
   const threadType = signal<ThreadType | null>(null);
@@ -378,6 +376,16 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
         activeWikiId?: string | null;
       };
       const hydrated = data.messages.map(reviveMessage);
+      // A turn may already have been streaming on this ThreadInstance when
+      // hydrate() was called, or may start streaming while this fetch was
+      // in flight (e.g. the tab unmounted and remounted mid-response) — the
+      // live SSE stream is already authoritative in either case, so this
+      // response must not clobber it. Checked here, at resolution time, so
+      // both races are covered, not just the call-time one.
+      if (isStreaming.value) {
+        modelHydrated.value = true; // still unblock the model-hydrated gate
+        return;
+      }
       batch(() => {
         messages.value = hydrated;
         threadType.value = data.type ?? null;
@@ -387,7 +395,6 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
         activeWikiId.value = data.activeWikiId ?? null;
         // A turn this tab is streaming itself is not a background turn.
         backgroundTurnActive.value = !isStreaming.value && (data.activeTurn ?? false);
-        summaryPath.value = data.summaryPath ?? null;
         // Scan backward for the last *pending* hitl_prompt rather than only
         // checking the final message — a task-originated pause appends a
         // task_run_marker ("waiting on you") after its hitl_prompt row, so
@@ -919,7 +926,6 @@ function buildThreadInstance(threadId: string, opts: ThreadInstanceOptions): Thr
     activeThreadModel,
     modelHydrated,
     isSummarizing,
-    summaryPath,
     isWaitingForProvider,
     waitingProviderName,
     threadType,

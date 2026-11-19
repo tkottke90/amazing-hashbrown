@@ -12,6 +12,7 @@ import { SubAgentMarkerMessage } from './sub-agent-marker-message';
 import { WakeupCard } from './wakeup-card';
 import { WakeupFiredMarker } from './wakeup-fired-marker';
 import { WikiOrientationMessage } from './wiki-orientation-message';
+import { WorkspaceSummaryMessage } from './workspace-summary-message';
 import type { ThreadMessage } from '../types/thread-message';
 
 interface ThreadMessageItemProps {
@@ -113,5 +114,8 @@ export function ThreadMessageItem({
 
     case 'wiki_orientation':
       return <WikiOrientationMessage message={message} />;
+
+    case 'summary':
+      return <WorkspaceSummaryMessage message={message} />;
   }
 }

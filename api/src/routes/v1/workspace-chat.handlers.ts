@@ -3,6 +3,7 @@ import { logger, serializeError } from '../../config/logger.js';
 import type { ThreadStore } from '../../services/thread-store.js';
 import type { Workspace, WorkspaceStore } from '../../services/workspace-store.js';
 import type { Wakeup, WakeupCancelSource, WakeupStore } from '../../services/wakeup-store.js';
+import { getThreadHandler, toClientMessage, type ClientThreadDetail } from './threads.handlers.js';
 
 // Narrowed to the one method this handler actually calls — the real
 // WakeupRegistry class (whose other fields are private, so a plain test
@@ -111,4 +112,59 @@ export async function replaceThreadHandler(
   }
 
   return ok(migrated);
+}
+
+// The thread GET response is one of two real shapes: an empty-history
+// fallback for a thread that hasn't had its first message yet (a 200, not
+// an error — a workspace-chat thread is lazily created on its successor's
+// first message, same as replaceThreadHandler above relies on), or the
+// full ClientThreadDetail plus the workspace's summary metadata.
+export type WorkspaceChatThreadResult =
+  | { messages: Record<string, unknown>[]; summaryPath: string | null; summarizedAt: string | null }
+  | (ClientThreadDetail & { summaryPath: string | null; summarizedAt: string | null });
+
+// Extracted from workspace-chat.route.ts's GET '/:threadId' (see
+// docs/superpowers/specs/2026-11-19-workspace-chat-summary-continuity-design.md
+// §2). Beyond that route's existing behavior, this also prepends the
+// workspace's current summary row (if any) to the cursor-filtered tail:
+// the afterMessageId filter that hides everything at/before
+// workspace.lastSummarizedMessageId also hides that cursor row itself,
+// which is the one place in the UI the summary still needs to be visible,
+// as a collapsible bubble rather than a static banner.
+//
+// Never returns a failure — a pre-first-message thread is success with
+// empty history today, not a 404 — so HandlerResult<T> here is always
+// `ok`, kept only so the route's dispatch stays uniform with every other
+// handler call in this file.
+export function getWorkspaceChatThreadHandler(
+  threadStore: ThreadStore,
+  threadId: string,
+  workspace: Workspace,
+  opts: { isTurnActive: (id: string) => boolean },
+): HandlerResult<WorkspaceChatThreadResult> {
+  const result = getThreadHandler(threadStore, threadId, {
+    afterMessageId: workspace.lastSummarizedMessageId ?? undefined,
+    isTurnActive: opts.isTurnActive,
+  });
+
+  if (!result.ok) {
+    return ok({ messages: [], summaryPath: workspace.summaryPath, summarizedAt: null });
+  }
+
+  let summaryMessage: Record<string, unknown> | undefined;
+  let summarizedAt: string | null = null;
+  if (workspace.lastSummarizedMessageId) {
+    const record = threadStore.getMessage(threadId, workspace.lastSummarizedMessageId);
+    if (record) {
+      summaryMessage = toClientMessage(record);
+      summarizedAt = record.createdAt;
+    }
+  }
+
+  return ok({
+    ...result.data,
+    messages: summaryMessage ? [summaryMessage, ...result.data.messages] : result.data.messages,
+    summaryPath: workspace.summaryPath,
+    summarizedAt,
+  });
 }

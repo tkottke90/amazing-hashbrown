@@ -129,14 +129,18 @@ export async function maybeSummarizeWorkspace(
 
     // The summary message becomes the new cursor itself (not the last
     // original message it summarized) — so the "hide messages at/before the
-    // cursor" read-side filter (afterMessageId) also hides this marker row,
-    // and only the context notice (built from workspace.summaryPath)
-    // represents it in the UI, rather than rendering as a chat bubble.
+    // cursor" read-side filter (afterMessageId) would also hide this marker
+    // row. getWorkspaceChatThreadHandler (workspace-chat.handlers.ts)
+    // special-cases this one row, fetching and prepending it by id so it
+    // still renders as a collapsible summary bubble rather than disappearing.
+    // workspaceId travels in the payload (same pattern as recordResourceCard
+    // in thread-message-writer.ts) so the client can build the bubble's
+    // "view raw file" link without a second lookup.
     const summaryMessageId = randomUUID();
     threadStore.insertMessage(workspace.threadId, {
       id: summaryMessageId,
       kind: 'summary',
-      payload: { content, summaryPath: summaryRelPath },
+      payload: { content, summaryPath: summaryRelPath, workspaceId: workspace.id },
     });
 
     store.patchWorkspace(workspace.id, {

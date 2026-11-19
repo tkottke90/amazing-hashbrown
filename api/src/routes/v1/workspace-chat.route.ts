@@ -21,8 +21,7 @@ import { getWorkspaceStore, type Workspace } from '../../services/workspace-stor
 import { getThreadStore } from '../../services/thread-store.js';
 import { getWakeupStore } from '../../services/wakeup-store.js';
 import { getWakeupRegistry } from '../../services/wakeup-registry.js';
-import { getThreadHandler } from './threads.handlers.js';
-import { replaceThreadHandler } from './workspace-chat.handlers.js';
+import { getWorkspaceChatThreadHandler, replaceThreadHandler } from './workspace-chat.handlers.js';
 import { respondIfTaskPrompt } from './task-prompt-answer.js';
 import { serializeError } from '../../config/logger.js';
 
@@ -66,22 +65,14 @@ workspaceChatRouter.get('/:threadId', (req: Request, res: Response) => {
   const workspace = resolveWorkspaceForThread(req, res);
   if (!workspace) return;
 
-  const result = getThreadHandler(getThreadStore(), threadId, {
-    afterMessageId: workspace.lastSummarizedMessageId ?? undefined,
+  const result = getWorkspaceChatThreadHandler(getThreadStore(), threadId, workspace, {
     isTurnActive: (id) => getActiveSseWriter(id) !== undefined,
   });
   if (!result.ok) {
-    // A workspace-chat thread not existing yet (pre-first-message) is not an
-    // error — return an empty history rather than propagating the 404.
-    res.json({ messages: [], summaryPath: workspace.summaryPath, summarizedAt: null });
+    res.status(result.status).json({ error: result.error });
     return;
   }
-
-  const summarizedAt = workspace.lastSummarizedMessageId
-    ? (getThreadStore().getMessage(threadId, workspace.lastSummarizedMessageId)?.createdAt ?? null)
-    : null;
-
-  res.json({ ...result.data, summaryPath: workspace.summaryPath, summarizedAt });
+  res.json(result.data);
 });
 
 workspaceChatRouter.post('/:threadId', async (req: Request, res: Response) => {

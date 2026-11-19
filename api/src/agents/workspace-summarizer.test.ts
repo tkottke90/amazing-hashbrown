@@ -189,6 +189,9 @@ describe('agents/workspace-summarizer', () => {
     );
     expect(summaryMessage).to.not.equal(null);
     expect(summaryMessage!.kind).to.equal('summary');
+    expect((summaryMessage!.payload as { workspaceId?: string }).workspaceId).to.equal(
+      workspace.id,
+    );
 
     const afterCursor = threadStore.getThreadMessages(workspace.threadId!, {
       afterMessageId: reloaded.lastSummarizedMessageId!,
