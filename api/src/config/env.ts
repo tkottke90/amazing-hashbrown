@@ -406,6 +406,24 @@ export const ToolContentStoreSchema = z.object({
   maxEntries: z.number().int().positive().default(500),
 });
 
+// Proactive, LLM-based condensation of older ToolMessage content inside a
+// turn's own tool-call loop, once the turn is heading toward its context
+// budget — the existing ContextWindowSchema trim/stub backstop above still
+// runs unchanged after this. See issue #403,
+// docs/superpowers/specs/2026-11-19-history-compaction-middleware-design.md.
+export const HistoryCompactionSchema = z.object({
+  enabled: z.boolean().default(true),
+  // Fraction of contextWindow.maxTokens at which this starts condensing —
+  // independent of (and the inverse direction from) contextWindow's own
+  // safetyMarginPct, which scales the *trim* ceiling down defensively.
+  thresholdPct: z.number().min(0).max(1).default(0.6),
+  // Falls back to the turn's own provider/model (resolveTurnModel) when unset.
+  summarizerProvider: z.string().optional(),
+  summarizerModel: z.string().optional(),
+  // Tail-capped like workspace-summarizer.ts's MAX_SUMMARY_TRANSCRIPT_CHARS.
+  maxSourceChars: z.number().min(1000).default(16000),
+});
+
 export const ChatSchema = z.object({
   showErrorMessages: z.boolean().default(false),
   codeBlockWrap: z.boolean().default(false),
@@ -415,6 +433,7 @@ export const ChatSchema = z.object({
   mcpToolStub: McpToolStubSchema.optional(),
   mcpToolCache: McpToolCacheSchema.optional(),
   toolContentStore: ToolContentStoreSchema.optional(),
+  historyCompaction: HistoryCompactionSchema.optional(),
   // How many days since a chat thread's updatedAt before it's excluded from
   // the sidebar's own thread list (the Sidebar Retention Window — see
   // GLOSSARY.md). 0 disables this. Deliberately defaults to a non-zero

@@ -130,6 +130,7 @@ describe('agents/chat-agent', () => {
       expect(middleware.map((m) => m.name)).to.include.members([
         'ContentBlockSanitizerMiddleware',
         'RecursionGuardMiddleware',
+        'HistoryCompactionMiddleware',
         'ContextWindowMiddleware',
         'ToolAccessMiddleware',
         'McpToolDiscoveryMiddleware',
