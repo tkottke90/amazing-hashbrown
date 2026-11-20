@@ -21,6 +21,7 @@ export type {
   SemanticScenario,
   LlmJudgeScenario,
   StructuredScenario,
+  GatedMcpTool,
   HumanScenario,
   Scoring,
   EvalRun,
@@ -50,6 +51,7 @@ export type {
   RunResult,
   SkillExpansionMiddlewareLike,
   SkillGatedToolsMiddlewareLike,
+  SkillGatedMcpToolsMiddlewareFactoryLike,
   ToolSyntaxMiddlewareLike,
 } from './runner.js';
 

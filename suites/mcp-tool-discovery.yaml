@@ -19,6 +19,9 @@ suite:
     was ever offered to the model as a callable option. No real MCP server
     is needed to run this suite — tool-call/tool-sequence scenarios only
     inspect the model's proposed tool_calls and never execute a tool.
+    mtd-003/mtd-004 extend this to the direct-bind path: an MCP tool already
+    bound via Skill-Gated Tools (issue #409/#431), including the ADR-0074
+    admin-disable override that still wins while the gating skill is Active.
   passingThreshold: 0.85
 
 scenarios:
@@ -58,3 +61,51 @@ scenarios:
     type: tool-call
     input: 'What is 17 times 24?'
     tool: '!use_mcp_tools'
+
+  - id: mtd-003-skill-gated-mcp-tool-called-directly
+    name: 'An MCP tool already bound via Skill-Gated Tools is called directly, with no discovery round-trip'
+    purpose: >
+      The complementary case to mtd-001: #409/#431 lets a skill's own `tools`
+      frontmatter field gate an MCP tool directly, binding it the instant the
+      skill is Active, with no search_mcp_tools/use_mcp_tools step at all.
+      Confirms the model treats an already-bound skill-gated MCP tool like
+      any other available tool, rather than reflexively running the newer
+      discovery-first habit mtd-001/mtd-002 exist to establish.
+    type: tool-call
+    input: >
+      Use the n8n workflow-search tool to find workflows related to
+      "invoice processing".
+    gatedSkill: n8n-workflow-sync
+    gatedMcpTools:
+      - toolId: 'n8n:workflow_search'
+        description: 'Search n8n workflows by keyword'
+        argsSchema:
+          type: object
+          properties:
+            keyword: { type: string }
+          required: [keyword]
+    tool: n8n__workflow_search
+
+  - id: mtd-004-admin-disable-overrides-skill-gate
+    name: "An admin's explicit disable keeps a skill-gated MCP tool unbound even while its skill is Active"
+    purpose: >
+      ADR-0074: skill-gating an MCP tool is not a full Tool Access exemption
+      the way a built-in skill-gated tool gets — an admin's explicit disable
+      still wins. Only skill-gated-mcp-tools.middleware.test.ts covers this
+      today, at the unit level; this is the first check against real model
+      behavior.
+    type: tool-call
+    input: >
+      Use the n8n workflow-search tool to find workflows related to
+      "invoice processing".
+    gatedSkill: n8n-workflow-sync
+    gatedMcpTools:
+      - toolId: 'n8n:workflow_search'
+        description: 'Search n8n workflows by keyword'
+        enabled: false
+        argsSchema:
+          type: object
+          properties:
+            keyword: { type: string }
+          required: [keyword]
+    tool: '!n8n__workflow_search'

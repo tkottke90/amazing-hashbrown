@@ -21,6 +21,7 @@ import {
   type Suite,
   type SkillExpansionMiddlewareLike,
   type SkillGatedToolsMiddlewareLike,
+  type SkillGatedMcpToolsMiddlewareFactoryLike,
   type ToolSyntaxMiddlewareLike,
   type BaselineFile,
   type BaselineVerdict,
@@ -36,7 +37,12 @@ import {
 import { env } from '../api/src/config/env.js';
 import { createSkillExpansionMiddleware } from '../api/src/agents/skill-expansion.middleware.js';
 import { createSkillGatedToolsMiddleware } from '../api/src/agents/skill-gated-tools.middleware.js';
+import { createSkillGatedMcpToolsMiddleware } from '../api/src/agents/skill-gated-mcp-tools.middleware.js';
 import { createToolSyntaxMiddleware } from '../api/src/agents/middleware/tool-syntax.middleware.js';
+import {
+  bootToolSettingsStore,
+  getToolSettingsStore,
+} from '../api/src/services/tool-settings-store.js';
 import { DEFAULT_SKILLS } from '../api/src/services/default-skills.js';
 import { filterHarnessSections } from '../api/src/agents/system-prompt.js';
 import { extractRequestedToolIds, buildRequiredToolBlocks } from '../api/src/agents/tool-syntax.js';
@@ -224,6 +230,52 @@ for (const input of DEFAULT_SKILLS) {
   await evalSkillsManager.create(input);
 }
 
+// Hermetic per-run ToolSettingsStore — getGloballyEnabledToolIds() (ADR-0074
+// enforcement inside createSkillGatedMcpToolsMiddleware) reads from the
+// ToolSettingsStore singleton directly, not from the middleware factory's
+// own injectable getToolsConfig argument, so one must be booted here even
+// though bin/eval.ts never otherwise needs one. A dedicated fresh db, never
+// env.database.path or its handle — ToolSettingsStore runs its own
+// migrations keyed by version number (collision risk sharing a handle),
+// and eval runs must never mutate real app tool settings.
+const evalToolSettingsRoot = await mkdtemp(resolve(tmpdir(), 'amazing-hashbrown-eval-tools-'));
+bootToolSettingsStore(openDatabase(resolve(evalToolSettingsRoot, 'tool-settings.db')));
+
+// Seeds every distinct gatedMcpTools[].toolId across the suite(s) about to
+// run as "exists, enabled by default, connected" — a scenario's own
+// enabled: false override (ADR-0074) is applied per-call via
+// resolveGatedMcpTools' getToolsConfig closure (runner.ts), not here; this
+// just establishes the base row getGloballyEnabledToolIds() needs to find
+// anything at all for a synthetic MCP-category toolId. mcpServer is the
+// text before the id's ':', name the text after — mirroring exactly what
+// skill-gated-mcp-tools.middleware.test.ts seeds by hand for its own
+// fixture.
+function seedGatedMcpToolSettings(suitesToRun: Suite[]): void {
+  const byId = new Map<
+    string,
+    { toolId: string; name: string; description: string; mcpServer: string }
+  >();
+  for (const suite of suitesToRun) {
+    for (const scenario of suite.scenarios) {
+      const gatedMcpTools = 'gatedMcpTools' in scenario ? scenario.gatedMcpTools : undefined;
+      if (!gatedMcpTools) continue;
+      for (const t of gatedMcpTools) {
+        if (byId.has(t.toolId)) continue;
+        const colonIdx = t.toolId.indexOf(':');
+        const mcpServer = colonIdx === -1 ? t.toolId : t.toolId.slice(0, colonIdx);
+        const name = colonIdx === -1 ? t.toolId : t.toolId.slice(colonIdx + 1);
+        byId.set(t.toolId, { toolId: t.toolId, name, description: t.description, mcpServer });
+      }
+    }
+  }
+  if (byId.size === 0) return;
+  const tools = [...byId.values()];
+  getToolSettingsStore().recordMcpDiscoveryResult(
+    tools,
+    new Map(tools.map((t) => [t.mcpServer, 'connected' as const])),
+  );
+}
+
 // Real production middleware instances, built from the same registrations
 // chat-agent.ts uses — not a reimplementation. Passed into every runEval
 // call below; inert for suites whose scenarios never set `gatedSkill` (see
@@ -409,6 +461,12 @@ async function runOneSuite(
       skillGatedToolsMiddleware:
         skillGatedToolsMiddleware as unknown as SkillGatedToolsMiddlewareLike,
       toolSyntaxMiddleware: toolSyntaxMiddleware as unknown as ToolSyntaxMiddlewareLike,
+      // Passes the real factory function itself (not an invocation) — see
+      // SkillGatedMcpToolsMiddlewareFactoryLike's doc comment in runner.ts
+      // for why this one middleware is bridged as a factory rather than a
+      // pre-built instance like the three above.
+      skillGatedMcpToolsMiddlewareFactory:
+        createSkillGatedMcpToolsMiddleware as unknown as SkillGatedMcpToolsMiddlewareFactoryLike,
     });
 
     const { run } = result;
@@ -479,8 +537,13 @@ if (typeof values.suite === 'string' && values.suite.length > 0) {
   // Single explicit suite — preserve the original exit-code contract exactly
   // (3 for a runtime error, 0/1 for pass/fail) rather than folding it into
   // the batch summary below. runOneSuite() catches its own errors, so there's
-  // nothing left that can throw here.
-  const outcome = await runOneSuite(values.suite, undefined, false);
+  // nothing left that can throw here. Loaded up front (rather than letting
+  // runOneSuite load it) so seedGatedMcpToolSettings can seed before the
+  // suite actually runs; passed through as the preloaded suite to avoid
+  // loading it twice.
+  const singleSuite = await loadSuite(values.suite, { bundledPath: suitesPath });
+  if (singleSuite) seedGatedMcpToolSettings([singleSuite]);
+  const outcome = await runOneSuite(values.suite, singleSuite, false);
   if (outcome.baselineError) process.exit(4);
   if (outcome.baselineVerdict === 'REGRESSION') process.exit(5);
   process.exit(outcome.errored ? 3 : outcome.passed ? 0 : 1);
@@ -490,6 +553,7 @@ if (typeof values.suite === 'string' && values.suite.length > 0) {
 // (alphabetical) order — loadSuites' own discovery order depends on
 // filesystem readdir order, which isn't guaranteed.
 const suites = await loadSuites({ bundledPath: suitesPath });
+seedGatedMcpToolSettings([...suites.values()]);
 const suiteIds = [...suites.keys()].sort();
 if (suiteIds.length === 0) {
   console.error(`Error: no suites found in ${suitesPath}`);

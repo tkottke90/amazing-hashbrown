@@ -14,6 +14,7 @@ import {
   type RunConfig,
   type SkillExpansionMiddlewareLike,
   type SkillGatedToolsMiddlewareLike,
+  type SkillGatedMcpToolsMiddlewareFactoryLike,
   type ToolSyntaxMiddlewareLike,
 } from '../../src/runner.js';
 import type {
@@ -969,6 +970,139 @@ describe('executeScenario — gatedSkill (tool-call/tool-sequence)', () => {
 
     assert.equal(result.passed, false);
     assert.ok(result.actualOutput.includes('gatedSkill'));
+  });
+});
+
+describe('executeScenario — gatedMcpTools (tool-call/tool-sequence)', () => {
+  const ALWAYS_ON = fakeTool('ask_user');
+  const MCP_TOOL = fakeTool('n8n__workflow_search');
+
+  // Inert stand-in for the built-in half's middleware — these scenarios
+  // only exercise the MCP-adding factory below, not skill-gated-tools.
+  // middleware.ts's own filtering.
+  const inertGatingMiddleware: SkillGatedToolsMiddlewareLike = {
+    wrapModelCall: async (request, handler) => handler(request),
+  };
+
+  // Fake factory matching SkillGatedMcpToolsMiddlewareFactoryLike's shape —
+  // appends MCP_TOOL only when activeSkill matches the registered command
+  // AND getToolsConfig() says the declared toolId is enabled, so the
+  // admin-disable test below can assert on what resolveGatedMcpTools
+  // actually handed the factory, without a real sqlite ToolSettingsStore or
+  // the real createSkillGatedMcpToolsMiddleware (those stay scoped to
+  // mtd-003/mtd-004 in suites/mcp-tool-discovery.yaml).
+  function makeFakeMcpGatingFactory(
+    command: string,
+    toolId: string,
+  ): SkillGatedMcpToolsMiddlewareFactoryLike {
+    return (_mcpTools, _getSkills, getToolsConfig) => ({
+      wrapModelCall: async (request, handler) => {
+        const enabled = getToolsConfig()[toolId]?.enabled !== false;
+        const tools =
+          request.state.activeSkill === command && enabled
+            ? [...request.tools, MCP_TOOL]
+            : request.tools;
+        return handler({ ...request, tools });
+      },
+    });
+  }
+
+  function makeGatedMcpScenario(overrides: Partial<ToolCallScenario> = {}): ToolCallScenario {
+    return {
+      id: 'gated-mcp-tc-1',
+      name: 'Gated MCP tool-call scenario',
+      purpose: 'Testing',
+      type: 'tool-call',
+      input: 'Use the n8n workflow-search tool.',
+      tool: MCP_TOOL.name as string,
+      minScore: 1,
+      gatedSkill: 'n8n-workflow-sync',
+      gatedMcpTools: [
+        { toolId: 'n8n:workflow_search', description: 'Search workflows', enabled: true },
+      ],
+      ...overrides,
+    };
+  }
+
+  it('adds the declared MCP tool when the gating skill is Active', async () => {
+    const scenario = makeGatedMcpScenario();
+    const suite = makeSuite([scenario]);
+    const { model, getBoundTools } = makeCapturingBindToolsModel(MCP_TOOL.name as string);
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      tools: [ALWAYS_ON],
+      skillGatedToolsMiddleware: inertGatingMiddleware,
+      skillGatedMcpToolsMiddlewareFactory: makeFakeMcpGatingFactory(
+        'n8n-workflow-sync',
+        'n8n:workflow_search',
+      ),
+    };
+
+    const result = await executeScenario(scenario, suite, 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
+
+    assert.deepEqual(
+      getBoundTools().map((t) => (t as { name: string }).name),
+      ['ask_user', 'n8n__workflow_search'],
+    );
+    // Regression check: detectUnregisteredToolCalls' catalog must include
+    // toolsForCall, not just config.tools — otherwise a scenario's own
+    // correctly-matched gatedMcpTools call false-flags itself as
+    // "unregistered" (confirmed via a real eval run across 4 providers,
+    // all showing this exact false positive on mtd-003 before the fix).
+    const details = result.details as { unregisteredToolCalls?: string[] };
+    assert.deepEqual(details.unregisteredToolCalls, undefined);
+  });
+
+  it('errors (not crashes) when gatedMcpTools is set but skillGatedMcpToolsMiddlewareFactory is missing', async () => {
+    const scenario = makeGatedMcpScenario();
+    const suite = makeSuite([scenario]);
+    const { model } = makeCapturingBindToolsModel(MCP_TOOL.name as string);
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      tools: [ALWAYS_ON],
+      skillGatedToolsMiddleware: inertGatingMiddleware,
+    };
+
+    const result = await executeScenario(scenario, suite, 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
+
+    assert.equal(result.passed, false);
+    assert.ok(result.actualOutput.includes('gatedMcpTools'));
+  });
+
+  it('admin disable (enabled: false) keeps the tool unbound even while the skill is Active', async () => {
+    const scenario = makeGatedMcpScenario({
+      gatedMcpTools: [
+        { toolId: 'n8n:workflow_search', description: 'Search workflows', enabled: false },
+      ],
+      tool: `!${MCP_TOOL.name as string}`,
+    });
+    const suite = makeSuite([scenario]);
+    const { model, getBoundTools } = makeCapturingBindToolsModel('ask_user');
+    const config: RunConfig = {
+      ...makeRunConfig(),
+      model,
+      tools: [ALWAYS_ON],
+      skillGatedToolsMiddleware: inertGatingMiddleware,
+      skillGatedMcpToolsMiddlewareFactory: makeFakeMcpGatingFactory(
+        'n8n-workflow-sync',
+        'n8n:workflow_search',
+      ),
+    };
+
+    await executeScenario(scenario, suite, 'run-1', config, { count: 0, total: 0 });
+
+    assert.deepEqual(
+      getBoundTools().map((t) => (t as { name: string }).name),
+      ['ask_user'],
+    );
   });
 });
 
