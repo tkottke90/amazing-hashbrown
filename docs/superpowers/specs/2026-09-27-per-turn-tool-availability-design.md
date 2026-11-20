@@ -48,8 +48,11 @@ content.
 - The chat message view (`ui/`). The thread report is the investigation surface.
 - Per-LLM-call-span snapshots. The gated set is fixed per turn (`activeGatedSkill` is set in
   `beforeAgent`) and drawer settings changing mid-stream is an accepted edge case.
-- Agents that do not use the `chat-agent.ts` middleware chain (e.g. wiki ingestion, plan
-  generation). Their traces render "tools not captured".
+- Agents that do not use the `chat-agent.ts` middleware chain (e.g. plan generation). Their
+  traces render "tools not captured". (Wiki ingestion was in this list until
+  `docs/superpowers/specs/2026-11-20-wiki-ingestion-rebaseline-tool-gap-design.md` added
+  `modelInputSnapshotMiddleware` directly to `buildWikiIngestionAgent()`'s middleware array —
+  its traces are captured the same way from that point on.)
 - Any change to which tools are bound or to the system prompt content.
 
 ---

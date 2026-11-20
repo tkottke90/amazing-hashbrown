@@ -138,3 +138,11 @@ describe('agents/tools/wiki-update-page', () => {
     });
   });
 });
+
+describe('agents/tools/wiki-update-page — sourceText schema description', () => {
+  it('states that sourceText does not reset the source_drift baseline, and names wiki_rebaseline_source [unit]', () => {
+    const description = makeWikiUpdatePageTool().schema.shape.sourceText.description ?? '';
+    expect(description).to.include('does NOT reset the source_drift');
+    expect(description).to.include('wiki_rebaseline_source');
+  });
+});
