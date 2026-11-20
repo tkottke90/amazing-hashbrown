@@ -32,10 +32,35 @@ describe('services/thread-store', () => {
       expect(meta!.forkedFromThreadId).to.equal(null);
     });
 
-    it('is a no-op on a second call for the same id', () => {
+    it('is a no-op on a second call once the thread has a real message', () => {
+      // Mirrors production sequencing (every stream handler calls this once
+      // per turn, not just the first) — by the second call, t1 already has
+      // the first turn's message, so the zero-message correction below
+      // doesn't fire here.
+      store.insertMessage('t1', { id: 'm1', kind: 'user', payload: { content: 'hi' } });
       store.upsertThreadOnFirstMessage('t1', 'A different title');
       const meta = store.getThreadMeta('t1');
       expect(meta!.title).to.equal('Hello there');
+    });
+
+    it('corrects a zero-message placeholder row (from ensureThreadExists) to the real title and type', () => {
+      store.ensureThreadExists('t2', 'wiki');
+      expect(store.getThreadMeta('t2')!.title).to.equal('');
+
+      store.upsertThreadOnFirstMessage('t2', 'Real first message', 'chat');
+      const meta = store.getThreadMeta('t2');
+      expect(meta!.title).to.equal('Real first message');
+      expect(meta!.type).to.equal('chat');
+    });
+
+    it('leaves a thread with a real message untouched, even calling it with a different type', () => {
+      store.ensureThreadExists('t3', 'wiki');
+      store.insertMessage('t3', { id: 'm1', kind: 'user', payload: { content: 'hi' } });
+
+      store.upsertThreadOnFirstMessage('t3', 'Should not stick', 'chat');
+      const meta = store.getThreadMeta('t3');
+      expect(meta!.title).to.equal('');
+      expect(meta!.type).to.equal('wiki');
     });
 
     it('touchThread bumps updated_at', async () => {
@@ -44,6 +69,42 @@ describe('services/thread-store', () => {
       store.touchThread('t1');
       const after = store.getThreadMeta('t1')!.updatedAt;
       expect(after >= before).to.equal(true);
+    });
+  });
+
+  describe('ensureThreadExists', () => {
+    let store: ThreadStore;
+    let dir: string;
+
+    before(() => ({ store, dir } = makeStore()));
+    after(() => {
+      store.close();
+      rmSync(dir, { recursive: true });
+    });
+
+    it('creates a row with an empty title and the given type when none exists', () => {
+      store.ensureThreadExists('e1', 'workspace-chat');
+      const meta = store.getThreadMeta('e1');
+      expect(meta).to.not.equal(null);
+      expect(meta!.title).to.equal('');
+      expect(meta!.type).to.equal('workspace-chat');
+    });
+
+    it('defaults to type chat when none is given', () => {
+      store.ensureThreadExists('e2');
+      expect(store.getThreadMeta('e2')!.type).to.equal('chat');
+    });
+
+    it('is a true no-op when a row already exists, even one with messages', () => {
+      store.ensureThreadExists('e3', 'wiki');
+      store.insertMessage('e3', { id: 'm1', kind: 'user', payload: { content: 'hi' } });
+      const before = store.getThreadMeta('e3')!;
+
+      store.ensureThreadExists('e3', 'workspace-chat');
+      const after = store.getThreadMeta('e3')!;
+      expect(after.title).to.equal(before.title);
+      expect(after.type).to.equal(before.type);
+      expect(after.updatedAt).to.equal(before.updatedAt);
     });
   });
 

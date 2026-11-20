@@ -370,11 +370,13 @@ describe('routes/v1/threads.handlers', () => {
       rmSync(dir, { recursive: true });
     });
 
-    it('returns 404 setting orientation on an unknown thread', () => {
+    it('creates the thread row and succeeds when called on a never-seen id', () => {
+      // Composer-reachable before any message exists (Orient to wiki) —
+      // ensureThreadExists means this no longer 404s.
       const registry = stubRegistry([{ id: 'user', domain: 'user preferences' }]);
-      const result = setWikiOrientationHandler(store, registry, 'no-such-thread', 'user');
-      expect(result.ok).to.equal(false);
-      if (!result.ok) expect(result.status).to.equal(404);
+      const result = setWikiOrientationHandler(store, registry, 'brand-new-thread', 'user');
+      expect(result.ok).to.equal(true);
+      expect(store.getThreadMeta('brand-new-thread')).to.not.equal(null);
     });
 
     it('returns 404 for an unknown wiki id', () => {
@@ -402,10 +404,10 @@ describe('routes/v1/threads.handlers', () => {
       expect(store.getThreadMeta('t1')!.activeWikiId).to.equal('user');
     });
 
-    it('returns 404 clearing orientation on an unknown thread', () => {
-      const result = clearWikiOrientationHandler(store, 'no-such-thread');
-      expect(result.ok).to.equal(false);
-      if (!result.ok) expect(result.status).to.equal(404);
+    it('creates the thread row and succeeds when called on a never-seen id', () => {
+      const result = clearWikiOrientationHandler(store, 'another-brand-new-thread');
+      expect(result.ok).to.equal(true);
+      expect(store.getThreadMeta('another-brand-new-thread')).to.not.equal(null);
     });
 
     it('nulls active_wiki_id and returns a cleared record on success', () => {
@@ -572,10 +574,15 @@ describe('routes/v1/threads.handlers', () => {
     });
 
     describe('getThreadToolsHandler', () => {
-      it('404s for an unknown thread', () => {
+      it('creates the thread row and succeeds when called on a never-seen id', () => {
+        // The # Tool Menu and Edit Tools drawer are composer-reachable
+        // before any message exists — ensureThreadExists means this no
+        // longer 404s, and reflects live global defaults like any other
+        // non-customized thread.
         const result = getThreadToolsHandler(store, toolSettingsStore, 'no-such-thread');
-        expect(result.ok).to.equal(false);
-        if (!result.ok) expect(result.status).to.equal(404);
+        expect(result.ok).to.equal(true);
+        if (result.ok) expect(result.data.customized).to.equal(false);
+        expect(store.getThreadMeta('no-such-thread')).to.not.equal(null);
       });
 
       it('a non-customized thread reflects live global defaults', () => {
@@ -612,12 +619,12 @@ describe('routes/v1/threads.handlers', () => {
         if (!result.ok) expect(result.status).to.equal(400);
       });
 
-      it('404s for an unknown thread', () => {
+      it('creates the thread row and succeeds when called on a never-seen id', () => {
         const result = putThreadToolsHandler(store, toolSettingsStore, 'no-such-thread', {
           toolIds: [],
         });
-        expect(result.ok).to.equal(false);
-        if (!result.ok) expect(result.status).to.equal(404);
+        expect(result.ok).to.equal(true);
+        expect(store.getThreadMeta('no-such-thread')).to.not.equal(null);
       });
 
       it('persists the exact submitted set and marks the thread customized', () => {
@@ -645,10 +652,10 @@ describe('routes/v1/threads.handlers', () => {
     });
 
     describe('deleteThreadToolsHandler', () => {
-      it('404s for an unknown thread', () => {
+      it('creates the thread row and succeeds when called on a never-seen id', () => {
         const result = deleteThreadToolsHandler(store, toolSettingsStore, 'no-such-thread');
-        expect(result.ok).to.equal(false);
-        if (!result.ok) expect(result.status).to.equal(404);
+        expect(result.ok).to.equal(true);
+        expect(store.getThreadMeta('no-such-thread')).to.not.equal(null);
       });
 
       it('reverts a customized thread to tracking live global defaults', () => {

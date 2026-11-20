@@ -207,7 +207,10 @@ export function setWikiOrientationHandler(
   threadId: string,
   wikiId: string,
 ): HandlerResult<ThreadMessageRecord> {
-  if (!store.getThreadMeta(threadId)) return notFound(`Thread "${threadId}" not found`);
+  // Composer-reachable before any message exists (the Orient-to-wiki menu
+  // item) — ensure rather than 404, per the thread-scoped-actions-before-
+  // first-message design.
+  store.ensureThreadExists(threadId);
 
   const domain = registry.list().find((w) => w.id === wikiId);
   if (!domain) return notFound(`Wiki "${wikiId}" not found`);
@@ -229,7 +232,9 @@ export function clearWikiOrientationHandler(
   store: ThreadStore,
   threadId: string,
 ): HandlerResult<ThreadMessageRecord> {
-  if (!store.getThreadMeta(threadId)) return notFound(`Thread "${threadId}" not found`);
+  // Same composer-reachable-before-first-message reasoning as
+  // setWikiOrientationHandler above.
+  store.ensureThreadExists(threadId);
 
   store.setActiveWikiId(threadId, null);
   const record = recordWikiOrientation(store, threadId, crypto.randomUUID(), 'cleared', null, null);
@@ -378,6 +383,10 @@ export async function generateThreadReportHandler(
   store: ThreadStore,
   threadId: string,
 ): Promise<HandlerResult<{ html: string }>> {
+  // The Thread Report button is composer-reachable before any message
+  // exists — ensure rather than relying on buildThreadReport's own notion
+  // of "not found" for an id SQLite has simply never seen.
+  store.ensureThreadExists(threadId);
   const data = buildThreadReport(threadId, {
     threadStore: store,
     observabilityStore: getObservabilityStore(),
@@ -443,8 +452,10 @@ export function getThreadToolsHandler(
   threadId: string,
   toolsConfig?: Record<string, ToolEntry>,
 ): HandlerResult<ThreadToolsResponse> {
-  const thread = store.getThreadMeta(threadId);
-  if (!thread) return notFound(`Thread "${threadId}" not found`);
+  // The # Tool Menu and Edit Tools drawer are both composer-reachable before
+  // any message exists — ensure rather than 404.
+  store.ensureThreadExists(threadId);
+  const thread = store.getThreadMeta(threadId)!;
   return ok(computeThreadTools(toolSettingsStore, thread, toolsConfig));
 }
 
@@ -464,8 +475,10 @@ export function putThreadToolsHandler(
   body: unknown,
   toolsConfig?: Record<string, ToolEntry>,
 ): HandlerResult<ThreadToolsResponse> {
-  const thread = store.getThreadMeta(threadId);
-  if (!thread) return notFound(`Thread "${threadId}" not found`);
+  // Defensive: in the real UI, PUT is only ever reachable after the Edit
+  // Tools drawer's own GET has already succeeded (and thus already ensured
+  // the row), but a direct API caller could hit this without that GET.
+  store.ensureThreadExists(threadId);
 
   const parsed = PutThreadToolsSchema.safeParse(body);
   if (!parsed.success) {
@@ -490,8 +503,8 @@ export function deleteThreadToolsHandler(
   threadId: string,
   toolsConfig?: Record<string, ToolEntry>,
 ): HandlerResult<ThreadToolsResponse> {
-  const thread = store.getThreadMeta(threadId);
-  if (!thread) return notFound(`Thread "${threadId}" not found`);
+  // Same defensive reasoning as putThreadToolsHandler above.
+  store.ensureThreadExists(threadId);
 
   toolSettingsStore.resetThreadTools(threadId);
   store.resetThreadToolsCustomization(threadId);
