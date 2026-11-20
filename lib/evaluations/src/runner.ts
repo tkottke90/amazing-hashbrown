@@ -1137,10 +1137,18 @@ export async function executeScenario(
           ? { raw: content }
           : null;
       // Same full-catalog basis as the malformed detector above: a real tool
-      // hidden by excludeTools/gatedSkill is not "unregistered".
+      // hidden by excludeTools/gatedSkill is not "unregistered". Unioned
+      // with toolsForCall (not just config.tools) because gatedMcpTools
+      // (issue #432) is the first case where a scenario's actual bound set
+      // can contain a tool that ISN'T in the static evalTools catalog at
+      // all — before gatedMcpTools, toolsForCall was always a subset of
+      // config.tools (filters only ever remove), so this union was a no-op;
+      // without it, a scenario's own correctly-matched gatedMcpTools call
+      // false-flagged itself as unregistered (confirmed via a real eval run
+      // across 4 providers, all showing the false positive on mtd-003).
       const unregisteredToolCalls = detectUnregisteredToolCalls(
         toolCalls.map((call) => call.name),
-        (config.tools ?? []).map(toolName),
+        [...new Set([...(config.tools ?? []).map(toolName), ...toolsForCall.map(toolName)])],
       );
       const toolDetails = {
         ...runToolCall(s, toolCalls),
@@ -1359,10 +1367,11 @@ export async function executeScenario(
         detectProseQuestion(content)
           ? { raw: content }
           : null;
-      // See the tool-call branch's identical comment.
+      // See the tool-call branch's identical comment (toolsForCall union,
+      // gatedMcpTools false-positive fix).
       const unregisteredToolCalls = detectUnregisteredToolCalls(
         toolCalls.map((call) => call.name),
-        (config.tools ?? []).map(toolName),
+        [...new Set([...(config.tools ?? []).map(toolName), ...toolsForCall.map(toolName)])],
       );
       const detailsBase = {
         ...runToolSequence(s, toolCalls),

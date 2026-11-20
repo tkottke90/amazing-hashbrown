@@ -1039,12 +1039,22 @@ describe('executeScenario — gatedMcpTools (tool-call/tool-sequence)', () => {
       ),
     };
 
-    await executeScenario(scenario, suite, 'run-1', config, { count: 0, total: 0 });
+    const result = await executeScenario(scenario, suite, 'run-1', config, {
+      count: 0,
+      total: 0,
+    });
 
     assert.deepEqual(
       getBoundTools().map((t) => (t as { name: string }).name),
       ['ask_user', 'n8n__workflow_search'],
     );
+    // Regression check: detectUnregisteredToolCalls' catalog must include
+    // toolsForCall, not just config.tools — otherwise a scenario's own
+    // correctly-matched gatedMcpTools call false-flags itself as
+    // "unregistered" (confirmed via a real eval run across 4 providers,
+    // all showing this exact false positive on mtd-003 before the fix).
+    const details = result.details as { unregisteredToolCalls?: string[] };
+    assert.deepEqual(details.unregisteredToolCalls, undefined);
   });
 
   it('errors (not crashes) when gatedMcpTools is set but skillGatedMcpToolsMiddlewareFactory is missing', async () => {
