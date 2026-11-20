@@ -174,6 +174,31 @@ export const StructuredScenarioSchema = BaseScenario.extend({
 // middleware invoked.
 const GatedSkillField = z.string().min(1).optional();
 
+// Scenario-declared stand-in for a skill's own `tools` frontmatter MCP half
+// (issue #409/#431's skill-gated MCP tools) — lets a gatedSkill scenario
+// supply its own synthetic tool candidate(s) outside the static evalTools
+// fixture list, and separately express ADR-0074's admin-disable override
+// per entry. See runner.ts's resolveGatedMcpTools and
+// docs/superpowers/specs/2026-11-20-eval-harness-skill-gated-mcp-tools-design.md.
+// Requires gatedSkill to also be set — enforced in validateScenarioTurns
+// below, not here (same split as every other cross-field rule in this file).
+export const GatedMcpToolField = z
+  .object({
+    toolId: z.string().min(1), // display id, e.g. "n8n:workflow_search"
+    description: z.string().min(1),
+    // Raw JSON-Schema object for the tool's args — same convention
+    // StructuredScenarioSchema.outputSchema already uses, not a zod schema.
+    argsSchema: z.record(z.string(), z.unknown()).optional(),
+    // Models ADR-0074's admin-disable override. Defaults true (the
+    // ordinary "skill gates it, nothing overrides" case).
+    enabled: z.boolean().default(true),
+  })
+  .strict();
+
+export type GatedMcpTool = z.infer<typeof GatedMcpToolField>;
+
+const GatedMcpToolsField = z.array(GatedMcpToolField).min(1).optional();
+
 export const ToolCallScenarioSchema = BaseScenario.extend({
   type: z.literal('tool-call'),
   // Expected tool name, matched against AIMessage.tool_calls[].name.
@@ -184,6 +209,7 @@ export const ToolCallScenarioSchema = BaseScenario.extend({
   // if argChecks is omitted — the tool-name match alone determines pass/fail).
   minScore: z.number().min(0).max(1).default(1),
   gatedSkill: GatedSkillField,
+  gatedMcpTools: GatedMcpToolsField,
   // Optional judge of the reply text from the same tools-bound turn — for
   // scenarios where the tool assertion alone can't see the failure, e.g. a
   // negated tool ('!schedule_wakeup') where the model rightly skips the tool
@@ -234,6 +260,7 @@ export const ToolSequenceScenarioSchema = BaseScenario.extend({
   argChecks: z.array(FieldCheckSchema).optional(),
   minScore: z.number().min(0).max(1).default(1),
   gatedSkill: GatedSkillField,
+  gatedMcpTools: GatedMcpToolsField,
   // Optional judge of the reply text from the final turn — same capability
   // as ToolCallScenarioSchema's identical fields, now also able to see the
   // tool call(s) actually made that turn (see executors/llm-judge.ts and
@@ -707,6 +734,17 @@ export const JsonOf = <T extends z.ZodType>(schema: T) =>
 // union. Called from loader.ts right after SuiteSchema parses; returns a
 // human-readable violation message, or null when the scenario is fine.
 export function validateScenarioTurns(scenario: Scenario): string | null {
+  // Applies to both tool-call and tool-sequence, so it must run before the
+  // guard below (which returns early for tool-call, since that type has no
+  // turns/steps invariants of its own to check).
+  if (
+    (scenario.type === 'tool-call' || scenario.type === 'tool-sequence') &&
+    scenario.gatedMcpTools &&
+    !scenario.gatedSkill
+  ) {
+    return 'gatedMcpTools requires gatedSkill to also be set — it is scoped to what that skill is declared to gate';
+  }
+
   if (
     scenario.type !== 'deterministic' &&
     scenario.type !== 'llm-judge' &&

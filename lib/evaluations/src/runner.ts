@@ -1,5 +1,7 @@
 import type { BaseChatModel, BindToolsInput } from '@langchain/core/language_models/chat_models';
 import type { Embeddings } from '@langchain/core/embeddings';
+import { tool } from '@langchain/core/tools';
+import { z } from 'zod';
 import {
   HumanMessage,
   AIMessage,
@@ -32,6 +34,7 @@ import type {
   StructuredScenario,
   ToolCallScenario,
   ToolSequenceScenario,
+  GatedMcpTool,
   HumanScenario,
   ToolTurn,
   StepResult,
@@ -67,6 +70,27 @@ export interface SkillGatedToolsMiddlewareLike {
     request: { tools: BindToolsInput[]; state: { activeSkill: string | null } },
     handler: (request: { tools: BindToolsInput[] }) => Promise<unknown>,
   ) => Promise<unknown>;
+}
+
+// Bridges the real createSkillGatedMcpToolsMiddleware (api/src/agents/
+// skill-gated-mcp-tools.middleware.ts) — the add-only MCP half of
+// Skill-Gated Tools (issue #409/#431). Unlike SkillExpansionMiddlewareLike/
+// SkillGatedToolsMiddlewareLike/ToolSyntaxMiddlewareLike above (one real
+// instance built once per run, against the real evalSkillsManager/
+// env.tools), this middleware's *registration* is scenario-specific — its
+// tool candidates and skill→tool mapping come from each scenario's own
+// gatedMcpTools field (see schemas.ts), not a run-wide fixture. So
+// RunConfig takes the FACTORY function itself, called fresh per scenario by
+// resolveGatedMcpTools below, rather than a pre-built instance. The
+// returned middleware's wrapModelCall shape is identical to
+// SkillGatedToolsMiddlewareLike's (filtering and adding differ only in what
+// the handler is called with, not the type) — reused, not duplicated.
+export interface SkillGatedMcpToolsMiddlewareFactoryLike {
+  (
+    mcpTools: BindToolsInput[],
+    getSkills: () => { list: () => Array<{ name: string; tools?: string }> },
+    getToolsConfig: () => Record<string, { enabled?: boolean }>,
+  ): SkillGatedToolsMiddlewareLike;
 }
 
 // Structural shape of the real production tool-syntax.middleware.ts's
@@ -152,6 +176,14 @@ export interface RunConfig {
    * missing. Not required for a run with no gatedSkill scenarios, or one
    * that never configures buildRequiredToolBlocks at all. */
   toolSyntaxMiddleware?: ToolSyntaxMiddlewareLike;
+  /** Real production createSkillGatedMcpToolsMiddleware, bridged as a
+   * FACTORY (not a pre-built instance like the three middlewares above) —
+   * see SkillGatedMcpToolsMiddlewareFactoryLike's doc comment for why.
+   * Required whenever a scenario in the run sets `gatedMcpTools` — the
+   * tool-call/tool-sequence branches of executeScenario throw a clear
+   * error rather than silently skipping MCP-tool gating if a
+   * gatedMcpTools scenario runs without it. */
+  skillGatedMcpToolsMiddlewareFactory?: SkillGatedMcpToolsMiddlewareFactoryLike;
   /** The sampling settings bin/eval.ts actually resolved for the model
    * under test, carried straight through onto the returned EvalRun (see
    * EvalRunSchema's sampling field) — this package never reads or
@@ -549,6 +581,80 @@ export async function resolveGatedTools(
     return undefined;
   });
   return filtered;
+}
+
+// One-line local conversion matching the real toBoundMatchKeys() forward-
+// only rule (api/src/agents/tool-config.ts) — not imported, to keep this
+// package's import graph light (same reasoning toolName() below already
+// follows for not importing from api/src).
+function toBoundName(toolId: string): string {
+  const colonIdx = toolId.indexOf(':');
+  return colonIdx === -1 ? toolId : `${toolId.slice(0, colonIdx)}__${toolId.slice(colonIdx + 1)}`;
+}
+
+// Shallow, hand-rolled JSON-Schema→zod conversion for a gatedMcpTools
+// entry's argsSchema — enumerates top-level `properties` keys only
+// (ignoring nested shape/type), each mapped to z.unknown(), `.optional()`
+// unless listed in `required`. Deliberately not a general JSON-Schema-to-
+// zod library: every other bindTools() caller in this codebase (evalTools,
+// eval-fixtures.ts) uses a real tool() + zod schema, never a raw
+// JSON-Schema object through model.bindTools() — that path is unproven
+// against a real provider (model.withStructuredOutput() is the only place
+// raw JSON-Schema is actually used here, a different entry point).
+// Reusing the proven tool()+zod path is the safe choice; this converter
+// only needs to be good enough for a scenario author's own declared
+// argsSchema, not arbitrary JSON-Schema.
+function argsSchemaToZod(argsSchema?: Record<string, unknown>): z.ZodTypeAny {
+  if (!argsSchema) return z.object({}).passthrough();
+  const properties = (argsSchema.properties ?? {}) as Record<string, unknown>;
+  const required = new Set((argsSchema.required as string[] | undefined) ?? []);
+  const shape: Record<string, z.ZodTypeAny> = {};
+  for (const key of Object.keys(properties)) {
+    shape[key] = required.has(key) ? z.unknown() : z.unknown().optional();
+  }
+  return z.object(shape);
+}
+
+// Builds one tool()-backed BindToolsInput per gatedMcpTools entry, plus the
+// synthetic getSkills/getToolsConfig closures standing in for
+// resolveSkillGatedRegistrations' real output and ADR-0074's per-tool
+// override — then runs the real createSkillGatedMcpToolsMiddleware
+// (bridged in as `factory`) through the same capture-via-handler pattern
+// resolveGatedTools() above already uses.
+export async function resolveGatedMcpTools(
+  tools: BindToolsInput[],
+  activeSkill: string | null,
+  gatedSkill: string,
+  gatedMcpTools: GatedMcpTool[],
+  factory: SkillGatedMcpToolsMiddlewareFactoryLike,
+): Promise<BindToolsInput[]> {
+  const mcpClientTools: BindToolsInput[] = gatedMcpTools.map((t) =>
+    tool(
+      async (): Promise<never> => {
+        throw new Error(
+          `gatedMcpTools fixture "${t.toolId}": eval fixture, never meant to execute`,
+        );
+      },
+      {
+        name: toBoundName(t.toolId),
+        description: t.description,
+        schema: argsSchemaToZod(t.argsSchema),
+      },
+    ),
+  );
+  const getSkills = () => ({
+    list: () => [{ name: gatedSkill, tools: gatedMcpTools.map((t) => t.toolId).join(',') }],
+  });
+  const getToolsConfig = () =>
+    Object.fromEntries(gatedMcpTools.map((t) => [t.toolId, { enabled: t.enabled }]));
+
+  const middleware = factory(mcpClientTools, getSkills, getToolsConfig);
+  let resolvedTools = tools;
+  await middleware.wrapModelCall({ tools, state: { activeSkill } }, async (request) => {
+    resolvedTools = request.tools;
+    return undefined;
+  });
+  return resolvedTools;
 }
 
 // Distinct from InvokedToolCall — populated when the model attempts a tool
@@ -970,6 +1076,20 @@ export async function executeScenario(
           resolved.activeSkill,
           config.skillGatedToolsMiddleware,
         );
+        if (s.gatedMcpTools) {
+          if (!config.skillGatedMcpToolsMiddlewareFactory) {
+            throw new Error(
+              `scenario "${s.id}" sets gatedMcpTools but no skillGatedMcpToolsMiddlewareFactory was provided in RunConfig`,
+            );
+          }
+          toolsForCall = await resolveGatedMcpTools(
+            toolsForCall,
+            resolved.activeSkill,
+            s.gatedSkill,
+            s.gatedMcpTools,
+            config.skillGatedMcpToolsMiddlewareFactory,
+          );
+        }
       }
       const effectiveSystemPrompt =
         config.filterHarnessSections && config.systemPrompt
@@ -1122,6 +1242,20 @@ export async function executeScenario(
           resolved.activeSkill,
           config.skillGatedToolsMiddleware,
         );
+        if (s.gatedMcpTools) {
+          if (!config.skillGatedMcpToolsMiddlewareFactory) {
+            throw new Error(
+              `scenario "${s.id}" sets gatedMcpTools but no skillGatedMcpToolsMiddlewareFactory was provided in RunConfig`,
+            );
+          }
+          toolsForCall = await resolveGatedMcpTools(
+            toolsForCall,
+            resolved.activeSkill,
+            s.gatedSkill,
+            s.gatedMcpTools,
+            config.skillGatedMcpToolsMiddlewareFactory,
+          );
+        }
       }
       const effectiveSystemPrompt =
         config.filterHarnessSections && config.systemPrompt

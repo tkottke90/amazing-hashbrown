@@ -307,6 +307,35 @@ describe('ToolCallScenarioSchema', () => {
       }),
     );
   });
+
+  it('parses gatedMcpTools and defaults enabled to true [unit]', () => {
+    const result = ToolCallScenarioSchema.parse({
+      id: 'x',
+      name: 'x',
+      purpose: 'x',
+      input: 'x',
+      type: 'tool-call',
+      tool: 'n8n__workflow_search',
+      gatedSkill: 'n8n-workflow-sync',
+      gatedMcpTools: [{ toolId: 'n8n:workflow_search', description: 'Search workflows' }],
+    });
+    assert.equal(result.gatedMcpTools?.[0]?.enabled, true);
+  });
+
+  it('rejects an unknown field on a gatedMcpTools entry [unit]', () => {
+    assert.throws(() =>
+      ToolCallScenarioSchema.parse({
+        id: 'x',
+        name: 'x',
+        purpose: 'x',
+        input: 'x',
+        type: 'tool-call',
+        tool: 'n8n__workflow_search',
+        gatedSkill: 'n8n-workflow-sync',
+        gatedMcpTools: [{ toolId: 'n8n:workflow_search', description: 'd', extra: 'nope' }],
+      }),
+    );
+  });
 });
 
 describe('LlmJudgeScenarioSchema', () => {
@@ -450,6 +479,20 @@ describe('ToolSequenceScenarioSchema', () => {
     });
     assert.equal(result.turns.length, 3);
     assert.deepEqual(result.turns[2], { user: 'Yep, go ahead.' });
+  });
+
+  it('parses gatedMcpTools and defaults enabled to true [unit]', () => {
+    const result = ToolSequenceScenarioSchema.parse({
+      id: 'x',
+      name: 'x',
+      purpose: 'x',
+      type: 'tool-sequence',
+      turns: [{ user: 'x' }, { tool: 'ask_user', result: { text: 'ok' } }],
+      tool: 'n8n__workflow_search',
+      gatedSkill: 'n8n-workflow-sync',
+      gatedMcpTools: [{ toolId: 'n8n:workflow_search', description: 'Search workflows' }],
+    });
+    assert.equal(result.gatedMcpTools?.[0]?.enabled, true);
   });
 
   it('accepts argChecks using the same shape as tool-call [unit]', () => {
@@ -646,6 +689,40 @@ describe('validateScenarioTurns (issue #235 — cross-field invariants)', () => 
       input: 'x',
       type: 'tool-call',
       tool: 'upload_image',
+    });
+    assert.equal(validateScenarioTurns(scenario), null);
+  });
+
+  it('rejects gatedMcpTools without gatedSkill on a tool-call scenario', () => {
+    const scenario = ToolCallScenarioSchema.parse({
+      ...base,
+      input: 'x',
+      type: 'tool-call',
+      tool: 'n8n__workflow_search',
+      gatedMcpTools: [{ toolId: 'n8n:workflow_search', description: 'd' }],
+    });
+    assert.match(validateScenarioTurns(scenario) ?? '', /gatedMcpTools requires gatedSkill/);
+  });
+
+  it('rejects gatedMcpTools without gatedSkill on a tool-sequence scenario', () => {
+    const scenario = ToolSequenceScenarioSchema.parse({
+      ...base,
+      type: 'tool-sequence',
+      tool: 'n8n__workflow_search',
+      turns: [{ user: 'x' }, { tool: 'ask_user', result: { text: 'ok' } }],
+      gatedMcpTools: [{ toolId: 'n8n:workflow_search', description: 'd' }],
+    });
+    assert.match(validateScenarioTurns(scenario) ?? '', /gatedMcpTools requires gatedSkill/);
+  });
+
+  it('allows gatedMcpTools when gatedSkill is also set', () => {
+    const scenario = ToolCallScenarioSchema.parse({
+      ...base,
+      input: 'x',
+      type: 'tool-call',
+      tool: 'n8n__workflow_search',
+      gatedSkill: 'n8n-workflow-sync',
+      gatedMcpTools: [{ toolId: 'n8n:workflow_search', description: 'd' }],
     });
     assert.equal(validateScenarioTurns(scenario), null);
   });
