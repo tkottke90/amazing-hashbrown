@@ -280,9 +280,14 @@ describe('routes/v1/threads — wiki orientation', () => {
     expect(res.status).to.equal(400);
   });
 
-  it('404s clearing orientation on an unknown thread [orchestration]', async () => {
-    const res = await post('/no-such-thread/wiki-orientation/clear');
-    expect(res.status).to.equal(404);
+  it('creates the thread row and succeeds clearing orientation on a never-seen thread [orchestration]', async () => {
+    // Composer-reachable before any message exists — ensureThreadExists
+    // means this no longer 404s (threads.handlers.test.ts covers the
+    // handler itself; this just confirms the route's own wiring still
+    // reaches it for a thread id the route's test db has never seen).
+    const res = await post('/brand-new-thread/wiki-orientation/clear');
+    expect(res.status).to.equal(200);
+    expect(getThreadStore().getThreadMeta('brand-new-thread')).to.not.equal(null);
   });
 
   it('clears orientation and returns the cleared card [orchestration]', async () => {
