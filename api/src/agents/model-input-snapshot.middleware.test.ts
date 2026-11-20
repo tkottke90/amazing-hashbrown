@@ -9,7 +9,6 @@ import type { ModelInputParams } from '@tkottke90/observability';
 import { bootThreadStore, getThreadStore } from '../services/thread-store.js';
 import { bootToolSettingsStore, getToolSettingsStore } from '../services/tool-settings-store.js';
 import { TOOL_CATALOG } from './tool-catalog.js';
-import { GATED_SKILL_REGISTRATIONS } from './gated-skill-registrations.js';
 import { createSkillGatedToolsMiddleware } from './skill-gated-tools.middleware.js';
 import { createToolAccessMiddleware } from './tool-access.middleware.js';
 import { createModelInputSnapshotMiddleware } from './model-input-snapshot.middleware.js';
@@ -163,9 +162,19 @@ describe('agents/model-input-snapshot.middleware', () => {
       rmSync(dir, { recursive: true, force: true });
     });
 
+    // Stands in for SkillsManager.list() — createSkillGatedToolsMiddleware
+    // reads a live skill source, not a hardcoded registrations array
+    // (issue #409).
+    const getSkills = () => ({
+      list: () => [
+        { name: 'create-workspace', tools: 'create_workspace' },
+        { name: 'create-project', tools: 'create_project' },
+      ],
+    });
+
     async function runChain(activeSkill: string | null, toolNames: string[]) {
       const { calls, store } = fakeStore();
-      const gated: AnyMiddleware = createSkillGatedToolsMiddleware(GATED_SKILL_REGISTRATIONS);
+      const gated: AnyMiddleware = createSkillGatedToolsMiddleware(getSkills);
       const access: AnyMiddleware = createToolAccessMiddleware(() => toolsConfig);
       const snapshot: AnyMiddleware = createModelInputSnapshotMiddleware(() => store);
 

@@ -143,8 +143,8 @@ export const evalTools = [
   makeCreateWorkspaceTool(),
   makeCreateProjectTool(),
   // Same skill-gated reasoning as the two tools immediately above — see
-  // GATED_SKILL_REGISTRATIONS (gated-skill-registrations.ts). Missing here
-  // through auto-eval round 1 of suites/file-conflict-resolution.yaml
+  // resolve-file-conflict's own `tools` frontmatter field (issue #409).
+  // Missing here through auto-eval round 1 of suites/file-conflict-resolution.yaml
   // (2026-10-12): all three OpenAI-compatible providers (Lemonade, Ornith,
   // Digital Ocean) correctly refused to call a tool absent from their own
   // `tools` schema and said so in prose ("I don't have access to a
@@ -153,8 +153,9 @@ export const evalTools = [
   // visible instead of uniformly silent.
   proposeFileMergeTool,
   // Same skill-gated reasoning again, for create-skill's own tool family
-  // (see GATED_SKILL_REGISTRATIONS) — suites/create-skill.yaml needs all
-  // nine actually offered, via gatedSkill: create-skill, to be meaningful.
+  // (see create-skill's own `tools` frontmatter field) —
+  // suites/create-skill.yaml needs all nine actually offered, via
+  // gatedSkill: create-skill, to be meaningful.
   // Never executed here, so none of these touch a real SkillsManager or
   // workspace directory; runtime.configurable.workspaceId is simply absent
   // for any scenario that doesn't seed a simulatedWorkspace.

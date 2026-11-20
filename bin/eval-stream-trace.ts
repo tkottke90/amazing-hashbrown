@@ -25,8 +25,7 @@ import {
 import { createSkillExpansionMiddleware } from '../api/src/agents/skill-expansion.middleware.js';
 import { createSkillGatedToolsMiddleware } from '../api/src/agents/skill-gated-tools.middleware.js';
 import { createToolSyntaxMiddleware } from '../api/src/agents/middleware/tool-syntax.middleware.js';
-import { GATED_SKILL_REGISTRATIONS } from '../api/src/agents/gated-skill-registrations.js';
-import { bootSkillsManager } from '../api/src/services/skills-manager.js';
+import { bootSkillsManager, skillsManager } from '../api/src/services/skills-manager.js';
 import { filterHarnessSections } from '../api/src/agents/system-prompt.js';
 import { extractRequestedToolIds, buildRequiredToolBlocks } from '../api/src/agents/tool-syntax.js';
 import { evalTools, buildEvalSystemPrompt } from './eval-setup.js';
@@ -184,8 +183,13 @@ if (scenario.type !== 'tool-call' && scenario.type !== 'tool-sequence') {
 }
 
 await bootSkillsManager();
-const skillExpansionMiddleware = createSkillExpansionMiddleware(GATED_SKILL_REGISTRATIONS);
-const skillGatedToolsMiddleware = createSkillGatedToolsMiddleware(GATED_SKILL_REGISTRATIONS);
+// Both fixed up as part of #409's removal of GATED_SKILL_REGISTRATIONS: the
+// line below was already mismatched against createSkillExpansionMiddleware's
+// real signature (a skills-source accessor, not a registrations array) —
+// corrected here to the real post-boot singleton while this line was being
+// touched regardless.
+const skillExpansionMiddleware = createSkillExpansionMiddleware(async () => skillsManager);
+const skillGatedToolsMiddleware = createSkillGatedToolsMiddleware(() => skillsManager);
 const toolSyntaxMiddleware = createToolSyntaxMiddleware();
 
 const logDir = resolve(

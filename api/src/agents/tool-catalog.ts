@@ -12,11 +12,13 @@
 //
 // design: docs/superpowers/specs/2026-09-12-tool-management-ui-design.md §1
 
-// 'skill-scoped' is distinct from 'skill-gated': a skill-gated tool is tied
-// to one specific named skill (GATED_SKILL_REGISTRATIONS); a skill-scoped
-// tool (read_skill_reference, run_skill_script) is visible whenever ANY
-// skill is Active and resolves "which skill" at call time rather than from
-// a registration — see GLOSSARY.md § Skill Invocation & Runtime Access.
+// 'skill-scoped' is distinct from 'skill-gated': a skill-gated tool is
+// unlocked by whichever skill(s) declare it in their own SKILL.md
+// frontmatter `tools` field (issue #409 — see GLOSSARY.md § Skill
+// Invocation & Runtime Access, Skill Tools Field); a skill-scoped tool
+// (read_skill_reference, run_skill_script) is visible whenever ANY skill is
+// Active and resolves "which skill" at call time rather than from a
+// declaration.
 export type ToolCategory = 'built-in' | 'wiki' | 'skill-gated' | 'skill-scoped';
 
 export interface CatalogEntry {
@@ -31,11 +33,12 @@ export interface CatalogEntry {
   // update_plan, which keeps the task's plan checklist honest (none of
   // these is a user-facing choice the way the rest of this catalog is).
   alwaysOn: boolean;
-  // Set only for skill-gated entries — cross-references
-  // GATED_SKILL_REGISTRATIONS's skillCommand, so the read-only UI row can
-  // show which skill backs this tool. Never set for skill-scoped entries —
-  // those aren't tied to one named skill.
-  skillCommand?: string;
+  // No skillCommand field here (removed in #409, which used to cross-
+  // reference GATED_SKILL_REGISTRATIONS — deleted along with it): a
+  // skill-gated tool is no longer necessarily 1:1 with one named skill,
+  // since any skill's own frontmatter can declare it. "Which skill(s) gate
+  // this tool" is now derived at render time by scanning the live skill
+  // list's own `tools` fields, not looked up statically here.
 }
 
 export const TOOL_CATALOG: CatalogEntry[] = [
@@ -308,7 +311,6 @@ export const TOOL_CATALOG: CatalogEntry[] = [
     description: 'Create a new workspace. Unlocked by the "create-workspace" skill.',
     category: 'skill-gated',
     alwaysOn: false,
-    skillCommand: 'create-workspace',
   },
   {
     toolId: 'create_project',
@@ -316,7 +318,6 @@ export const TOOL_CATALOG: CatalogEntry[] = [
     description: 'Create a new project. Unlocked by the "create-project" skill.',
     category: 'skill-gated',
     alwaysOn: false,
-    skillCommand: 'create-project',
   },
   {
     toolId: 'propose_file_merge',
@@ -325,7 +326,6 @@ export const TOOL_CATALOG: CatalogEntry[] = [
       'Propose a merged file version during conflict resolution. Unlocked by the "resolve-file-conflict" skill.',
     category: 'skill-gated',
     alwaysOn: false,
-    skillCommand: 'resolve-file-conflict',
   },
   {
     toolId: 'create_app_skill',
@@ -333,7 +333,6 @@ export const TOOL_CATALOG: CatalogEntry[] = [
     description: 'Create a new app-wide skill. Unlocked by the "create-skill" skill.',
     category: 'skill-gated',
     alwaysOn: false,
-    skillCommand: 'create-skill',
   },
   {
     toolId: 'edit_app_skill',
@@ -341,7 +340,6 @@ export const TOOL_CATALOG: CatalogEntry[] = [
     description: 'Edit an existing app-wide skill. Unlocked by the "create-skill" skill.',
     category: 'skill-gated',
     alwaysOn: false,
-    skillCommand: 'create-skill',
   },
   {
     toolId: 'create_workspace_skill',
@@ -350,7 +348,6 @@ export const TOOL_CATALOG: CatalogEntry[] = [
       'Create a new skill scoped to a workspace\'s .agents/skills. Unlocked by the "create-skill" skill.',
     category: 'skill-gated',
     alwaysOn: false,
-    skillCommand: 'create-skill',
   },
   {
     toolId: 'edit_workspace_skill',
@@ -359,7 +356,6 @@ export const TOOL_CATALOG: CatalogEntry[] = [
       'Edit an existing skill in a workspace\'s .agents/skills. Unlocked by the "create-skill" skill.',
     category: 'skill-gated',
     alwaysOn: false,
-    skillCommand: 'create-skill',
   },
   {
     toolId: 'get_skill_source',
@@ -368,7 +364,6 @@ export const TOOL_CATALOG: CatalogEntry[] = [
       'Read a skill\'s frontmatter, body, and compliance issues for repair. Unlocked by the "create-skill" skill.',
     category: 'skill-gated',
     alwaysOn: false,
-    skillCommand: 'create-skill',
   },
   {
     toolId: 'create_skill_artifact',
@@ -377,7 +372,6 @@ export const TOOL_CATALOG: CatalogEntry[] = [
       'Add a new script or reference file to a skill. Unlocked by the "create-skill" skill.',
     category: 'skill-gated',
     alwaysOn: false,
-    skillCommand: 'create-skill',
   },
   {
     toolId: 'update_skill_artifact',
@@ -386,7 +380,6 @@ export const TOOL_CATALOG: CatalogEntry[] = [
       'Overwrite an existing skill\'s script or reference file. Unlocked by the "create-skill" skill.',
     category: 'skill-gated',
     alwaysOn: false,
-    skillCommand: 'create-skill',
   },
   {
     toolId: 'delete_skill_artifact',
@@ -395,7 +388,6 @@ export const TOOL_CATALOG: CatalogEntry[] = [
       'Remove an existing script or reference file from a skill. Unlocked by the "create-skill" skill.',
     category: 'skill-gated',
     alwaysOn: false,
-    skillCommand: 'create-skill',
   },
   {
     toolId: 'test_skill_artifact',
@@ -404,7 +396,6 @@ export const TOOL_CATALOG: CatalogEntry[] = [
       'Dry-run a skill script right after writing it. Unlocked by the "create-skill" skill.',
     category: 'skill-gated',
     alwaysOn: false,
-    skillCommand: 'create-skill',
   },
   // ── Skill-scoped ──────────────────────────────────────────────────────
   {

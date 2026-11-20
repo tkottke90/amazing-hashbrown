@@ -8,11 +8,12 @@ import { SkillsManager } from '@tkottke90/skills-manager';
 import { WorkspaceStore } from './workspace-store.js';
 import { resolveWorkspaceSkills } from './workspace-skills.js';
 
-function writeSkill(root: string, name: string, body: string): void {
+function writeSkill(root: string, name: string, body: string, tools?: string): void {
   mkdirSync(join(root, name), { recursive: true });
+  const toolsLine = tools !== undefined ? `tools: ${tools}\n` : '';
   writeFileSync(
     join(root, name, 'SKILL.md'),
-    `---\nname: ${name}\ndescription: ${name} description\n---\n${body}\n`,
+    `---\nname: ${name}\ndescription: ${name} description\n${toolsLine}---\n${body}\n`,
   );
 }
 
@@ -29,7 +30,11 @@ describe('services/workspace-skills — resolveWorkspaceSkills', () => {
     store = new WorkspaceStore(openDatabase(join(dir, 'test.db')));
     const globalRoot = join(dir, 'global-skills');
     writeSkill(globalRoot, 'global-skill', 'global body');
-    writeSkill(globalRoot, 'create-project', 'global gated body');
+    // Reservation (per resolveWorkspaceSkills) is now derived from the
+    // skill's own `tools` frontmatter field (issue #409), not a hardcoded
+    // list — this skill must actually declare one for the "never lets a
+    // repo override a gated skill name" test below to exercise anything.
+    writeSkill(globalRoot, 'create-project', 'global gated body', 'create_project');
     global = new SkillsManager(globalRoot);
     await global.boot();
   });
@@ -83,11 +88,16 @@ describe('services/workspace-skills — resolveWorkspaceSkills', () => {
     expect((await reader!.lookup('create-project')).trim()).to.equal('global gated body');
   });
 
-  // Same reservation, for the newer create-skill registration — this is the
-  // direct regression test that adding create-skill to
-  // GATED_SKILL_REGISTRATIONS actually reserves it here too, automatically.
+  // Same reservation, for a second gated skill — direct regression test
+  // that any app-level skill declaring `tools` in its own frontmatter gets
+  // reserved automatically, with no separate list to update.
   it('never lets a repo override the create-skill gated name either [unit]', async () => {
-    writeSkill(join(dir, 'global-skills'), 'create-skill', 'global create-skill body');
+    writeSkill(
+      join(dir, 'global-skills'),
+      'create-skill',
+      'global create-skill body',
+      'create_app_skill',
+    );
     await global.boot();
     const { workspace, location } = makeWorkspace(
       'hijack-create-skill',

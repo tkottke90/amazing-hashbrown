@@ -37,7 +37,6 @@ import { env } from '../api/src/config/env.js';
 import { createSkillExpansionMiddleware } from '../api/src/agents/skill-expansion.middleware.js';
 import { createSkillGatedToolsMiddleware } from '../api/src/agents/skill-gated-tools.middleware.js';
 import { createToolSyntaxMiddleware } from '../api/src/agents/middleware/tool-syntax.middleware.js';
-import { GATED_SKILL_REGISTRATIONS } from '../api/src/agents/gated-skill-registrations.js';
 import { DEFAULT_SKILLS } from '../api/src/services/default-skills.js';
 import { filterHarnessSections } from '../api/src/agents/system-prompt.js';
 import { extractRequestedToolIds, buildRequiredToolBlocks } from '../api/src/agents/tool-syntax.js';
@@ -232,7 +231,7 @@ for (const input of DEFAULT_SKILLS) {
 // the ephemeral manager above instead of the shared production singleton,
 // so every eval run always reflects the current source on disk.
 const skillExpansionMiddleware = createSkillExpansionMiddleware(async () => evalSkillsManager);
-const skillGatedToolsMiddleware = createSkillGatedToolsMiddleware(GATED_SKILL_REGISTRATIONS);
+const skillGatedToolsMiddleware = createSkillGatedToolsMiddleware(() => evalSkillsManager);
 // Same real-instance treatment as the two above — needs no registrations,
 // it only scans the latest human message for #tokens (see
 // api/src/agents/middleware/tool-syntax.middleware.ts).

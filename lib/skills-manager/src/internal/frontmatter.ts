@@ -40,6 +40,7 @@ export function validateFrontmatter(data: Record<string, unknown>): SkillFrontma
   if (typeof data['license'] === 'string') fm.license = data['license'];
   if (typeof data['compatibility'] === 'string') fm.compatibility = data['compatibility'];
   if (typeof data['allowed-tools'] === 'string') fm['allowed-tools'] = data['allowed-tools'];
+  if (typeof data['tools'] === 'string') fm['tools'] = data['tools'];
   if (
     data['metadata'] &&
     typeof data['metadata'] === 'object' &&

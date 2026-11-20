@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { skillsManager } from '../../services/skills-manager.js';
-import { GATED_SKILL_REGISTRATIONS } from '../../agents/gated-skill-registrations.js';
 import {
   searchSkillsHandler,
   getSkillHandler,
@@ -17,8 +16,6 @@ import {
 } from './skills.handlers.js';
 
 export const skillsRouter = Router();
-
-const GATED_NAMES = GATED_SKILL_REGISTRATIONS.map((r) => r.skillCommand);
 
 function sendFailure(res: Response, failure: HandlerFailure): void {
   res.status(failure.status).json({
@@ -66,7 +63,15 @@ skillsRouter.patch('/:name', async (req: Request, res: Response) => {
 });
 
 skillsRouter.delete('/:name', async (req: Request, res: Response) => {
-  const result = await deleteSkillHandler(skillsManager, req.params['name'] as string, GATED_NAMES);
+  // Computed fresh per request, not a module-scope constant — gating is
+  // now declared on each skill's own `tools` frontmatter field (issue
+  // #409), so which names are protected can change the moment a skill is
+  // edited, not just at server start.
+  const gatedNames = skillsManager
+    .list()
+    .filter((s) => s.tools)
+    .map((s) => s.name);
+  const result = await deleteSkillHandler(skillsManager, req.params['name'] as string, gatedNames);
   if (!result.ok) {
     sendFailure(res, result);
     return;

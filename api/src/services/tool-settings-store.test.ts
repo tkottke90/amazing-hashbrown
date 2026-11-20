@@ -36,7 +36,6 @@ const CATALOG: CatalogEntry[] = [
     description: 'd',
     category: 'skill-gated',
     alwaysOn: false,
-    skillCommand: 'create-workspace',
   },
 ];
 

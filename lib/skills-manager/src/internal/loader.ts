@@ -37,6 +37,7 @@ export async function readFrontmatter(skillPath: string): Promise<LoadedSummary>
     slashCommand: `/${fm.name}`,
     enabled: fm.metadata?.['enabled'] !== 'false',
     largeDesc: fm.description.length > DESCRIPTION_MAX,
+    tools: fm.tools,
   };
 }
 
