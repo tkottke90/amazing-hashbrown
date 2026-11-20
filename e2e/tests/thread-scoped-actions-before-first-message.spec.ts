@@ -93,8 +93,14 @@ test.describe('@user-workflow', { annotation: suiteAnnotations(suite) }, () => {
       // renders "Loading…" and returns early until the GET resolves) — real
       // tool rows appeared, so the GET that used to 404 here now succeeded.
       await expect(drawer.getByText('Loading…')).not.toBeVisible();
-      await page.keyboard.press('Escape');
-      await expect(drawer).not.toBeVisible();
+
+      // Reload rather than closing the drawer via Escape — avoids
+      // depending on this Drawer variant's own close-transition timing,
+      // which isn't what this test verifies. The thread still has zero
+      // messages after a reload, so "before any message exists" still
+      // holds for the rest of the test.
+      await page.reload();
+      await page.getByRole('button', { name: 'Chat' }).click();
 
       // 2. # Tool Menu — the literal bug report's reproduction.
       await textarea.fill('#');
