@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { test, expect } from '@playwright/test';
 import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
 import { pauseBeforeAction } from '../lib/video.js';
@@ -7,9 +8,9 @@ const suite: TestSuite = {
   id: 63,
   name: 'Thread-Scoped Actions Before First Message',
   description:
-    'Verifies the # Tool Menu, Edit Tools drawer, and Orient to Wiki succeed against the real backend on a workspace chat thread that has no row yet — both a fresh workspace and the successor thread right after Replace Thread',
+    'Verifies the # Tool Menu, Edit Tools drawer, and Orient to Wiki succeed against the real backend on a workspace chat thread that has no row yet — both a fresh workspace and a freshly-repointed successor thread, the same gap Replace Thread creates',
   purpose:
-    'Regression guard for the lazy-thread-creation gap (threads.handlers.ts ensureThreadExists): these three composer actions used to 404 silently on any thread that had never had a message sent in it. Deliberately unmocked, unlike thread-report.spec.ts/thread-tools.spec.ts, which mock these exact endpoints to route around this same gap.',
+    'Regression guard for the lazy-thread-creation gap (threads.handlers.ts ensureThreadExists): these three composer actions used to 404 silently on any thread that had never had a message sent in it. Entirely unmocked, unlike thread-report.spec.ts/thread-tools.spec.ts, which mock these exact endpoints to route around this same gap. Repoints the workspace via the real PATCH /api/v1/workspaces/:id endpoint (the same primitive workspace-chat-tab.tsx and Replace Thread both use to mint a fresh thread) rather than clicking the real Replace Thread button, which always constructs a model/provider with no default configured in this CI environment, even though summarization itself no-ops for a zero-message thread.',
   tags: ['@user-workflow'],
   steps: [
     {
@@ -40,7 +41,8 @@ const suite: TestSuite = {
     },
     {
       tags: ['@user-workflow'],
-      action: 'Click Replace Thread, confirm, then repeat the # Tool Menu check',
+      action:
+        'Repoint the workspace to a fresh threadId (the same gap Replace Thread creates), then repeat the # Tool Menu check',
       expectedOutcome: 'The Tool Menu still opens against the brand-new successor thread',
       test: () => {},
     },
@@ -113,13 +115,26 @@ test.describe('@user-workflow', { annotation: suiteAnnotations(suite) }, () => {
       await page.getByRole('menuitemcheckbox', { name: wikiId }).click();
       await expect(page.getByTestId('wiki-orientation-card')).toBeVisible();
 
-      // 4. Replace Thread, then repeat the # Tool Menu check against the
-      // brand-new successor thread — same lazy-creation gap, right after
-      // the successor is minted with no messages of its own yet.
-      await page.getByRole('button', { name: 'Replace Thread' }).click();
-      await page.getByRole('button', { name: 'Replace' }).click();
-      await expect(page.getByRole('button', { name: 'Replace Thread' })).toBeVisible();
+      // 4. Repoint the workspace to a brand-new threadId, the same real
+      // PATCH /api/v1/workspaces/:id primitive both workspace-chat-tab.tsx's
+      // own mount effect and Replace Thread's backend use to mint a fresh
+      // thread with no row yet — then repeat the # Tool Menu check against
+      // it. Not the real "Replace Thread" button: that route always
+      // constructs a model/provider via maybeSummarizeWorkspace's caller
+      // (even though summarization itself no-ops here, since this thread
+      // has zero conversational messages — see
+      // agents/workspace-summarizer.ts), which throws with no default
+      // provider configured in this CI environment. This PATCH is the
+      // same underlying gap-creating step, without that unrelated
+      // dependency.
+      const successorThreadId = randomUUID();
+      const patchRes = await request.patch(`/api/v1/workspaces/${ws.id}`, {
+        data: { threadId: successorThreadId },
+      });
+      expect(patchRes.status()).toBe(200);
 
+      await page.reload();
+      await page.getByRole('button', { name: 'Chat' }).click();
       await textarea.fill('#');
       await expect(page.locator('[data-slot="chat-input-tool-menu"]')).toBeVisible();
     } finally {
