@@ -312,14 +312,37 @@ export class ThreadStore extends BaseStore {
   // Thread metadata
   // -------------------------------------------------------------------------
 
-  // Inserts the threads row on the first message of a new thread; a no-op if
-  // the row already exists. Call this before the first insertMessage() of a
-  // turn, not on every turn.
-  upsertThreadOnFirstMessage(threadId: string, titleSeed: string, type: ThreadType = 'chat'): void {
+  // Speculative, idempotent row creation for a threadId a composer is
+  // already using client-side but that has no row yet — a brand-new thread,
+  // or the fresh successor right after Replace Thread (see
+  // docs/superpowers/specs/2026-11-20-thread-scoped-actions-before-first-message-design.md).
+  // Empty placeholder title; upsertThreadOnFirstMessage below corrects
+  // title/type the moment a real message arrives. A true no-op if a row
+  // already exists, regardless of message count — unlike
+  // upsertThreadOnFirstMessage, this never overwrites.
+  ensureThreadExists(threadId: string, type: ThreadType = 'chat'): void {
     const now = new Date().toISOString();
     this.db
       .prepare(
         `INSERT OR IGNORE INTO threads (id, title, created_at, updated_at, type) VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(threadId, '', now, now, type);
+  }
+
+  // Inserts the threads row on the first message of a new thread; a no-op if
+  // the row already exists with messages already in it. Call this before the
+  // first insertMessage() of a turn, not on every turn. If the row already
+  // exists but is still message-less (created speculatively by
+  // ensureThreadExists above, never by a real message), this corrects its
+  // placeholder title/type to the real ones instead of leaving them stuck.
+  upsertThreadOnFirstMessage(threadId: string, titleSeed: string, type: ThreadType = 'chat'): void {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO threads (id, title, created_at, updated_at, type)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET title = excluded.title, type = excluded.type, updated_at = excluded.updated_at
+         WHERE (SELECT COUNT(*) FROM thread_messages WHERE thread_id = threads.id) = 0`,
       )
       .run(threadId, titleSeed, now, now, type);
   }
@@ -363,7 +386,8 @@ export class ThreadStore extends BaseStore {
 
   getThreadMeta(id: string): ThreadSummary | null {
     const row = this.db.prepare(`SELECT * FROM threads WHERE id = ?`).get(id) as
-      RawThreadRow | undefined;
+      | RawThreadRow
+      | undefined;
     return row ? mapThreadRow(row) : null;
   }
 
