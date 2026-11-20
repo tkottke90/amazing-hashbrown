@@ -29,7 +29,7 @@ the codebase 2026-10-26; this file has been touched three times since without it
 guarantee never reaches this agent at all — the model was telling the truth.
 
 This was hard to confirm from the thread report alone because the wiki ingestion agent is also one
-of the agents the Sep 27, 2026 per-turn-tool-availability design explicitly scoped *out* of
+of the agents the Sep 27, 2026 per-turn-tool-availability design explicitly scoped _out_ of
 tool-capture ("Agents that do not use the `chat-agent.ts` middleware chain ... Their traces render
 'tools not captured'") — exactly what the report showed. Had that agent's bound-tool list been
 captured, this would have been visible immediately instead of requiring a code read.
@@ -193,10 +193,10 @@ prompting one.)
 
 ## 7. Acceptance Criteria Mapping
 
-| Problem                                                              | Covered by |
-| --------------------------------------------------------------------| ---------- |
-| `wiki_rebaseline_source` unreachable from wiki chat                 | §3         |
-| `sourceText` silently doesn't fix `source_drift`                    | §4         |
-| Thread report can't confirm/deny a "tool missing" claim for wiki chat | §5       |
-| Stale Sep 27 design doc scope note                                  | §5 (doc update) |
+| Problem                                                                            | Covered by                   |
+| ---------------------------------------------------------------------------------- | ---------------------------- |
+| `wiki_rebaseline_source` unreachable from wiki chat                                | §3                           |
+| `sourceText` silently doesn't fix `source_drift`                                   | §4                           |
+| Thread report can't confirm/deny a "tool missing" claim for wiki chat              | §5                           |
+| Stale Sep 27 design doc scope note                                                 | §5 (doc update)              |
 | Regression: future tool additions to `buildWikiWriteTools()` silently missing here | §3 (reuse, not re-duplicate) |

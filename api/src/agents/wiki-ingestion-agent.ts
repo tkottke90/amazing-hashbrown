@@ -13,7 +13,11 @@ import { wikiRegisterDomainTool } from './tools/wiki-register-domain.tool.js';
 import { wikiSearchTool } from './tools/wiki-search.tool.js';
 import { webFetchTool } from './tools/web-fetch.tool.js';
 import { makeGetToolKeyTool } from './tools/get-tool-key.tool.js';
-import { buildWikiWriteTools, createContextWindowMiddleware, getCheckpointer } from './chat-agent.js';
+import {
+  buildWikiWriteTools,
+  createContextWindowMiddleware,
+  getCheckpointer,
+} from './chat-agent.js';
 import { ambientContextMiddleware } from './ambient-context.middleware.js';
 import { wikiOrientationContextMiddleware } from './wiki-orientation-context.middleware.js';
 import { buildWikiIngestionSystemPrompt } from './wiki-ingestion-system-prompt.js';
