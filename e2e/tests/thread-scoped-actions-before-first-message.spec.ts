@@ -76,7 +76,12 @@ test.describe('@user-workflow', { annotation: suiteAnnotations(suite) }, () => {
       await page.getByRole('button', { name: 'Chat' }).click();
       await pauseBeforeAction(page, testInfo);
 
-      const textarea = page.locator('[data-slot="textarea"]');
+      // Not [data-slot="textarea"] alone — the Overview tab's "Describe
+      // this workspace" and "What should be accomplished" fields stay
+      // mounted while the Chat tab is active, so that locator resolves to
+      // 3 elements. getByRole with the composer's own placeholder, same as
+      // 006-RepoAgentSkills.spec.ts, is unambiguous.
+      const textarea = page.getByRole('textbox', { name: 'Message...' });
       await expect(textarea).toBeVisible();
 
       // 1. Edit Tools drawer — composer-reachable before any message exists.
