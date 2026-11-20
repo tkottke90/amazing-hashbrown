@@ -96,7 +96,9 @@ const WikiUpdatePageSchema = z.object({
         'page. Set this whenever the update was derived from material you did not generate ' +
         'yourself this turn — including whenever a skill or the user asks you to preserve ' +
         'provenance. Omit it only when the content is genuinely your own synthesis with no ' +
-        'separate source text to preserve.',
+        'separate source text to preserve. Setting sourceText does NOT reset the source_drift ' +
+        'sha256 baseline that wiki_lint checks — if source_drift flagged a page, use ' +
+        'wiki_rebaseline_source to clear it, not this param.',
     ),
 });
 
