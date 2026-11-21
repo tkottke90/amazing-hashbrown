@@ -252,7 +252,12 @@ describe('ObservabilityStore', () => {
     });
 
     it('reads interrupted as false for a span that never set it [unit]', () => {
-      const span = makeSpan({ spanId: 'span-plain', traceId, type: 'tool-call', name: 'wiki_search' });
+      const span = makeSpan({
+        spanId: 'span-plain',
+        traceId,
+        type: 'tool-call',
+        name: 'wiki_search',
+      });
       store.saveSpans([span]);
 
       const trace = store.getTrace(traceId);
