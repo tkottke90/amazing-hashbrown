@@ -70,7 +70,7 @@ rest of their existing logic stay as they are. The thread being left simply keep
 background, visible again the moment you switch back to it.
 
 **Companion fix — avoid a hydrate/stream race on return.** `switchThread` unconditionally calls
-`next.hydrate()` on the thread being switched *to*. If that thread is still streaming in this same tab
+`next.hydrate()` on the thread being switched _to_. If that thread is still streaming in this same tab
 (you never left the tab, just navigated away and back), a full hydrate would refetch and could clobber
 state the live stream is still actively appending to. Guard it the same way this file's own
 `thread_turn_completed` handling already does: skip `hydrate()` when `next.isStreaming.value` is
@@ -102,7 +102,7 @@ more call site for a helper that already exists.
 The sidebar's thread-list signal (`threads.value`) carries `activeTurn` from the response above on
 load. `ui/src/hooks/use-live-events.ts`'s existing `thread_turn_started`/`thread_turn_completed` cases
 get a companion patch to that list — set the matching thread's `activeTurn` to `true`/`false` — in
-addition to the `markBackgroundTurn` call they already make against an *open* `ThreadInstance`. This
+addition to the `markBackgroundTurn` call they already make against an _open_ `ThreadInstance`. This
 means a thread shows as generating in the sidebar even before you've ever opened it in this tab.
 `thread-sidebar.tsx`'s `ThreadRow` renders a small spinner/indicator when `activeTurn` is true.
 
@@ -117,14 +117,14 @@ it completes — no device-awareness code needed, because the server has no noti
 
 ## Error handling / edge cases
 
-| Case | Behavior |
-| --- | --- |
-| User clicks Stop on a thread they're currently viewing (foreground or backgrounded) | Unchanged — still hits `/stop`, aborts the controller, same as today |
-| Navigate away from a streaming thread, then back, same tab, turn still running | `switchThread` skips `hydrate()` (new guard); the live stream's own updates are shown uninterrupted |
-| Navigate away from a streaming thread, then back, same tab, turn has since completed | `switchThread` calls `hydrate()` as before (guard only skips while still streaming), showing the final result |
-| Thread opened on a second device/tab while its turn is running elsewhere | Already correct via `thread_turn_started` → `markBackgroundTurn(true)`; now also reachable, since the originating device no longer kills the turn on its own navigation |
+| Case                                                                                              | Behavior                                                                                                                                                                                                  |
+| ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| User clicks Stop on a thread they're currently viewing (foreground or backgrounded)               | Unchanged — still hits `/stop`, aborts the controller, same as today                                                                                                                                      |
+| Navigate away from a streaming thread, then back, same tab, turn still running                    | `switchThread` skips `hydrate()` (new guard); the live stream's own updates are shown uninterrupted                                                                                                       |
+| Navigate away from a streaming thread, then back, same tab, turn has since completed              | `switchThread` calls `hydrate()` as before (guard only skips while still streaming), showing the final result                                                                                             |
+| Thread opened on a second device/tab while its turn is running elsewhere                          | Already correct via `thread_turn_started` → `markBackgroundTurn(true)`; now also reachable, since the originating device no longer kills the turn on its own navigation                                   |
 | Multiple threads generating concurrently in one tab via plain navigation (not just multiple tabs) | Not a new risk — each thread's `ThreadInstance` is already independent, and server-side concurrency is already bounded by `provider-queue.ts`'s per-provider `maxConcurrency`, which predates this change |
-| Forking a thread while it's streaming | Original thread keeps generating in the background after the fork, same as any other switch-away |
+| Forking a thread while it's streaming                                                             | Original thread keeps generating in the background after the fork, same as any other switch-away                                                                                                          |
 
 ---
 

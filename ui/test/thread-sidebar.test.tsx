@@ -192,9 +192,7 @@ describe('ThreadRow — activeTurn indicator', () => {
 
     render(<ThreadSidebar />);
 
-    expect(
-      screen.getByRole('button', { name: `Options for ${thread.title}` }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: `Options for ${thread.title}` })).toBeInTheDocument();
   });
 });
 
