@@ -652,6 +652,10 @@ _Avoid_: Failure taxonomy, error taxonomy, failure categories
 A Thread Report's full per-tool-name call-count map — previously collapsed down to just its single most-called tool, now exposed in full. Not itself a failure signal; pairs with a Failure Breakdown's tool-keyed failure counts (same tool names) to show a failure rate per tool, e.g. "`fetch_url`: 23/23 failed".
 _Avoid_: Tool usage stats, tool histogram
 
+**Interrupted Span**:
+A tool-call span whose call paused the graph for a HITL answer (`ask_user`, `shell_exec`'s approval) rather than failing — identified at the source by the thrown `GraphInterrupt`'s `name`, never by tool name or error text (see ADR-0075). Recorded with `error: null` and its own `interrupted: true` flag, so it's excluded from `failureCount` and the Failure Breakdown the same way any non-erroring span is, and rendered with its own distinct (non-error) styling in the Thread Report rather than `.span-error-text`.
+_Avoid_: HITL error, paused span, interrupt failure
+
 # Markdown Rendering & Inline SVG
 
 How the shared `Markdown` component decides which raw HTML written directly in Markdown source — including inline SVG — survives into the rendered DOM, instead of being escaped as literal text.
