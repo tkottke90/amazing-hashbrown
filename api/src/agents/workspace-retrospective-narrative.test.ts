@@ -125,6 +125,7 @@ function makeThreadReportStats(overrides: Partial<ThreadReportStats> = {}): Thre
     toolCallCounts: {},
     toolFailureCounts: {},
     otherFailures: {},
+    toolInterruptCounts: {},
     ...overrides,
   };
 }

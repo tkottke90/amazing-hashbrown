@@ -33,6 +33,7 @@ function makeSpan(overrides: Partial<SpanRecord> = {}): SpanRecord {
     outputPreview: null,
     inputPreview: null,
     error: null,
+    interrupted: false,
     ...overrides,
   };
 }

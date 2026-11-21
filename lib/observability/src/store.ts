@@ -165,6 +165,7 @@ const RawSpanSchema = z
     output_preview: z.string().nullable(),
     input_preview: z.string().nullable(),
     error: z.string().nullable(),
+    interrupted: z.number(),
   })
   .transform((row) => ({
     spanId: row.span_id,
@@ -180,6 +181,7 @@ const RawSpanSchema = z
     outputPreview: row.output_preview,
     inputPreview: row.input_preview,
     error: row.error,
+    interrupted: row.interrupted === 1,
   }));
 
 // ---------------------------------------------------------------------------
@@ -269,6 +271,17 @@ const MIGRATIONS: DbMigration[] = [
       ALTER TABLE observability_traces ADD COLUMN tools TEXT;
     `,
   },
+  {
+    // True only for a tool-call span whose call paused the graph for a HITL
+    // answer (ask_user, shell_exec's approval) rather than failing — see
+    // ADR-0075, GLOSSARY.md "Interrupted Span". Existing rows default to
+    // false, same as they already read today (no backfill — see that ADR's
+    // accepted consequence).
+    version: 48,
+    sql: `
+      ALTER TABLE observability_spans ADD COLUMN interrupted INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -352,9 +365,9 @@ export class ObservabilityStore extends BaseStore implements IReadDao<TraceSumma
          (span_id, trace_id, parent_span_id, type, name,
           started_at, ended_at, latency_ms,
           input_tokens, output_tokens,
-          output_preview, input_preview, error)
+          output_preview, input_preview, error, interrupted)
        VALUES
-         (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
     const insertAll = this.db.transaction((rows: SpanRecord[]) => {
@@ -373,6 +386,7 @@ export class ObservabilityStore extends BaseStore implements IReadDao<TraceSumma
           s.outputPreview ?? null,
           s.inputPreview ?? null,
           s.error ?? null,
+          s.interrupted ? 1 : 0,
         );
       }
     });

@@ -200,6 +200,7 @@ describe('build/buildThreadReport', () => {
         outputPreview: 'hi there',
         inputPreview: null,
         error: null,
+        interrupted: false,
       },
     ]);
     store.endTrace(mainTraceId, { totalTokens: 60 });
@@ -225,6 +226,7 @@ describe('build/buildThreadReport', () => {
         outputPreview: null,
         inputPreview: null,
         error: null,
+        interrupted: false,
       },
       {
         spanId: 'span-noop-2',
@@ -240,6 +242,7 @@ describe('build/buildThreadReport', () => {
         outputPreview: '{"shouldWrite":false}',
         inputPreview: null,
         error: null,
+        interrupted: false,
       },
     ]);
     store.endTrace(noOpTraceId, { totalTokens: 75 });
@@ -265,6 +268,7 @@ describe('build/buildThreadReport', () => {
         outputPreview: '{"shouldWrite":true}',
         inputPreview: null,
         error: null,
+        interrupted: false,
       },
       {
         spanId: 'span-id-2',
@@ -280,6 +284,7 @@ describe('build/buildThreadReport', () => {
         outputPreview: null,
         inputPreview: null,
         error: 'boom: unknown domainId',
+        interrupted: false,
       },
     ]);
     store.endTrace(identifiedTraceId, { totalTokens: 125 });
@@ -374,6 +379,7 @@ describe('build/buildThreadReport', () => {
         outputPreview: null,
         inputPreview: null,
         error: 'Context size has been exceeded',
+        interrupted: false,
       },
     ]);
     store.endTrace(traceId, { totalTokens: 10, error: 'Context size has been exceeded' });
@@ -438,6 +444,7 @@ describe('build/buildThreadReport', () => {
         outputPreview: null,
         inputPreview: null,
         error: 'fetch failed: ETIMEDOUT',
+        interrupted: false,
       },
       {
         spanId: 'span-tool-2',
@@ -453,6 +460,7 @@ describe('build/buildThreadReport', () => {
         outputPreview: null,
         inputPreview: null,
         error: 'fetch failed: ECONNRESET',
+        interrupted: false,
       },
     ]);
     store.endTrace(traceId, { totalTokens: 0 });
@@ -468,6 +476,92 @@ describe('build/buildThreadReport', () => {
     });
     expect(result!.stats.otherFailures).to.deep.equal({});
     expect(result!.stats.failureCount).to.equal(2);
+  });
+
+  it('excludes an Interrupted Span from failureCount/toolFailureCounts and counts it in toolInterruptCounts instead', () => {
+    const threadId = 't-tool-interrupted';
+    const traceId = store.startTrace({ threadId, provider: 'local', model: 'llama3.2' });
+    store.saveSpans([
+      {
+        spanId: 'span-interrupt-1',
+        traceId,
+        parentSpanId: null,
+        type: 'tool-call',
+        name: 'ask_user',
+        startedAt: '2026-07-18T10:00:00.000Z',
+        endedAt: '2026-07-18T10:00:01.000Z',
+        latencyMs: 1000,
+        inputTokens: null,
+        outputTokens: null,
+        outputPreview: null,
+        inputPreview: null,
+        error: null,
+        interrupted: true,
+      },
+    ]);
+    store.endTrace(traceId, { totalTokens: 0 });
+
+    const thread = makeThread({ id: threadId, messages: [] });
+    const result = buildThreadReport(threadId, {
+      threadStore: fakeThreadStore(thread),
+      observabilityStore: store,
+    });
+
+    expect(result!.stats.toolFailureCounts).to.deep.equal({});
+    expect(result!.stats.failureCount).to.equal(0);
+    expect(result!.stats.toolInterruptCounts).to.deep.equal({ ask_user: 1 });
+  });
+
+  it('populates toolFailureCounts and toolInterruptCounts independently when the same tool has both a genuine failure and a separate paused call', () => {
+    const threadId = 't-tool-mixed';
+    const traceId = store.startTrace({ threadId, provider: 'local', model: 'llama3.2' });
+    store.saveSpans([
+      {
+        spanId: 'span-mixed-interrupt',
+        traceId,
+        parentSpanId: null,
+        type: 'tool-call',
+        name: 'ask_user',
+        startedAt: '2026-07-18T10:00:00.000Z',
+        endedAt: '2026-07-18T10:00:01.000Z',
+        latencyMs: 1000,
+        inputTokens: null,
+        outputTokens: null,
+        outputPreview: null,
+        inputPreview: null,
+        error: null,
+        interrupted: true,
+      },
+      {
+        spanId: 'span-mixed-failure',
+        traceId,
+        parentSpanId: null,
+        type: 'tool-call',
+        name: 'ask_user',
+        startedAt: '2026-07-18T10:00:01.000Z',
+        endedAt: '2026-07-18T10:00:02.000Z',
+        latencyMs: 1000,
+        inputTokens: null,
+        outputTokens: null,
+        outputPreview: null,
+        inputPreview: null,
+        error: 'unexpected tool error',
+        interrupted: false,
+      },
+    ]);
+    store.endTrace(traceId, { totalTokens: 0 });
+
+    const thread = makeThread({ id: threadId, messages: [] });
+    const result = buildThreadReport(threadId, {
+      threadStore: fakeThreadStore(thread),
+      observabilityStore: store,
+    });
+
+    expect(result!.stats.toolFailureCounts).to.deep.equal({
+      ask_user: { count: 1, example: 'unexpected tool error' },
+    });
+    expect(result!.stats.toolInterruptCounts).to.deep.equal({ ask_user: 1 });
+    expect(result!.stats.failureCount).to.equal(1);
   });
 
   it('buckets an attachment span error into otherFailures.other, separately from tool-call failures', () => {
@@ -488,6 +582,7 @@ describe('build/buildThreadReport', () => {
         outputPreview: null,
         inputPreview: null,
         error: 'file too large',
+        interrupted: false,
       },
     ]);
     store.endTrace(traceId, { totalTokens: 0 });
@@ -546,6 +641,7 @@ describe('build/buildThreadReport', () => {
         outputPreview: null,
         inputPreview: null,
         error: 'MCP server disconnected',
+        interrupted: false,
       },
     ]);
     store.endTrace(toolTraceId, { totalTokens: 0 });
@@ -584,6 +680,7 @@ describe('build/buildThreadReport', () => {
         outputPreview: null,
         inputPreview: null,
         error: null,
+        interrupted: false,
       },
       {
         spanId: 'span-t3-2',
@@ -599,6 +696,7 @@ describe('build/buildThreadReport', () => {
         outputPreview: null,
         inputPreview: null,
         error: null,
+        interrupted: false,
       },
     ]);
     store.endTrace(traceId, { totalTokens: 0 });

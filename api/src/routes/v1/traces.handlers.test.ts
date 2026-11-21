@@ -34,6 +34,7 @@ function makeSpan(
     outputPreview: null,
     inputPreview: null,
     error: null,
+    interrupted: false,
     ...overrides,
   };
 }

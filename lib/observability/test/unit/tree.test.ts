@@ -22,6 +22,7 @@ function span(
     outputPreview: null,
     inputPreview: null,
     error: null,
+    interrupted: false,
   };
 }
 

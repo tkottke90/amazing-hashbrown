@@ -86,6 +86,13 @@ export const SpanRecordSchema = z.object({
   // For attachment spans: null (everything relevant is in outputPreview).
   inputPreview: z.string().nullable(),
   error: z.string().nullable(),
+  // True only for a tool-call span whose call paused the graph for a HITL
+  // answer (ask_user, shell_exec's approval) rather than failing — detected
+  // at the source by the thrown GraphInterrupt's `name`, never inferred from
+  // tool name or error text (see ADR-0075, GLOSSARY.md "Interrupted Span").
+  // Always false for llm-call/attachment spans and for a tool-call span that
+  // didn't interrupt. error is always null when this is true.
+  interrupted: z.boolean(),
 });
 
 export const TraceRecordSchema = z.object({

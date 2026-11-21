@@ -39,7 +39,7 @@ export interface BuildThreadReportOptions {
 function computeStats(
   messages: ThreadReportData['thread']['messages'],
   failureCount: number,
-): Omit<ThreadReportStats, 'toolFailureCounts' | 'otherFailures'> {
+): Omit<ThreadReportStats, 'toolFailureCounts' | 'otherFailures' | 'toolInterruptCounts'> {
   const turnCount = messages.filter((m) => m.kind === 'user').length;
   const toolCallMessages = messages.filter((m) => m.kind === 'tool_call');
   const toolCallCount = toolCallMessages.length;
@@ -134,6 +134,27 @@ function computeFailureBreakdown(traces: TraceWithSpans[]): FailureBreakdown {
   }
 
   return { toolFailureCounts, otherFailures };
+}
+
+// Interrupted Span counts (see GLOSSARY.md, ADR-0075) — a separate pass from
+// computeFailureBreakdown rather than a tweak to it, since an Interrupted
+// Span's own `error` is always null: it never satisfies isErroredSpan, and
+// deliberately so, that's what keeps it out of failureCount/toolFailureCounts
+// with no change to that logic. A tool can appear in both this map and
+// toolFailureCounts (e.g. one ask_user call paused, a separate one failed
+// for an unrelated reason) — the two are independent counts.
+function computeToolInterruptCounts(
+  traces: TraceWithSpans[],
+): ThreadReportStats['toolInterruptCounts'] {
+  const toolInterruptCounts: ThreadReportStats['toolInterruptCounts'] = {};
+  for (const trace of traces) {
+    for (const span of trace.spans) {
+      if (span.type === 'tool-call' && span.interrupted) {
+        toolInterruptCounts[span.name] = (toolInterruptCounts[span.name] ?? 0) + 1;
+      }
+    }
+  }
+  return toolInterruptCounts;
 }
 
 // Cumulative 1-based count of assistant messages, in seq order — the same
@@ -367,7 +388,11 @@ export function buildThreadReport(
     threadId,
     generatedAt: new Date().toISOString(),
     thread: { ...thread, messages: messagesWithStepIndex },
-    stats: { ...computeStats(thread.messages, failureCount), ...computeFailureBreakdown(traces) },
+    stats: {
+      ...computeStats(thread.messages, failureCount),
+      ...computeFailureBreakdown(traces),
+      toolInterruptCounts: computeToolInterruptCounts(traces),
+    },
     timeline: attachSystemPromptTokens(timeline),
     recursion: { recursionLimit, recursionWarnThreshold },
     ...(contextWindow ? { contextWindow } : {}),
