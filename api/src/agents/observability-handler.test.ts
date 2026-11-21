@@ -247,5 +247,34 @@ describe('agents/observability-handler', () => {
 
       expect(calls).to.have.length(0);
     });
+
+    it('handleToolError records a GraphInterrupt (ask_user/shell_exec pausing for a HITL answer) as interrupted, not a failure [unit]', async () => {
+      const { store, calls } = fakeStore();
+      const handler = new ObservabilityCallbackHandler('trace-1', store, 500);
+
+      await handler.handleToolStart({ id: ['ask_user'] } as Serialized, '{}', 'run-1');
+      await handler.handleToolError(
+        Object.assign(new Error('Interrupted by ask_user'), { name: 'GraphInterrupt' }),
+        'run-1',
+      );
+      await handler.handleChainEnd();
+
+      expect(calls).to.have.length(1);
+      expect(calls[0][0].error).to.equal(null);
+      expect(calls[0][0].interrupted).to.equal(true);
+    });
+
+    it('handleToolError records a genuine tool failure as an error, not interrupted [unit]', async () => {
+      const { store, calls } = fakeStore();
+      const handler = new ObservabilityCallbackHandler('trace-1', store, 500);
+
+      await handler.handleToolStart({ id: ['wiki_search'] } as Serialized, '{}', 'run-1');
+      await handler.handleToolError(new Error('fetch failed: ETIMEDOUT'), 'run-1');
+      await handler.handleChainEnd();
+
+      expect(calls).to.have.length(1);
+      expect(calls[0][0].error).to.equal('fetch failed: ETIMEDOUT');
+      expect(calls[0][0].interrupted).to.equal(false);
+    });
   });
 });

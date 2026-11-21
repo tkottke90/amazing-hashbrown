@@ -29,6 +29,7 @@ function makeSpan(overrides: Partial<SpanRecord> = {}): SpanRecord {
     outputPreview: 'hello',
     inputPreview: null,
     error: null,
+    interrupted: false,
     ...overrides,
   };
 }
@@ -231,6 +232,37 @@ describe('ObservabilityStore', () => {
       });
       const trace = store.getTrace(promptTraceId);
       assert.equal(trace?.systemPrompt, 'the whole title-generation prompt');
+    });
+
+    it('round-trips interrupted: true for a span that paused for a HITL answer [unit]', () => {
+      const span = makeSpan({
+        spanId: 'span-interrupted',
+        traceId,
+        type: 'tool-call',
+        name: 'ask_user',
+        error: null,
+        interrupted: true,
+      });
+      store.saveSpans([span]);
+
+      const trace = store.getTrace(traceId);
+      const saved = trace?.spans.find((s) => s.spanId === 'span-interrupted');
+      assert.equal(saved?.interrupted, true);
+      assert.equal(saved?.error, null);
+    });
+
+    it('reads interrupted as false for a span that never set it [unit]', () => {
+      const span = makeSpan({
+        spanId: 'span-plain',
+        traceId,
+        type: 'tool-call',
+        name: 'wiki_search',
+      });
+      store.saveSpans([span]);
+
+      const trace = store.getTrace(traceId);
+      const saved = trace?.spans.find((s) => s.spanId === 'span-plain');
+      assert.equal(saved?.interrupted, false);
     });
   });
 

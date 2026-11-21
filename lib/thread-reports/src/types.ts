@@ -135,6 +135,11 @@ export interface ThreadReportStats {
   // one literal-matched category (ADR-0070); everything else is 'other'.
   // Partial, not an open Record, since there are only ever these two keys.
   otherFailures: Partial<Record<'context_length' | 'other', { count: number; example: string }>>;
+  // Interrupted Span counts (see GLOSSARY.md, ADR-0075) — keyed by tool
+  // name; a 'tool-call'-type span with `interrupted: true` (never has an
+  // `error`, so there's no example text to carry, unlike toolFailureCounts).
+  // Always present (an empty object when nothing paused), same convention.
+  toolInterruptCounts: Record<string, number>;
 }
 
 export type TraceOutcome = 'no-op' | 'identified' | 'unknown';

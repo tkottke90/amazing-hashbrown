@@ -53,11 +53,13 @@
 <div class="span-list">
   {% for name, count in stats.toolCallCounts | sortEntries %}
     {% set failure = stats.toolFailureCounts[name] %}
-    <details class="span-row {{ 'span-error' if failure }}" {{ 'open' if failure }}>
+    {% set interrupted = stats.toolInterruptCounts[name] %}
+    <details class="span-row {{ 'span-error' if failure }} {{ 'span-interrupt' if interrupted }}" {{ 'open' if failure }}>
       <summary>
         <span class="span-name">{{ name }}</span>
+        {% if interrupted %}<span class="badge badge-pending">paused</span>{% endif %}
         <span class="span-tokens">
-          {{ count }} call{{ 's' if count != 1 }}{% if failure %}, {{ failure.count }} failed{% endif %}
+          {{ count }} call{{ 's' if count != 1 }}{% if failure %}, {{ failure.count }} failed{% endif %}{% if interrupted %}, {{ interrupted }} paused{% endif %}
         </span>
       </summary>
       {% if failure %}
@@ -136,10 +138,11 @@
         {% endif %}
         <div class="span-list">
           {% for span in event.trace.spans %}
-            <details class="span-row {{ 'span-error' if span.error }}" {{ 'open' if span.error }}>
+            <details class="span-row {{ 'span-error' if span.error }} {{ 'span-interrupt' if span.interrupted }}" {{ 'open' if span.error }}>
               <summary>
                 <span class="span-type">{{ span.type }}</span>
                 <span class="span-name">{{ span.name }}</span>
+                {% if span.interrupted %}<span class="badge badge-pending">paused</span>{% endif %}
                 <span class="span-tokens">
                   {{ span.latencyMs | duration }}
                   {% if span.inputTokens != None or span.outputTokens != None %}

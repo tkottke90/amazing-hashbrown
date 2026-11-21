@@ -447,6 +447,9 @@ summary {
 .span-row.span-error {
   background: var(--fail-bg);
 }
+.span-row.span-interrupt {
+  background: var(--warn-bg);
+}
 .span-row summary {
   display: flex;
   align-items: baseline;

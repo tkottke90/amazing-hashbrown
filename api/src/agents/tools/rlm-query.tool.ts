@@ -75,6 +75,7 @@ function buildRLMSpans(
           outputPreview: event.content.slice(0, PREVIEW_CHARS) || null,
           inputPreview: null,
           error: null,
+          interrupted: false,
         });
         break;
       }
@@ -110,6 +111,7 @@ function buildRLMSpans(
           outputPreview: event.result.slice(0, PREVIEW_CHARS) || null,
           inputPreview: pending.argsPreview,
           error: null,
+          interrupted: false,
         });
         break;
       }
@@ -138,6 +140,7 @@ function buildRLMSpans(
           outputPreview: event.content.slice(0, PREVIEW_CHARS) || null,
           inputPreview: null,
           error: null,
+          interrupted: false,
         });
         break;
       }

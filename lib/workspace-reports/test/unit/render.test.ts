@@ -26,6 +26,7 @@ function chatFixture(): ThreadReportData {
       toolCallCounts: {},
       toolFailureCounts: {},
       otherFailures: {},
+      toolInterruptCounts: {},
     },
     timeline: [],
     recursion: { recursionLimit: 100, recursionWarnThreshold: 0.75 },

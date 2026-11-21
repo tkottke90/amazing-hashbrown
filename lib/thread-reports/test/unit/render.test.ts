@@ -1,5 +1,6 @@
 import { describe, it } from 'mocha';
 import { expect } from 'chai';
+import type { TraceWithSpans } from '@tkottke90/observability';
 import { renderThreadReportHtml } from '../../src/render.js';
 import type { ThreadReportData } from '../../src/types.js';
 
@@ -50,6 +51,7 @@ function fixture(): ThreadReportData {
       toolCallCounts: {},
       toolFailureCounts: {},
       otherFailures: {},
+      toolInterruptCounts: {},
     },
     timeline: [
       {
@@ -86,7 +88,11 @@ describe('render/renderThreadReportHtml', () => {
 
   function traceFixture(
     systemPrompt: string | null,
-    overrides: { error?: string | null; tools?: string[] | null } = {},
+    overrides: {
+      error?: string | null;
+      tools?: string[] | null;
+      spans?: TraceWithSpans['spans'];
+    } = {},
   ): ThreadReportData {
     const data = fixture();
     data.timeline = [
@@ -106,7 +112,7 @@ describe('render/renderThreadReportHtml', () => {
           systemPrompt,
           tools: overrides.tools ?? null,
           error: overrides.error ?? null,
-          spans: [],
+          spans: overrides.spans ?? [],
         },
       },
       ...data.timeline,
@@ -184,6 +190,60 @@ describe('render/renderThreadReportHtml', () => {
     expect(html).to.not.include('Turn failed:');
   });
 
+  it('renders a paused badge for an Interrupted Span, and no error message text [unit]', async () => {
+    const html = await renderThreadReportHtml(
+      traceFixture(null, {
+        spans: [
+          {
+            spanId: 'span-1',
+            traceId: 'trace-1',
+            parentSpanId: null,
+            type: 'tool-call',
+            name: 'ask_user',
+            startedAt: '2026-07-18T10:00:00.000Z',
+            endedAt: '2026-07-18T10:00:01.000Z',
+            latencyMs: 1000,
+            inputTokens: null,
+            outputTokens: null,
+            outputPreview: null,
+            inputPreview: '{"question":"Deploy now?"}',
+            error: null,
+            interrupted: true,
+          },
+        ],
+      }),
+    );
+    expect(html).to.include('paused');
+    expect(html).to.include('Deploy now?');
+  });
+
+  it('does not render the paused badge for a genuinely errored (non-interrupted) span [unit]', async () => {
+    const html = await renderThreadReportHtml(
+      traceFixture(null, {
+        spans: [
+          {
+            spanId: 'span-1',
+            traceId: 'trace-1',
+            parentSpanId: null,
+            type: 'tool-call',
+            name: 'fetch_url',
+            startedAt: '2026-07-18T10:00:00.000Z',
+            endedAt: '2026-07-18T10:00:01.000Z',
+            latencyMs: 1000,
+            inputTokens: null,
+            outputTokens: null,
+            outputPreview: null,
+            inputPreview: null,
+            error: 'fetch failed: ETIMEDOUT',
+            interrupted: false,
+          },
+        ],
+      }),
+    );
+    expect(html).to.include('fetch failed: ETIMEDOUT');
+    expect(html).to.not.include('paused');
+  });
+
   function assistantErrorFixture(payloadError?: string): ThreadReportData {
     const data = fixture();
     data.thread.messages.push({
@@ -227,6 +287,7 @@ describe('render/renderThreadReportHtml', () => {
       toolCallCounts: {},
       toolFailureCounts: {},
       otherFailures: {},
+      toolInterruptCounts: {},
       ...overrides,
     };
     return data;
@@ -260,6 +321,19 @@ describe('render/renderThreadReportHtml', () => {
       );
       expect(html).to.include('23 failed');
       expect(html).to.include('fetch failed: ETIMEDOUT');
+    });
+
+    it('annotates a tool with its paused count in the Tool Calls rollup, independently of a separate failure count [unit]', async () => {
+      const html = await renderThreadReportHtml(
+        statsFixture({
+          toolCallCount: 3,
+          toolCallCounts: { ask_user: 3 },
+          toolFailureCounts: { ask_user: { count: 1, example: 'unexpected tool error' } },
+          toolInterruptCounts: { ask_user: 2 },
+        }),
+      );
+      expect(html).to.include('1 failed');
+      expect(html).to.include('2 paused');
     });
 
     it('omits the Tool Calls section entirely when no tools were called [unit]', async () => {

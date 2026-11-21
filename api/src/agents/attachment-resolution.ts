@@ -247,5 +247,6 @@ export function buildAttachmentSpan(
       ...(record.exclusionReason ? { exclusionReason: record.exclusionReason } : {}),
     }),
     error: null,
+    interrupted: false,
   };
 }

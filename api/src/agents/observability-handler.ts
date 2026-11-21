@@ -103,6 +103,7 @@ export class ObservabilityCallbackHandler extends BaseCallbackHandler {
       outputPreview,
       inputPreview: null,
       error: null,
+      interrupted: false,
     });
     this.pending.delete(runId);
   }
@@ -120,6 +121,7 @@ export class ObservabilityCallbackHandler extends BaseCallbackHandler {
       outputPreview: null,
       inputPreview: null,
       error: err.message,
+      interrupted: false,
     });
     this.pending.delete(runId);
   }
@@ -161,20 +163,34 @@ export class ObservabilityCallbackHandler extends BaseCallbackHandler {
       latencyMs: new Date(endedAt).getTime() - new Date(span.startedAt!).getTime(),
       outputPreview: this.preview(result),
       error: null,
+      interrupted: false,
     });
     this.pending.delete(runId);
   }
 
+  // GraphInterrupt is LangGraph's own interrupt() control-flow signal — the
+  // same codebase-wide convention used to recognize it in stream-handler.ts/
+  // task-execution.ts/the loop guard: by `.name`, not `instanceof` (it
+  // crosses at least one wrapper — PipeEventsError further up the stack —
+  // that only preserves `.name`). ask_user/shell_exec throw it from inside
+  // their tool function to pause the graph for a HITL answer; that's a
+  // successful, expected pause recoverThrownInterrupt handles further up the
+  // stack, never a tool failure, so it must not be recorded as span.error
+  // (see ADR-0075, GLOSSARY.md "Interrupted Span") — thread-reports' own
+  // failureCount/Failure Breakdown key off error !== null with no knowledge
+  // of tool names, so leaving error null here is what actually excludes it.
   override async handleToolError(err: Error, runId: string): Promise<void> {
     const span = this.pending.get(runId);
     if (!span) return;
     const endedAt = new Date().toISOString();
+    const interrupted = err.name === 'GraphInterrupt';
     this.completed.push({
       ...(span as SpanRecord),
       endedAt,
       latencyMs: new Date(endedAt).getTime() - new Date(span.startedAt!).getTime(),
       outputPreview: null,
-      error: err.message,
+      error: interrupted ? null : err.message,
+      interrupted,
     });
     this.pending.delete(runId);
   }
@@ -218,6 +234,7 @@ export class ObservabilityCallbackHandler extends BaseCallbackHandler {
         outputPreview: null,
         inputPreview: span.inputPreview ?? null,
         error: `turn failed before this span completed: ${err.message}`,
+        interrupted: false,
       });
     }
     this.pending.clear();
