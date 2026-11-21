@@ -173,6 +173,7 @@ describe('build/buildThreadReport', () => {
       toolCallCounts: { wiki_search: 1, ask_user: 2 },
       toolFailureCounts: {},
       otherFailures: {},
+      toolInterruptCounts: {},
     });
   });
 
