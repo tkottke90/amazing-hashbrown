@@ -5,6 +5,7 @@ import { describe, it, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { bootThreadStore, getThreadStore } from '../../services/thread-store.js';
+import { setActiveSseWriter, clearActiveSseWriter } from '../../agents/active-sse-writer.js';
 import { bootWakeupStore, getWakeupStore, type Wakeup } from '../../services/wakeup-store.js';
 import { bootWakeupRegistry, getWakeupRegistry } from '../../services/wakeup-registry.js';
 import { startTestServer } from '../../../tests/utilities/http-test-server.js';
@@ -176,6 +177,20 @@ describe('routes/v1/threads — GET /', () => {
 
     const allList = (await (await get('/?type=all')).json()) as { id: string }[];
     expect(allList.map((t) => t.id)).to.include('chat-1');
+  });
+
+  it('reports activeTurn true only for a thread with a live SSE writer registered [orchestration]', async () => {
+    setActiveSseWriter('chat-1', () => {});
+    try {
+      const body = (await (await get('/?type=all')).json()) as {
+        id: string;
+        activeTurn: boolean;
+      }[];
+      expect(body.find((t) => t.id === 'chat-1')?.activeTurn).to.equal(true);
+      expect(body.find((t) => t.id === 'wiki-1')?.activeTurn).to.equal(false);
+    } finally {
+      clearActiveSseWriter('chat-1');
+    }
   });
 });
 

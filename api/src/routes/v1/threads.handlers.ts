@@ -116,9 +116,13 @@ function conflict(error: string): HandlerFailure {
 export interface ThreadSummaryResponse extends ThreadSummary {
   afterAgentState: AfterAgentState;
   links: { self: string; afterAgentStatus: string };
+  activeTurn: boolean;
 }
 
-function withAfterAgentInfo(thread: ThreadSummary): ThreadSummaryResponse {
+function withAfterAgentInfo(
+  thread: ThreadSummary,
+  isTurnActive?: (threadId: string) => boolean,
+): ThreadSummaryResponse {
   return {
     ...thread,
     afterAgentState: getAfterAgentState(thread.id),
@@ -126,14 +130,16 @@ function withAfterAgentInfo(thread: ThreadSummary): ThreadSummaryResponse {
       self: `/api/v1/threads/${thread.id}`,
       afterAgentStatus: `/api/v1/threads/${thread.id}/after-agent-status`,
     },
+    activeTurn: isTurnActive?.(thread.id) ?? false,
   };
 }
 
 export function listThreadsHandler(
   store: ThreadStore,
   filter?: { type?: ThreadType; excludeArchived?: boolean; updatedAfter?: string },
+  opts: { isTurnActive?: (threadId: string) => boolean } = {},
 ): ThreadSummaryResponse[] {
-  return store.listThreads(filter).map(withAfterAgentInfo);
+  return store.listThreads(filter).map((t) => withAfterAgentInfo(t, opts.isTurnActive));
 }
 
 export function getAfterAgentStatusHandler(

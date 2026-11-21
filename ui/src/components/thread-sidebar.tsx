@@ -164,6 +164,8 @@ function ThreadRow({ thread, isActive }: ThreadRowProps) {
 
       {isRegenerating.value ? (
         <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+      ) : thread.activeTurn ? (
+        <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
       ) : thread.afterAgentState.status !== 'idle' ? (
         <AfterAgentIndicator state={thread.afterAgentState} className="shrink-0 px-1" />
       ) : (
