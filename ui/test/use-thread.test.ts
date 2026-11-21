@@ -10,6 +10,9 @@ import { SseHttpError } from '@/lib/sse';
 import {
   useThreadInstance,
   switchThread,
+  newThread as createNewThread,
+  forkThread,
+  activeThreadId,
   threads,
   hasThreadInstance,
   _resetThreadInstancesForTests,
@@ -717,6 +720,7 @@ describe('use-thread — switchThread model handling', () => {
         provider: 'ollama',
         model: 'llama3.2',
         archivedAt: null,
+        activeTurn: false,
       },
     ];
 
@@ -729,6 +733,79 @@ describe('use-thread — switchThread model handling', () => {
 
     const thread = newThread('t15');
     expect(thread.activeThreadModel.value).toEqual({ provider: 'ollama', model: 'llama3.2' });
+  });
+});
+
+// A turn should keep running in the background when the user navigates away
+// from it — switching threads is not a Stop click. See
+// docs/superpowers/specs/2026-11-20-background-thread-navigation-design.md.
+describe('use-thread — navigation no longer cancels an in-flight turn', () => {
+  it('does not call stopGeneration when switchThread navigates away from a streaming thread [unit]', async () => {
+    const current = newThread('t-leaving');
+    current.isStreaming.value = true;
+    const stopSpy = jest.spyOn(current, 'stopGeneration');
+    activeThreadId.value = 't-leaving';
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ messages: [] }),
+    }) as unknown as typeof fetch;
+
+    await switchThread('t-other');
+
+    expect(stopSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not call stopGeneration when createNewThread navigates away from a streaming thread [unit]', () => {
+    const current = newThread('t-leaving-2');
+    current.isStreaming.value = true;
+    const stopSpy = jest.spyOn(current, 'stopGeneration');
+    activeThreadId.value = 't-leaving-2';
+
+    createNewThread();
+
+    expect(stopSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not call stopGeneration when forkThread navigates away from a streaming thread [unit]', async () => {
+    const current = newThread('t-leaving-3');
+    current.isStreaming.value = true;
+    const stopSpy = jest.spyOn(current, 'stopGeneration');
+    activeThreadId.value = 't-leaving-3';
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 't-forked', messages: [] }),
+    }) as unknown as typeof fetch;
+
+    await forkThread('t-leaving-3', 2);
+
+    expect(stopSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('use-thread — switchThread skips hydrate() for an already-streaming target', () => {
+  it('does not fetch when the target thread is already streaming [unit]', async () => {
+    const target = newThread('t-target-streaming');
+    target.isStreaming.value = true;
+    const fetchSpy = jest.fn();
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    await switchThread('t-target-streaming');
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('still fetches (hydrates) when the target thread is not streaming [unit]', async () => {
+    const fetchSpy = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ messages: [] }),
+    });
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    await switchThread('t-target-idle');
+
+    expect(fetchSpy).toHaveBeenCalled();
   });
 });
 

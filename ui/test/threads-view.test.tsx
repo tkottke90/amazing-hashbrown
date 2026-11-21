@@ -35,6 +35,7 @@ function makeThread(id: string, title: string, type: ThreadSummary['type']): Thr
     provider: null,
     model: null,
     archivedAt: null,
+    activeTurn: false,
   };
 }
 

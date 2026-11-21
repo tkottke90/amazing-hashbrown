@@ -91,6 +91,12 @@ function handleEvent(event: AppBroadcastEvent): void {
         thread.markBackgroundTurn(false);
         if (!thread.isStreaming.value) void thread.hydrate();
       }
+      // Also patch the sidebar list directly — covers a thread never opened
+      // in this tab, which has no ThreadInstance to carry a
+      // backgroundTurnActive signal of its own.
+      threads.value = threads.value.map((t) =>
+        t.id === event.threadId ? { ...t, activeTurn: false } : t,
+      );
       return;
     }
     case 'thread_turn_started':
@@ -99,6 +105,9 @@ function handleEvent(event: AppBroadcastEvent): void {
       if (hasThreadInstance(event.threadId)) {
         useThreadInstance(event.threadId).markBackgroundTurn(true);
       }
+      threads.value = threads.value.map((t) =>
+        t.id === event.threadId ? { ...t, activeTurn: true } : t,
+      );
       return;
     case 'after_agent_state':
       // Replaces the old 3.5s thread-list poll after each chat turn. Patch

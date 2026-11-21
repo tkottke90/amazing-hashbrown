@@ -132,6 +132,7 @@ function makeThread(overrides: Partial<ThreadSummary> = {}): ThreadSummary {
     provider: null,
     model: null,
     archivedAt: null,
+    activeTurn: false,
     ...overrides,
   };
 }
@@ -484,6 +485,27 @@ describe('hooks/use-live-events', () => {
 
     expect(mockUseThreadInstance).not.toHaveBeenCalled();
     expect(mockHydrate).not.toHaveBeenCalled();
+  });
+
+  it("patches the matching thread's activeTurn to true on thread_turn_started, leaving other threads untouched, regardless of hasThreadInstance [unit]", () => {
+    threads.value = [makeThread({ id: 'thread-1' }), makeThread({ id: 'thread-2' })];
+    mockHasThreadInstance.mockReturnValue(false);
+    connectLiveEvents();
+
+    currentSource().emit({ type: 'thread_turn_started', threadId: 'thread-1', source: 'wakeup' });
+
+    expect(threads.value.find((t) => t.id === 'thread-1')!.activeTurn).toBe(true);
+    expect(threads.value.find((t) => t.id === 'thread-2')!.activeTurn).toBe(false);
+  });
+
+  it("patches the matching thread's activeTurn to false on thread_turn_completed, regardless of hasThreadInstance [unit]", () => {
+    threads.value = [makeThread({ id: 'thread-1', activeTurn: true })];
+    mockHasThreadInstance.mockReturnValue(false);
+    connectLiveEvents();
+
+    currentSource().emit({ type: 'thread_turn_completed', threadId: 'thread-1' });
+
+    expect(threads.value.find((t) => t.id === 'thread-1')!.activeTurn).toBe(false);
   });
 
   it('silently ignores a payload that fails schema validation', () => {

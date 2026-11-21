@@ -181,6 +181,22 @@ describe('routes/v1/threads.handlers', () => {
       expect(types.size).to.be.greaterThan(1);
       expect(types.has('task')).to.equal(true);
     });
+
+    it('reports activeTurn from the injected check, so a client loading the list mid-turn shows it busy [unit]', () => {
+      store.upsertThreadOnFirstMessage('t-busy', 'Busy');
+      store.upsertThreadOnFirstMessage('t-idle', 'Idle');
+
+      const list = listThreadsHandler(store, undefined, { isTurnActive: (id) => id === 't-busy' });
+
+      expect(list.find((t) => t.id === 't-busy')?.activeTurn).to.equal(true);
+      expect(list.find((t) => t.id === 't-idle')?.activeTurn).to.equal(false);
+    });
+
+    it('reports activeTurn false for every row when no check is injected [unit]', () => {
+      store.upsertThreadOnFirstMessage('t-default', 'Default');
+      const list = listThreadsHandler(store);
+      expect(list.find((t) => t.id === 't-default')?.activeTurn).to.equal(false);
+    });
   });
 
   describe('getThreadHandler', () => {

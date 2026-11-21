@@ -97,6 +97,11 @@ export interface ThreadSummary {
   // the /threads management page (fetchAllThreads/allThreads below), which
   // always shows every thread regardless of archive state.
   archivedAt: string | null;
+  // True while a turn (started here, on another tab, or headlessly) holds
+  // this thread, even if it was never opened in this tab — lets the sidebar
+  // show it generating. See docs/superpowers/specs/
+  // 2026-11-20-background-thread-navigation-design.md.
+  activeTurn: boolean;
 }
 
 // 'task' is one automated task run's own thread — opened read-only (see
@@ -985,9 +990,6 @@ export function hasThreadInstance(threadId: string): boolean {
 // ---- Thread CRUD (sidebar actions, global chat only) ----
 
 export async function switchThread(id: string): Promise<void> {
-  const current = useThreadInstance(activeThreadId.value);
-  if (current.isStreaming.value) current.stopGeneration();
-
   activeThreadId.value = id;
   persistActiveThreadId(id);
 
@@ -997,12 +999,13 @@ export async function switchThread(id: string): Promise<void> {
     threadMeta?.provider && threadMeta?.model
       ? { provider: threadMeta.provider, model: threadMeta.model }
       : next.activeThreadModel.value;
-  await next.hydrate();
+  // Skip the refetch when this tab's own live stream is already running for
+  // the target thread — hydrate() would just discard its own result anyway
+  // (its internal isStreaming guard), so this avoids the wasted request.
+  if (!next.isStreaming.value) await next.hydrate();
 }
 
 export function newThread(): string {
-  const current = useThreadInstance(activeThreadId.value);
-  if (current.isStreaming.value) current.stopGeneration();
   const id = randomUUID();
   activeThreadId.value = id;
   persistActiveThreadId(id);
@@ -1061,9 +1064,6 @@ export async function forkThread(id: string, atSeq: number): Promise<string> {
   });
   if (!res.ok) return id;
   const data = (await res.json()) as { id: string; messages: unknown[] };
-
-  const current = useThreadInstance(activeThreadId.value);
-  if (current.isStreaming.value) current.stopGeneration();
 
   activeThreadId.value = data.id;
   persistActiveThreadId(data.id);

@@ -60,12 +60,16 @@ threadsRouter.get('/', (req: Request, res: Response) => {
         ? new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString()
         : undefined;
     res.json(
-      listThreadsHandler(getThreadStore(), { type: 'chat', excludeArchived: true, updatedAfter }),
+      listThreadsHandler(
+        getThreadStore(),
+        { type: 'chat', excludeArchived: true, updatedAfter },
+        { isTurnActive },
+      ),
     );
   } else if (type === 'all') {
-    res.json(listThreadsHandler(getThreadStore()));
+    res.json(listThreadsHandler(getThreadStore(), undefined, { isTurnActive }));
   } else if (isThreadType(type)) {
-    res.json(listThreadsHandler(getThreadStore(), { type }));
+    res.json(listThreadsHandler(getThreadStore(), { type }, { isTurnActive }));
   } else {
     res.status(400).json({ error: `Unknown thread type "${type}"` });
   }

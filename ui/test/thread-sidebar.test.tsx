@@ -20,6 +20,7 @@ function makeThread(id: string): ThreadSummary {
     provider: null,
     model: null,
     archivedAt: null,
+    activeTurn: false,
   };
 }
 
@@ -150,6 +151,48 @@ describe('ThreadRow dropdown — Archive', () => {
     );
     // No "Archive this thread?" confirmation text anywhere — unlike Delete.
     expect(screen.queryByText(/archive this thread/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('ThreadRow — activeTurn indicator', () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    cleanup();
+    threads.value = [];
+    global.fetch = originalFetch;
+    jest.restoreAllMocks();
+  });
+
+  function stubBackgroundFetches() {
+    global.fetch = jest.fn().mockImplementation((url: string) => {
+      if (url === '/api/v1/threads' || url === '/api/v1/threads?type=all') {
+        return Promise.resolve({ ok: true, json: async () => [] });
+      }
+      return Promise.resolve({ ok: false, json: async () => ({}) });
+    }) as unknown as typeof fetch;
+  }
+
+  it('shows a busy spinner instead of the options menu when a thread is generating in the background [unit]', () => {
+    stubBackgroundFetches();
+    const thread = { ...makeThread('t-busy'), activeTurn: true };
+    threads.value = [thread];
+
+    render(<ThreadSidebar />);
+
+    expect(
+      screen.queryByRole('button', { name: `Options for ${thread.title}` }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows the options menu as usual when a thread has no active turn [unit]', () => {
+    stubBackgroundFetches();
+    const thread = makeThread('t-idle');
+    threads.value = [thread];
+
+    render(<ThreadSidebar />);
+
+    expect(screen.getByRole('button', { name: `Options for ${thread.title}` })).toBeInTheDocument();
   });
 });
 
