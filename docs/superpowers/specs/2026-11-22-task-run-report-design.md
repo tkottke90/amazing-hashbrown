@@ -154,7 +154,7 @@ Two new files under `api/src/services/metrics/`, each a thin wrapper around
 (`id`, `label`, `displayType`, `resolve({workspaceStore, ...})`):
 
 - `avg-runs-to-complete.metric.ts` — `displayType: 'big-number'`, `value:
-  stats.avgRunsToComplete ?? 0`, `unit: 'runs'`.
+stats.avgRunsToComplete ?? 0`, `unit: 'runs'`.
 - `task-non-completion-rate.metric.ts` — `displayType: 'big-number'`,
   `value` as a percentage (`stats.nonCompletionRate` scaled to 0-100, or `0`
   when `terminalTaskCount` is `0`), `unit: '%'`.
