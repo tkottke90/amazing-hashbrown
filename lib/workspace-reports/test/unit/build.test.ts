@@ -73,11 +73,13 @@ interface FakeWorkspaceStoreFixtures {
 function fakeWorkspaceStore(fixtures: FakeWorkspaceStoreFixtures): WorkspaceStoreLike {
   return {
     getWorkspace: () => fixtures.workspace,
+    getTask: (taskId: string) => fixtures.tasks?.find((t) => t.id === taskId) ?? null,
     listTasks: () => fixtures.tasks ?? [],
     listTaskRuns: (taskId: string) => fixtures.runsByTask?.[taskId] ?? [],
     failedRunStreaks: () => fixtures.failedStreaks ?? new Map(),
     handedOffRunCounts: () => fixtures.handoffCounts ?? new Map(),
-    listTaskProgressEntriesForWorkspace: () => fixtures.progressEntries ?? [],
+    listTaskProgressEntriesForTask: (taskId: string) =>
+      (fixtures.progressEntries ?? []).filter((p) => p.taskId === taskId),
   };
 }
 
@@ -101,6 +103,7 @@ function makeTask(overrides: Partial<TaskLike> = {}): TaskLike {
     origin: 'agent',
     provider: 'ollama',
     model: 'qwen3:14b',
+    workspaceId: null,
     trackerType: null,
     trackerId: null,
     ...overrides,

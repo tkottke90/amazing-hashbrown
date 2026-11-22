@@ -29,6 +29,7 @@
     "@tkottke90/rlm": "*",
     "@tkottke90/shell-executor": "*",
     "@tkottke90/skills-manager": "*",
+    "@tkottke90/task-run-reports": "*",
     "@tkottke90/thread-reports": "*",
     "@tkottke90/workspace-reports": "*",
     "@tkottke90/tools-manager": "*",

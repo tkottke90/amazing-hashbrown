@@ -1877,38 +1877,39 @@ describe('services/workspace-store', () => {
       expect(store.listTaskProgressEntries('github', 'issue-1')).to.have.length(1);
     });
 
-    describe('listTaskProgressEntriesForWorkspace', () => {
-      it('returns entries across every tracker a workspace has used, newest first', () => {
+    describe('listTaskProgressEntriesForTask', () => {
+      it('returns entries across every tracker a task has used, newest first', () => {
         store.insertTaskProgressEntry(
           makeEntry({
-            workspaceId: 'ws-1',
+            taskId: 'task-1',
             trackerType: 'github',
             trackerId: 'issue-1',
-            taskId: 'task-older',
             completedAt: '2026-01-01T00:00:00.000Z',
           }),
         );
         store.insertTaskProgressEntry(
           makeEntry({
-            workspaceId: 'ws-1',
+            taskId: 'task-1',
             trackerType: 'linear',
             trackerId: 'TASK-9',
-            taskId: 'task-newer',
             completedAt: '2026-01-02T00:00:00.000Z',
           }),
         );
 
-        const entries = store.listTaskProgressEntriesForWorkspace('ws-1');
-        expect(entries.map((e) => e.taskId)).to.deep.equal(['task-newer', 'task-older']);
+        const entries = store.listTaskProgressEntriesForTask('task-1');
+        expect(entries.map((e) => e.completedAt)).to.deep.equal([
+          '2026-01-02T00:00:00.000Z',
+          '2026-01-01T00:00:00.000Z',
+        ]);
       });
 
-      it("excludes another workspace's entries", () => {
-        store.insertTaskProgressEntry(makeEntry({ workspaceId: 'ws-1', taskId: 'task-a' }));
-        store.insertTaskProgressEntry(makeEntry({ workspaceId: 'ws-2', taskId: 'task-b' }));
+      it("excludes another task's entries", () => {
+        store.insertTaskProgressEntry(makeEntry({ taskId: 'task-a' }));
+        store.insertTaskProgressEntry(makeEntry({ taskId: 'task-b' }));
 
-        expect(
-          store.listTaskProgressEntriesForWorkspace('ws-1').map((e) => e.taskId),
-        ).to.deep.equal(['task-a']);
+        expect(store.listTaskProgressEntriesForTask('task-a').map((e) => e.taskId)).to.deep.equal([
+          'task-a',
+        ]);
       });
     });
   });
@@ -2529,6 +2530,63 @@ describe('services/workspace-store', () => {
       store.completeQueueEntry(entry.id, 'done');
 
       expect(store.handedOffRunCounts([task.id]).has(task.id)).to.equal(false);
+    });
+
+    describe('taskCompletionStats', () => {
+      it('returns null averages/rates and zero counts when there is no data [unit]', () => {
+        expect(store.taskCompletionStats()).to.deep.equal({
+          avgRunsToComplete: null,
+          completedTaskCount: 0,
+          nonCompletionRate: null,
+          terminalTaskCount: 0,
+        });
+      });
+
+      it('averages run count only across tasks that reached done, excluding in-progress tasks [unit]', () => {
+        const twoRunTask = store.createTask({ title: 'two runs', assignedTo: 'agent' });
+        store.completeQueueEntry(store.enqueueTask(twoRunTask.id).id, 'failed');
+        store.completeQueueEntry(store.enqueueTask(twoRunTask.id).id, 'done');
+
+        const oneRunTask = store.createTask({ title: 'one run', assignedTo: 'agent' });
+        store.completeQueueEntry(store.enqueueTask(oneRunTask.id).id, 'done');
+
+        // Still in progress — must not drag the average down toward its
+        // current (not yet final) run count.
+        const inProgressTask = store.createTask({ title: 'in progress', assignedTo: 'agent' });
+        store.enqueueTask(inProgressTask.id);
+
+        const stats = store.taskCompletionStats();
+        expect(stats.completedTaskCount).to.equal(2);
+        expect(stats.avgRunsToComplete).to.equal(1.5);
+      });
+
+      it('computes the non-completion rate from failed+cancelled over every terminal task [unit]', () => {
+        const done = store.createTask({ title: 'done', assignedTo: 'agent' });
+        store.completeQueueEntry(store.enqueueTask(done.id).id, 'done');
+
+        const failed = store.createTask({ title: 'failed', assignedTo: 'agent' });
+        store.completeQueueEntry(store.enqueueTask(failed.id).id, 'failed');
+
+        const cancelled = store.createTask({ title: 'cancelled', assignedTo: 'agent' });
+        store.completeQueueEntry(store.enqueueTask(cancelled.id).id, 'cancelled');
+
+        // Still in progress — must not count toward the terminal denominator.
+        const inProgressTask = store.createTask({ title: 'in progress', assignedTo: 'agent' });
+        store.enqueueTask(inProgressTask.id);
+
+        const stats = store.taskCompletionStats();
+        expect(stats.terminalTaskCount).to.equal(3);
+        expect(stats.nonCompletionRate).to.be.closeTo(2 / 3, 0.0001);
+      });
+
+      it('a handed_off run never reaches done or a terminal task status, so it counts toward neither [unit]', () => {
+        const task = store.createTask({ title: 'handed off', assignedTo: 'agent' });
+        store.completeQueueEntry(store.enqueueTask(task.id).id, 'handed_off');
+
+        const stats = store.taskCompletionStats();
+        expect(stats.completedTaskCount).to.equal(0);
+        expect(stats.terminalTaskCount).to.equal(0);
+      });
     });
 
     describe('exhaustionStreaks (ADR-0056)', () => {

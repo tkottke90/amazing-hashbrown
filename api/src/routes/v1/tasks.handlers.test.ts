@@ -28,6 +28,7 @@ import {
   saveHandOffGuidanceHandler,
   answerTaskPrompt,
   listTaskRunsHandler,
+  generateTaskRunReportHandler,
 } from './tasks.handlers.js';
 import { ThreadStore } from '../../services/thread-store.js';
 import { recordHitlPrompt, mirrorPendingTaskPrompts } from '../../agents/thread-message-writer.js';
@@ -1470,6 +1471,41 @@ describe('routes/v1/tasks.handlers', () => {
     it('404s for an unknown task so the drawer can tell "gone" from "no runs yet" [unit]', () => {
       const result = listTaskRunsHandler(store, 'missing');
       expect(result).to.deep.include({ ok: false, status: 404 });
+    });
+  });
+
+  describe('generateTaskRunReportHandler()', () => {
+    let store: WorkspaceStore;
+    let threadStore: ThreadStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'tasks-handlers-report-test-'));
+      store = new WorkspaceStore(openDatabase(join(dir, 'workspaces.db')));
+      threadStore = new ThreadStore(openDatabase(join(dir, 'threads.db')));
+      bootObservability(openDatabase(join(dir, 'observability.db')));
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('404s for an unknown task [unit]', async () => {
+      const result = await generateTaskRunReportHandler(store, threadStore, 'missing');
+      expect(result).to.deep.include({ ok: false, status: 404 });
+    });
+
+    it('delegates to @tkottke90/task-run-reports and renders the result as HTML [orchestration]', async () => {
+      const task = store.createTask({ title: 'Build labeler automation' });
+      store.completeQueueEntry(store.enqueueTask(task.id).id, 'done');
+
+      const result = await generateTaskRunReportHandler(store, threadStore, task.id);
+
+      expect(result.ok).to.equal(true);
+      if (!result.ok) return;
+      expect(result.data.html).to.include('<!DOCTYPE html>');
+      expect(result.data.html).to.include('Build labeler automation');
+      expect(result.data.html).to.include('Runs to complete');
     });
   });
 

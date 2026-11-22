@@ -8,6 +8,8 @@ import { workspaceListMetric } from './metrics/workspace-list.metric.js';
 import { versionInfoMetric } from './metrics/version-info.metric.js';
 import { usageByProviderTokensMetric } from './metrics/usage-by-provider-tokens.metric.js';
 import { usageByModelTokensMetric } from './metrics/usage-by-model-tokens.metric.js';
+import { avgRunsToCompleteMetric } from './metrics/avg-runs-to-complete.metric.js';
+import { taskNonCompletionRateMetric } from './metrics/task-non-completion-rate.metric.js';
 
 const metrics = new Map<string, Metric>();
 
@@ -34,6 +36,8 @@ registerMetric(workspaceListMetric);
 registerMetric(versionInfoMetric);
 registerMetric(usageByProviderTokensMetric);
 registerMetric(usageByModelTokensMetric);
+registerMetric(avgRunsToCompleteMetric);
+registerMetric(taskNonCompletionRateMetric);
 
 /**
  * Resolves a `source: 'system'` widget's live value in place (ADR-0011) —

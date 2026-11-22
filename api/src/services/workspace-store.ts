@@ -298,6 +298,22 @@ export interface HandedOffRunSummary {
   lastSummary: string | null;
 }
 
+// System-wide "how many runs does it take a task to complete" aggregate —
+// see taskCompletionStats(). Read off tasks.status (not task_queue's own
+// per-run status, which also has 'handed_off' — a resumed task moves past
+// that back to a real task-level status, so the task's own status is what
+// done/failed/cancelled means here).
+export interface TaskCompletionStats {
+  // Average task_queue-row-count per task, over tasks with status='done'.
+  // null when no task has ever reached 'done' yet.
+  avgRunsToComplete: number | null;
+  completedTaskCount: number;
+  // (failed+cancelled) / (done+failed+cancelled). null when no task has
+  // ever reached a terminal status yet.
+  nonCompletionRate: number | null;
+  terminalTaskCount: number;
+}
+
 // A task's trailing run of Exhausted Runs with unchanged scope — see
 // exhaustionStreaks(). Narrower than FailedRunStreak: only out_of_steps/
 // turn_overflow failures count, and a scope change also breaks it. See
@@ -2192,19 +2208,19 @@ export class WorkspaceStore extends BaseStore {
     return rows.map(mapTaskProgressEntry);
   }
 
-  // Newest first, across every tracker a workspace's tasks have ever used —
-  // listTaskProgressEntries() above is scoped to one (trackerType, trackerId)
-  // pair, which isn't enough for a workspace-wide rollup (the workspace
-  // retrospective report). workspace_id is denormalized onto every entry
-  // precisely for this kind of cross-tracker query — see insertTaskProgressEntry.
-  listTaskProgressEntriesForWorkspace(workspaceId: string): TaskProgressEntry[] {
+  // Newest first, across every tracker a single task has ever used — the
+  // task-run report's own rollup (buildTaskRunReport, composed per task by
+  // both the standalone report and the workspace retrospective). Unlike
+  // listTaskProgressEntries() above, not scoped to one (trackerType,
+  // trackerId) pair.
+  listTaskProgressEntriesForTask(taskId: string): TaskProgressEntry[] {
     const rows = this.db
       .prepare(
         `SELECT * FROM task_progress_entries
-         WHERE workspace_id = ?
+         WHERE task_id = ?
          ORDER BY completed_at DESC, id DESC`,
       )
-      .all(workspaceId) as RawTaskProgressRow[];
+      .all(taskId) as RawTaskProgressRow[];
     return rows.map(mapTaskProgressEntry);
   }
 
@@ -2406,6 +2422,48 @@ export class WorkspaceStore extends BaseStore {
       result.set(row.task_id, { count: row.count, lastSummary: row.last_summary });
     }
     return result;
+  }
+
+  // System-wide "runs to complete" + non-completion aggregate, backing the
+  // avg-runs-to-complete and task-non-completion-rate dashboard metrics. A
+  // task in any non-terminal status (pending/scheduled/ready/running/
+  // waiting_on_user/blocked) is excluded from both — counting an
+  // in-progress task's current run count would bias the average downward
+  // (it's sampled mid-flight, before it's shown its true eventual value).
+  taskCompletionStats(): TaskCompletionStats {
+    const avgRow = this.db
+      .prepare(
+        `SELECT AVG(run_count) AS avg_runs, COUNT(*) AS completed_count
+         FROM (
+           SELECT tasks.id, COUNT(task_queue.id) AS run_count
+           FROM tasks
+           JOIN task_queue ON task_queue.task_id = tasks.id
+           WHERE tasks.status = 'done'
+           GROUP BY tasks.id
+         )`,
+      )
+      .get() as { avg_runs: number | null; completed_count: number };
+
+    const statusRows = this.db
+      .prepare(
+        `SELECT status, COUNT(*) AS n FROM tasks WHERE status IN ('done', 'failed', 'cancelled') GROUP BY status`,
+      )
+      .all() as { status: string; n: number }[];
+    const counts = Object.fromEntries(statusRows.map((r) => [r.status, r.n])) as Record<
+      string,
+      number
+    >;
+    const terminalTaskCount = (counts.done ?? 0) + (counts.failed ?? 0) + (counts.cancelled ?? 0);
+
+    return {
+      avgRunsToComplete: avgRow.avg_runs,
+      completedTaskCount: avgRow.completed_count,
+      nonCompletionRate:
+        terminalTaskCount > 0
+          ? ((counts.failed ?? 0) + (counts.cancelled ?? 0)) / terminalTaskCount
+          : null,
+      terminalTaskCount,
+    };
   }
 
   // For each task, how many of its most recent FINISHED runs form an
