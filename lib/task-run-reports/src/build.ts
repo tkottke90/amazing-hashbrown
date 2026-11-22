@@ -89,7 +89,9 @@ export function buildTaskRunReport(
   const anomalies: Anomaly[] = [];
 
   const runs: TaskRunRetrospective[] = stores.workspaceStore.listTaskRuns(taskId).map((run) => {
-    const threadReport = run.threadId ? buildThreadReport(run.threadId, stores, reportOptions) : null;
+    const threadReport = run.threadId
+      ? buildThreadReport(run.threadId, stores, reportOptions)
+      : null;
     if (threadReport) {
       anomalies.push(...findWikiMismatches(threadReport, expectedWikiId));
       anomalies.push(...findRecursionEscalations(threadReport, taskId));

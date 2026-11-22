@@ -82,8 +82,7 @@ interface TaskRunReportData {
   taskId: string;
   generatedAt: string;
   task: TaskLike; // title, status, origin, provider, model, workspaceId
-  runs: TaskRunRetrospective[]; // reused shape: runId, runNumber, status,
-                                 // summary, recoveryAttempts, threadReport
+  runs: TaskRunRetrospective[]; // reused shape: runId, runNumber, status, summary, recoveryAttempts, threadReport
   anomalies: Anomaly[]; // reused Anomaly union from workspace-reports
   handoff: HandoffSummary | null; // reused shape, singular (one task, not a list)
   progressEntries: TaskProgressEntryLike[];
@@ -135,13 +134,10 @@ of the same underlying counts:
 
 ```ts
 interface TaskCompletionStats {
-  avgRunsToComplete: number | null; // avg task_queue-row-count per task,
-                                     // over tasks with status='done';
-                                     // null if none yet
+  avgRunsToComplete: number | null; // avg task_queue-row-count per task, over tasks with status='done'; null if none yet
   completedTaskCount: number;
-  nonCompletionRate: number | null; // (failed+cancelled) / (done+failed+cancelled);
-                                     // null if no terminal tasks yet
-  terminalTaskCount: number;        // done + failed + cancelled
+  nonCompletionRate: number | null; // (failed+cancelled) / (done+failed+cancelled); null if no terminal tasks yet
+  terminalTaskCount: number; // done + failed + cancelled
 }
 ```
 

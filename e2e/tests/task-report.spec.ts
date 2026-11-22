@@ -16,7 +16,7 @@ const suite: TestSuite = {
   steps: [
     {
       tags: ['@user-workflow'],
-      action: "Open an existing task's drawer and click the \"Task Report\" button",
+      action: 'Open an existing task\'s drawer and click the "Task Report" button',
       expectedOutcome: 'A new tab opens and displays the mocked HTML report content',
       test: () => {},
     },
