@@ -19,7 +19,7 @@ Traced to the exact pinned library versions this repo uses (`langchain@1.5.16`, 
 1. `@langchain/mcp-adapters` wraps every MCP tool call; when the server's `CallToolResult.isError` is `true`, it throws **its own locally-defined** `ToolException` class (`dist/tools.js`) — a plain `Error` subclass named `"ToolException"`, not imported from or recognized by `@langchain/core`.
 2. This repo's `mcpToolToLangChain()` (`api/src/agents/chat-agent.ts`) wraps every MCP tool with `tool(async (args) => { const result = await t.execute(realArgs); ... })` — no `try`/`catch`, so that exception propagates unchanged.
 3. All four `createAgent()` builders in `chat-agent.ts` (`buildChatAgent`, `buildWorkspaceChatAgent`, `buildTaskAgent`, `buildSubAgentAgent`) register several `wrapToolCall` middlewares (skill gating, binary-content-fetch, tool-access, etc.). `createAgent`'s own parameter type (`langchain`'s `CreateAgentParams`) has **no field** to influence tool-error handling, and does not accept a pre-built `ToolNode` in place of a plain tool array — confirmed directly from `dist/agents/types.d.ts` and the `ReactAgent` constructor, which always builds its internal `ToolNode` with only `{ signal, wrapToolCall }`.
-4. Inside `langchain`'s `ToolNode` (`dist/agents/nodes/ToolNode.cjs`): whenever **any** `wrapToolCall` middleware is registered on the agent (always true here), every tool-execution error is labeled `isMiddlewareError: true` — regardless of whether it actually originated in middleware logic or just passed cleanly through it from the real tool. Because the default `handleToolErrors` is a *function* (`defaultHandleToolErrors`), not the literal boolean `true`, the check `errorFromMiddleware && this.handleToolErrors !== true` is always true for every such error — so it is **rethrown** rather than converted into a recoverable error `ToolMessage`.
+4. Inside `langchain`'s `ToolNode` (`dist/agents/nodes/ToolNode.cjs`): whenever **any** `wrapToolCall` middleware is registered on the agent (always true here), every tool-execution error is labeled `isMiddlewareError: true` — regardless of whether it actually originated in middleware logic or just passed cleanly through it from the real tool. Because the default `handleToolErrors` is a _function_ (`defaultHandleToolErrors`), not the literal boolean `true`, the check `errorFromMiddleware && this.handleToolErrors !== true` is always true for every such error — so it is **rethrown** rather than converted into a recoverable error `ToolMessage`.
 5. The rethrown error crashes the whole LangGraph run. `stream-handler.ts`'s `pipeEvents`/`streamChatToSse` (and the identical pattern in `task-execution.ts`/`headless-turn.ts`) catch it, classify it `unknown` (`error-classification.ts` has no branch for a tool exception), and end the turn via `failAssistant` — the generic failure the user sees, and the reason a headless/task run simply dies with no one around to resume it.
 
 This is **systemic**, not MCP-specific in mechanism: any tool whose logic throws (instead of returning an error string) hits the same wall under this app's agents, because they always have at least one `wrapToolCall` middleware bound. It surfaces disproportionately with MCP tools because `@langchain/mcp-adapters` converts ordinary MCP business errors into thrown exceptions, while this repo's own hand-written tools mostly return error text instead of throwing.
@@ -53,7 +53,7 @@ wrapToolCall: async (request, handler) => {
       status: 'error',
     });
   }
-}
+};
 ```
 
 Key decisions baked into this shape:
@@ -73,8 +73,8 @@ No changes needed to `mcpToolToLangChain()` itself, nor to `task-execution.ts`/`
 ## 4. Deliberately deferred (not part of this fix)
 
 - **Same-tool retry-loop prevention.** The reported thread showed the model retrying the same permanently-broken call multiple times before the crash. Once the error is a normal `ToolMessage`, the model should reason its way out of repeating it — ship recovery first; revisit explicit loop-breaking only if looping is still observed afterward.
-- **A new `ChatErrorCategory` (e.g. `tool_error`).** Once most tool errors are recovered in-turn, a turn only still *ends* on a tool failure in a genuinely unanticipated case (e.g. the middleware chain itself throwing). That residual case keeps falling to `unknown` in `error-classification.ts` rather than growing a category for an outcome this fix is specifically trying to make rare.
-- **Oversized error-message capping/offload.** `mcpToolToLangChain()` already offloads huge *successful* tool results via the existing stub/`tool-content-store` mechanism. An error message can theoretically be large too (`ToolInvocationError`'s message embeds a full stack trace), but this is deferred — ship the raw passthrough as-is, revisit only if an oversized error message is actually observed in practice.
+- **A new `ChatErrorCategory` (e.g. `tool_error`).** Once most tool errors are recovered in-turn, a turn only still _ends_ on a tool failure in a genuinely unanticipated case (e.g. the middleware chain itself throwing). That residual case keeps falling to `unknown` in `error-classification.ts` rather than growing a category for an outcome this fix is specifically trying to make rare.
+- **Oversized error-message capping/offload.** `mcpToolToLangChain()` already offloads huge _successful_ tool results via the existing stub/`tool-content-store` mechanism. An error message can theoretically be large too (`ToolInvocationError`'s message embeds a full stack trace), but this is deferred — ship the raw passthrough as-is, revisit only if an oversized error message is actually observed in practice.
 
 ## 5. Testing Plan
 
@@ -86,7 +86,7 @@ Orchestration test (`api/src/agents/tool-error-recovery.middleware.test.ts`), pe
 - A successful `handler()` call passes its result through untouched (`ToolMessage` or `Command`).
 - The `logger.warn` call fires on the error path with the tool name, and does not fire on the success or bubble-up paths.
 
-This is deterministic harness behavior (how a thrown JS error is classified and converted), not model-output-dependent — it belongs in this repo's Mocha/Chai developer-test suite per `AGENTS.md`'s existing convention, not an eval-harness scenario (EDD governs LLM-facing *behavior*, not this kind of deterministic control flow).
+This is deterministic harness behavior (how a thrown JS error is classified and converted), not model-output-dependent — it belongs in this repo's Mocha/Chai developer-test suite per `AGENTS.md`'s existing convention, not an eval-harness scenario (EDD governs LLM-facing _behavior_, not this kind of deterministic control flow).
 
 ## 6. Files Changed (expected)
 

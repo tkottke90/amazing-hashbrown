@@ -135,6 +135,7 @@ describe('agents/chat-agent', () => {
         'ToolAccessMiddleware',
         'McpToolDiscoveryMiddleware',
         'AmbientContextMiddleware',
+        'ToolErrorRecoveryMiddleware',
       ]);
     });
 
