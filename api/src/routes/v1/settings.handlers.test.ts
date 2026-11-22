@@ -1942,6 +1942,7 @@ describe('routes/v1/settings.handlers', () => {
         noopSync,
         noopSync,
         noopSync,
+        noopSync,
       );
     }
 
