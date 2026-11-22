@@ -14,6 +14,10 @@ function queueWithLimits(limits: Record<string, number>): ProviderQueue {
   return new ProviderQueue((name) => limits[name] ?? 1);
 }
 
+function caller(threadId: string): { threadId: string; kind: 'chat'; label: string } {
+  return { threadId, kind: 'chat', label: `Chat: ${threadId}` };
+}
+
 describe('services/provider-queue', () => {
   describe('ProviderQueue#acquireSlot / releaseSlot — accounting', () => {
     it('serializes requests when maxConcurrency is 1', async () => {
@@ -68,6 +72,18 @@ describe('services/provider-queue', () => {
 
       // releaseSlot on an unlimited gate is a no-op, not an accounting bug.
       expect(() => queue.releaseSlot('p')).to.not.throw();
+    });
+
+    it('a caller-less release removes an anonymous placeholder, never a real caller entry', async () => {
+      const queue = queueWithLimits({ p: 2 });
+      await queue.acquireSlot('p', 'sync', { caller: caller('t1') }); // named
+      await queue.acquireSlot('p', 'sync'); // anonymous — no caller passed
+
+      // No caller argument here — must remove the anonymous placeholder, not
+      // t1's entry, regardless of which was acquired first.
+      queue.releaseSlot('p');
+
+      expect(queue.getGateSnapshot('p').active).to.deep.equal([caller('t1')]);
     });
   });
 
@@ -274,10 +290,6 @@ describe('services/provider-queue', () => {
   });
 
   describe('ProviderQueue#getGateSnapshot / getAllGateSnapshots — caller identity', () => {
-    function caller(threadId: string): { threadId: string; kind: 'chat'; label: string } {
-      return { threadId, kind: 'chat', label: `Chat: ${threadId}` };
-    }
-
     it('records an immediately-granted caller in active, not waiting', async () => {
       const queue = queueWithLimits({ p: 1 });
       await queue.acquireSlot('p', 'sync', { caller: caller('t1') });
@@ -339,6 +351,73 @@ describe('services/provider-queue', () => {
       expect(snapshots).to.deep.equal([
         { provider: 'p', maxConcurrency: 3, active: [], waiting: [] },
       ]);
+    });
+  });
+
+  describe('ProviderQueue#refreshLimits', () => {
+    it('raising maxConcurrency immediately dispatches queued requests, sync before async', async () => {
+      const limits = { p: 1 };
+      const queue = queueWithLimits(limits);
+      const order: string[] = [];
+
+      await queue.acquireSlot('p', 'sync'); // holds the only slot
+      const a = queue.acquireSlot('p', 'async').then(() => order.push('async'));
+      const s = queue.acquireSlot('p', 'sync').then(() => order.push('sync'));
+      await flushMicrotasks();
+      expect(order).to.deep.equal([]); // both still queued at the old limit of 1
+
+      limits.p = 3; // simulate a Settings edit raising maxConcurrency, then a reload
+      queue.refreshLimits();
+      await Promise.all([a, s]);
+
+      expect(order).to.deep.equal(['sync', 'async']);
+    });
+
+    it('lowering maxConcurrency below current usage leaves active holders untouched', async () => {
+      const limits = { p: 3 };
+      const queue = queueWithLimits(limits);
+      await Promise.all([
+        queue.acquireSlot('p', 'sync'),
+        queue.acquireSlot('p', 'sync'),
+        queue.acquireSlot('p', 'sync'),
+      ]); // 3 active, at the old limit
+
+      limits.p = 1;
+      expect(() => queue.refreshLimits()).to.not.throw();
+
+      let fourthResolved = false;
+      void queue.acquireSlot('p', 'sync').then(() => {
+        fourthResolved = true;
+      });
+      await flushMicrotasks();
+      expect(fourthResolved).to.equal(false); // still over the new cap of 1
+
+      queue.releaseSlot('p');
+      queue.releaseSlot('p');
+      await flushMicrotasks();
+      expect(fourthResolved).to.equal(false); // 2 released, down to 1 active, still at cap 1
+
+      queue.releaseSlot('p');
+      await flushMicrotasks();
+      expect(fourthResolved).to.equal(true); // the 3rd release brings active to 0, admits the 4th
+    });
+
+    it('is a no-op for a provider with no gate created yet', () => {
+      const queue = queueWithLimits({});
+      expect(() => queue.refreshLimits()).to.not.throw();
+    });
+
+    it('a -1 gate stays unlimited across a refresh', async () => {
+      const limits = { p: -1 };
+      const queue = queueWithLimits(limits);
+      await queue.acquireSlot('p', 'sync');
+
+      queue.refreshLimits();
+
+      const results = await Promise.all(
+        Array.from({ length: 10 }, () => queue.acquireSlot('p', 'sync')),
+      );
+      expect(results).to.have.length(10); // still bypasses the gate entirely
     });
   });
 });

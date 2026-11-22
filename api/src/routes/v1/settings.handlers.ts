@@ -649,6 +649,7 @@ export async function patchSettingsSectionHandler(
   invalidateChatAgent: () => void,
   seedProviderCosts: () => void,
   reloadTrackerRegistry: () => void,
+  refreshProviderQueueLimits: () => void,
 ): Promise<HandlerResult<unknown>> {
   const def = SLUG_MAP[slug];
   if (!def) return notFound(`Unknown settings section: ${slug}`);
@@ -673,6 +674,7 @@ export async function patchSettingsSectionHandler(
     invalidateChatAgent();
     seedProviderCosts();
     reloadTrackerRegistry();
+    refreshProviderQueueLimits();
   } catch (err) {
     return serverError(err instanceof Error ? err.message : String(err));
   }
@@ -688,11 +690,13 @@ export async function reloadSettingsHandler(
   invalidateChatAgent: () => void,
   seedProviderCosts: () => void,
   reloadTrackerRegistry: () => void,
+  refreshProviderQueueLimits: () => void,
 ): Promise<{ status: 'ok' }> {
   config.reload();
   await loadAgentInstructions();
   invalidateChatAgent();
   seedProviderCosts();
   reloadTrackerRegistry();
+  refreshProviderQueueLimits();
   return { status: 'ok' };
 }

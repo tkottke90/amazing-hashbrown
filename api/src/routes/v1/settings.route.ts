@@ -3,6 +3,7 @@ import { invalidateChatAgent } from '../../agents/chat-agent.js';
 import { loadAgentInstructions } from '../../config/agent-instructions.js';
 import { seedProviderCosts } from '../../services/usage.js';
 import { reloadTrackerRegistry } from '../../services/tracker-registry.js';
+import { getProviderQueue } from '../../services/provider-queue.js';
 import { env } from '../../config/env.js';
 import {
   reloadSettingsHandler,
@@ -12,6 +13,8 @@ import {
 
 export const settingsRouter = Router();
 
+const refreshProviderQueueLimits = () => getProviderQueue().refreshLimits();
+
 settingsRouter.post('/reload', async (req, res) => {
   const result = await reloadSettingsHandler(
     req.app.config,
@@ -19,6 +22,7 @@ settingsRouter.post('/reload', async (req, res) => {
     invalidateChatAgent,
     seedProviderCosts,
     reloadTrackerRegistry,
+    refreshProviderQueueLimits,
   );
   res.json(result);
 });
@@ -38,6 +42,7 @@ settingsRouter.patch('/:slug', async (req, res) => {
     invalidateChatAgent,
     seedProviderCosts,
     reloadTrackerRegistry,
+    refreshProviderQueueLimits,
   );
   res.status(result.ok ? 200 : result.status).json(result);
 });
