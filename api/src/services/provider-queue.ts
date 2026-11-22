@@ -33,13 +33,16 @@ interface QueuedRequest {
 
 interface ProviderGate {
   maxConcurrency: number;
-  activeCount: number;
   syncQueue: QueuedRequest[];
   asyncQueue: QueuedRequest[];
-  // Parallel to activeCount — whoever currently holds a slot. Only entries
-  // with a `caller` ever appear here, so this can be shorter than
-  // activeCount for a call site that predates this feature.
-  activeCallers: CallerIdentity[];
+  // One entry per currently-held slot — length IS the active count, not
+  // merely kept equal to it. A real CallerIdentity for an acquire that
+  // passed one, an `undefined` placeholder for one that didn't (every real
+  // call site passes one today; the type stays optional because
+  // provider-queue.test.ts's own concurrency-mechanics tests — slot counts,
+  // drain ordering — deliberately exercise acquireSlot/releaseSlot without
+  // one, and shouldn't have to fabricate caller identities to do it).
+  activeHolders: (CallerIdentity | undefined)[];
 }
 
 // Reads a provider's configured maxConcurrency from the live env config,
@@ -56,7 +59,7 @@ function resolveMaxConcurrencyFromEnv(providerName: string): number {
 
 // One gate per configured provider name, in-memory only — see design doc
 // §4: a slot claim's lifetime is one outbound request, nothing meaningful to
-// resume across a restart, so activeCount/queues simply start empty.
+// resume across a restart, so activeHolders/queues simply start empty.
 //
 // `resolveMaxConcurrency` is injected (defaulting to the real env-resolving
 // implementation above) so unit tests can drive gate sizing directly,
@@ -76,10 +79,9 @@ export class ProviderQueue {
     if (!gate) {
       gate = {
         maxConcurrency: this.resolveMaxConcurrency(providerName),
-        activeCount: 0,
         syncQueue: [],
         asyncQueue: [],
-        activeCallers: [],
+        activeHolders: [],
       };
       this.gates.set(providerName, gate);
     }
@@ -97,9 +99,8 @@ export class ProviderQueue {
       return Promise.resolve();
     }
 
-    if (gate.activeCount < gate.maxConcurrency) {
-      gate.activeCount++;
-      if (opts.caller) gate.activeCallers.push(opts.caller);
+    if (gate.activeHolders.length < gate.maxConcurrency) {
+      gate.activeHolders.push(opts.caller);
       this.emitActivity();
       return Promise.resolve();
     }
@@ -138,30 +139,56 @@ export class ProviderQueue {
     const gate = this.getGate(providerName);
     if (gate.maxConcurrency === -1) return;
 
-    gate.activeCount--;
-    if (caller) {
-      const idx = gate.activeCallers.findIndex((c) => c.threadId === caller.threadId);
-      if (idx !== -1) gate.activeCallers.splice(idx, 1);
-    } else {
-      // No caller to match against — only possible for a call site that
-      // predates this feature. Pop so activeCallers.length never drifts
-      // from activeCount; every real call site passes caller, so this is a
-      // documented fallback, not a path anything today actually takes.
-      gate.activeCallers.pop();
-    }
+    // Removes the one entry this release actually corresponds to — a
+    // threadId match for a named caller, the first anonymous placeholder
+    // otherwise — rather than decrementing a counter and separately
+    // popping whatever's last. A release with nothing matching it (not
+    // expected from any real call site) is a true no-op: it must not free
+    // a slot nobody holding a match actually vacated.
+    const idx = caller
+      ? gate.activeHolders.findIndex((c) => c?.threadId === caller.threadId)
+      : gate.activeHolders.findIndex((c) => c === undefined);
+    if (idx !== -1) gate.activeHolders.splice(idx, 1);
 
+    this.drainGate(gate);
+    this.emitActivity();
+  }
+
+  // Promotes queued requests into held slots while capacity allows — sync
+  // ahead of async, every iteration (not just the first pop), so a burst of
+  // async completions can't let a later-arriving sync request get skipped
+  // over mid-drain. Shared by releaseSlot (a slot just freed) and
+  // refreshLimits (maxConcurrency just grew) — either can open up capacity
+  // for more than one queued request at once.
+  private drainGate(gate: ProviderGate): void {
     while (
-      gate.activeCount < gate.maxConcurrency &&
+      gate.activeHolders.length < gate.maxConcurrency &&
       (gate.syncQueue.length > 0 || gate.asyncQueue.length > 0)
     ) {
       const next = gate.syncQueue.length > 0 ? gate.syncQueue.shift()! : gate.asyncQueue.shift()!;
-      gate.activeCount++;
-      if (next.caller) gate.activeCallers.push(next.caller);
+      gate.activeHolders.push(next.caller);
       next.cleanupAbort?.();
       next.onWaitChange?.(false);
       next.resolve();
     }
+  }
 
+  // Re-resolves maxConcurrency for every gate created so far, against the
+  // live config — called after a Settings reload so an edited limit takes
+  // effect without a restart, instead of the gate enforcing whatever number
+  // was live the moment it was first created. Always re-resolves, even for
+  // a gate currently (or newly) at -1: a provider must be able to move
+  // into/out of "unlimited" at runtime the same as any other concurrency
+  // edit, or this reintroduces the exact staleness bug for that one value.
+  // Draining is skipped only when the new value is -1, since nothing can
+  // ever be queued against an unlimited gate. One broadcast after the whole
+  // pass, not one per gate — a reload is a single event; an open Monitoring
+  // page should see one consistent post-reload snapshot, not N partial ones.
+  refreshLimits(): void {
+    for (const [name, gate] of this.gates) {
+      gate.maxConcurrency = this.resolveMaxConcurrency(name);
+      if (gate.maxConcurrency !== -1) this.drainGate(gate);
+    }
     this.emitActivity();
   }
 
@@ -190,7 +217,7 @@ export class ProviderQueue {
     return {
       provider: providerName,
       maxConcurrency: gate.maxConcurrency,
-      active: gate.activeCallers,
+      active: gate.activeHolders.filter((caller): caller is CallerIdentity => caller !== undefined),
       waiting: [...gate.syncQueue, ...gate.asyncQueue]
         .map((entry) => entry.caller)
         .filter((caller): caller is CallerIdentity => caller !== undefined),

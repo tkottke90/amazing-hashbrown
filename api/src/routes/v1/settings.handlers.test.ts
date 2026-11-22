@@ -114,7 +114,7 @@ describe('routes/v1/settings.handlers', () => {
       calls = [];
     });
 
-    it('calls config.reload, loadAgentInstructions, invalidateChatAgent, seedProviderCosts, and reloadTrackerRegistry, in that order [orchestration]', async () => {
+    it('calls config.reload, loadAgentInstructions, invalidateChatAgent, seedProviderCosts, reloadTrackerRegistry, and refreshProviderQueueLimits, in that order [orchestration]', async () => {
       await reloadSettingsHandler(
         { reload: () => calls.push('config.reload') },
         async () => {
@@ -129,6 +129,9 @@ describe('routes/v1/settings.handlers', () => {
         () => {
           calls.push('reloadTrackerRegistry');
         },
+        () => {
+          calls.push('refreshProviderQueueLimits');
+        },
       );
 
       expect(calls).to.deep.equal([
@@ -137,11 +140,12 @@ describe('routes/v1/settings.handlers', () => {
         'invalidateChatAgent',
         'seedProviderCosts',
         'reloadTrackerRegistry',
+        'refreshProviderQueueLimits',
       ]);
     });
 
     it('calls each dependency exactly once [orchestration]', async () => {
-      const counts = { reload: 0, load: 0, invalidate: 0, seed: 0, reloadTrackers: 0 };
+      const counts = { reload: 0, load: 0, invalidate: 0, seed: 0, reloadTrackers: 0, refreshLimits: 0 };
       await reloadSettingsHandler(
         {
           reload: () => {
@@ -160,6 +164,9 @@ describe('routes/v1/settings.handlers', () => {
         () => {
           counts.reloadTrackers++;
         },
+        () => {
+          counts.refreshLimits++;
+        },
       );
       expect(counts).to.deep.equal({
         reload: 1,
@@ -167,11 +174,19 @@ describe('routes/v1/settings.handlers', () => {
         invalidate: 1,
         seed: 1,
         reloadTrackers: 1,
+        refreshLimits: 1,
       });
     });
 
     it('resolves with { status: "ok" } [unit]', async () => {
-      const result = await reloadSettingsHandler({ reload: noop }, asyncNoop, noop, noop, noop);
+      const result = await reloadSettingsHandler(
+        { reload: noop },
+        asyncNoop,
+        noop,
+        noop,
+        noop,
+        noop,
+      );
       expect(result).to.deep.equal({ status: 'ok' });
     });
   });
@@ -514,6 +529,9 @@ describe('routes/v1/settings.handlers', () => {
         reloadTrackerRegistry: () => {
           calls.push('reloadTrackerRegistry');
         },
+        refreshProviderQueueLimits: () => {
+          calls.push('refreshProviderQueueLimits');
+        },
       };
     }
 
@@ -523,6 +541,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
       const result = await patchSettingsSectionHandler(
         'unknown',
@@ -533,6 +552,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
       expect(result.ok).to.equal(false);
       if (!result.ok) expect(result.status).to.equal(404);
@@ -544,6 +564,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
       const result = await patchSettingsSectionHandler(
         'skills',
@@ -554,6 +575,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
       expect(result.ok).to.equal(false);
       if (!result.ok) expect(result.status).to.equal(404);
@@ -565,6 +587,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
       const result = await patchSettingsSectionHandler(
         'general',
@@ -575,6 +598,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
       expect(result.ok).to.equal(false);
       if (!result.ok) {
@@ -591,6 +615,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
 
       const result = await patchSettingsSectionHandler(
@@ -602,6 +627,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
 
       expect(result.ok).to.equal(true);
@@ -613,6 +639,7 @@ describe('routes/v1/settings.handlers', () => {
         'invalidateChatAgent',
         'seedProviderCosts',
         'reloadTrackerRegistry',
+        'refreshProviderQueueLimits',
       ]);
     });
 
@@ -623,6 +650,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
 
       const result = await patchSettingsSectionHandler(
@@ -634,6 +662,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
 
       // Note: unlike `general` (which reads live off disk via `config.get`),
@@ -664,6 +693,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
 
       const result = await patchSettingsSectionHandler(
@@ -675,6 +705,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
 
       expect(result.ok).to.equal(false);
@@ -694,6 +725,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
 
       const result = await patchSettingsSectionHandler(
@@ -705,6 +737,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
 
       expect(result.ok).to.equal(true);
@@ -724,6 +757,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
 
       const result = await patchSettingsSectionHandler(
@@ -735,6 +769,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
 
       expect(result.ok).to.equal(true);
@@ -751,6 +786,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
 
       const result = await patchSettingsSectionHandler(
@@ -762,6 +798,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
 
       expect(result.ok).to.equal(true);
@@ -782,6 +819,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
 
       await patchSettingsSectionHandler(
@@ -793,6 +831,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
 
       const written = readYaml(tmpDir);
@@ -811,6 +850,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
 
       await patchSettingsSectionHandler(
@@ -822,6 +862,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
 
       const written = readYaml(tmpDir);
@@ -852,6 +893,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
 
       // clientId/clientSecret are both unchanged (**** resolves back to the
@@ -883,6 +925,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
 
       expect(result.ok).to.equal(true);
@@ -916,6 +959,7 @@ describe('routes/v1/settings.handlers', () => {
           invalidateChatAgent,
           seedProviderCosts,
           reloadTrackerRegistry,
+          refreshProviderQueueLimits,
         } = makeSideEffects();
 
         const result = await patchSettingsSectionHandler(
@@ -943,6 +987,7 @@ describe('routes/v1/settings.handlers', () => {
           invalidateChatAgent,
           seedProviderCosts,
           reloadTrackerRegistry,
+          refreshProviderQueueLimits,
         );
 
         expect(result.ok).to.equal(false);
@@ -984,6 +1029,7 @@ describe('routes/v1/settings.handlers', () => {
           invalidateChatAgent,
           seedProviderCosts,
           reloadTrackerRegistry,
+          refreshProviderQueueLimits,
         } = makeSideEffects();
 
         const result = await patchSettingsSectionHandler(
@@ -1011,6 +1057,7 @@ describe('routes/v1/settings.handlers', () => {
           invalidateChatAgent,
           seedProviderCosts,
           reloadTrackerRegistry,
+          refreshProviderQueueLimits,
         );
 
         expect(result.ok).to.equal(true);
@@ -1047,6 +1094,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
 
       // clientId/clientSecret are both unchanged (**** resolves back to the
@@ -1077,6 +1125,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
 
       expect(result.ok).to.equal(true);
@@ -1109,6 +1158,7 @@ describe('routes/v1/settings.handlers', () => {
           invalidateChatAgent,
           seedProviderCosts,
           reloadTrackerRegistry,
+          refreshProviderQueueLimits,
         } = makeSideEffects();
 
         const result = await patchSettingsSectionHandler(
@@ -1135,6 +1185,7 @@ describe('routes/v1/settings.handlers', () => {
           invalidateChatAgent,
           seedProviderCosts,
           reloadTrackerRegistry,
+          refreshProviderQueueLimits,
         );
 
         expect(result.ok).to.equal(false);
@@ -1175,6 +1226,7 @@ describe('routes/v1/settings.handlers', () => {
           invalidateChatAgent,
           seedProviderCosts,
           reloadTrackerRegistry,
+          refreshProviderQueueLimits,
         } = makeSideEffects();
 
         const result = await patchSettingsSectionHandler(
@@ -1201,6 +1253,7 @@ describe('routes/v1/settings.handlers', () => {
           invalidateChatAgent,
           seedProviderCosts,
           reloadTrackerRegistry,
+          refreshProviderQueueLimits,
         );
 
         expect(result.ok).to.equal(true);
@@ -1232,6 +1285,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
 
       const result = await patchSettingsSectionHandler(
@@ -1253,6 +1307,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
 
       expect(result.ok).to.equal(true);
@@ -1268,6 +1323,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
 
       await patchSettingsSectionHandler(
@@ -1279,6 +1335,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
 
       const written = readYaml(tmpDir);
@@ -1300,6 +1357,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
 
       await patchSettingsSectionHandler(
@@ -1311,6 +1369,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
 
       const written = readYaml(tmpDir);
@@ -1330,6 +1389,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
 
       await patchSettingsSectionHandler(
@@ -1341,6 +1401,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
 
       const written = readYaml(tmpDir);
@@ -1357,6 +1418,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
       delete process.env['SETTINGS_TEST_UNSET_VAR'];
 
@@ -1369,6 +1431,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
 
       expect(result.ok).to.equal(false);
@@ -1388,6 +1451,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
 
       await patchSettingsSectionHandler(
@@ -1399,6 +1463,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
 
       const written = readYaml(tmpDir);
@@ -1415,6 +1480,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
 
       await patchSettingsSectionHandler(
@@ -1426,6 +1492,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
 
       const written = readYaml(tmpDir);
@@ -1441,6 +1508,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
 
       await patchSettingsSectionHandler(
@@ -1452,6 +1520,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
 
       const written = readYaml(tmpDir);
@@ -1466,6 +1535,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
       delete process.env['SETTINGS_TEST_UNSET_VAR'];
 
@@ -1478,6 +1548,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
 
       expect(result.ok).to.equal(false);
@@ -1498,6 +1569,7 @@ describe('routes/v1/settings.handlers', () => {
           invalidateChatAgent,
           seedProviderCosts,
           reloadTrackerRegistry,
+          refreshProviderQueueLimits,
         } = makeSideEffects();
         await patchSettingsSectionHandler(
           slug,
@@ -1508,6 +1580,7 @@ describe('routes/v1/settings.handlers', () => {
           invalidateChatAgent,
           seedProviderCosts,
           reloadTrackerRegistry,
+          refreshProviderQueueLimits,
         );
       }
 
@@ -1549,6 +1622,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
 
       await patchSettingsSectionHandler(
@@ -1560,6 +1634,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
 
       const written = readYaml(tmpDir);
@@ -1578,6 +1653,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
 
       const result = await patchSettingsSectionHandler(
@@ -1589,6 +1665,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
 
       expect(result.ok).to.equal(true);
@@ -1628,6 +1705,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
 
       const result = await patchSettingsSectionHandler(
@@ -1644,6 +1722,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
 
       expect(result.ok).to.equal(true);
@@ -1674,6 +1753,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
 
       // The UI always resubmits every row it didn't delete: here it deletes
@@ -1688,6 +1768,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
 
       expect(result.ok).to.equal(true);
@@ -1718,6 +1799,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
 
       const result = await patchSettingsSectionHandler(
@@ -1729,6 +1811,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
 
       expect(result.ok).to.equal(true);
@@ -1745,6 +1828,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
 
       const result = await patchSettingsSectionHandler(
@@ -1756,6 +1840,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
 
       expect(result.ok).to.equal(false);
@@ -1767,6 +1852,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       } = makeSideEffects();
       await patchSettingsSectionHandler(
         'general',
@@ -1777,6 +1863,7 @@ describe('routes/v1/settings.handlers', () => {
         invalidateChatAgent,
         seedProviderCosts,
         reloadTrackerRegistry,
+        refreshProviderQueueLimits,
       );
       expect(calls).to.deep.equal([]);
     });
