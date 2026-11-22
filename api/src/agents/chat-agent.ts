@@ -56,6 +56,7 @@ import { binaryContentFetchMiddleware } from './binary-content-fetch.middleware.
 import { createSkillGatedToolsMiddleware } from './skill-gated-tools.middleware.js';
 import { createSkillGatedMcpToolsMiddleware } from './skill-gated-mcp-tools.middleware.js';
 import { skillScopedToolsMiddleware } from './skill-scoped-tools.middleware.js';
+import { toolErrorRecoveryMiddleware } from './tool-error-recovery.middleware.js';
 import { toolSyntaxMiddleware } from './middleware/tool-syntax.middleware.js';
 import { toolAccessMiddleware } from './tool-access.middleware.js';
 import { ambientContextMiddleware } from './ambient-context.middleware.js';
@@ -725,6 +726,11 @@ async function buildChatAgent(provider?: string, model?: string) {
       toolSyntaxMiddleware,
       skillGatedToolsMiddleware,
       skillScopedToolsMiddleware,
+      // Last wrapToolCall entry — the final safety net before a tool's own
+      // error ever reaches ToolNode. Position doesn't affect correctness
+      // (any wrapToolCall that itself catches would intercept regardless),
+      // but this keeps "catches everything else missed" legible.
+      toolErrorRecoveryMiddleware,
       toolAccessMiddleware,
       createMcpToolDiscoveryMiddleware(mcpTools),
       createSkillGatedMcpToolsMiddleware(mcpTools),
@@ -904,6 +910,11 @@ async function buildWorkspaceChatAgent(
       toolSyntaxMiddleware,
       skillGatedToolsMiddleware,
       skillScopedToolsMiddleware,
+      // Last wrapToolCall entry — the final safety net before a tool's own
+      // error ever reaches ToolNode. Position doesn't affect correctness
+      // (any wrapToolCall that itself catches would intercept regardless),
+      // but this keeps "catches everything else missed" legible.
+      toolErrorRecoveryMiddleware,
       toolAccessMiddleware,
       createMcpToolDiscoveryMiddleware(mcpTools),
       createSkillGatedMcpToolsMiddleware(mcpTools),
@@ -1108,6 +1119,11 @@ export async function buildTaskAgent(
       toolSyntaxMiddleware,
       skillGatedToolsMiddleware,
       skillScopedToolsMiddleware,
+      // Last wrapToolCall entry — the final safety net before a tool's own
+      // error ever reaches ToolNode. Position doesn't affect correctness
+      // (any wrapToolCall that itself catches would intercept regardless),
+      // but this keeps "catches everything else missed" legible.
+      toolErrorRecoveryMiddleware,
       toolAccessMiddleware,
       createMcpToolDiscoveryMiddleware(mcpTools),
       createSkillGatedMcpToolsMiddleware(mcpTools),
@@ -1246,6 +1262,7 @@ export function buildSubAgentMiddleware(options: {
     toolAccessMiddleware,
     createMcpToolDiscoveryMiddleware(options.mcpTools ?? []),
     ambientContextMiddleware,
+    toolErrorRecoveryMiddleware,
   ];
 }
 
