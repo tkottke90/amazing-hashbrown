@@ -77,7 +77,7 @@ lib/task-run-reports/test/unit/render.test.ts
 `buildTaskRunReport(taskId, stores, options)` returns `TaskRunReportData |
 null` (null only if the task itself doesn't exist):
 
-```ts
+```
 interface TaskRunReportData {
   taskId: string;
   generatedAt: string;
@@ -132,7 +132,7 @@ pass unmodified against the refactored implementation.
 One new store aggregate, since the two new dashboard metrics are two views
 of the same underlying counts:
 
-```ts
+```
 interface TaskCompletionStats {
   avgRunsToComplete: number | null; // avg task_queue-row-count per task, over tasks with status='done'; null if none yet
   completedTaskCount: number;

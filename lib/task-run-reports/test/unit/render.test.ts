@@ -124,7 +124,7 @@ describe('render/renderTaskRunReportHtml', () => {
     );
 
     expect(html).to.include('Repeated failures');
-    expect(html).to.include('failed 2 times in a row');
+    expect(html).to.include('Failed 2 times in a row');
     expect(html).to.include('Wiki mismatch');
     expect(html).to.include('<code>work</code>');
     expect(html).to.include('Recursion limit');
