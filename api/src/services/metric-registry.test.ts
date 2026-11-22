@@ -78,6 +78,8 @@ describe('services/metric-registry', () => {
         'version-info',
         'usage-by-provider-tokens',
         'usage-by-model-tokens',
+        'avg-runs-to-complete',
+        'task-non-completion-rate',
       ]);
     });
   });

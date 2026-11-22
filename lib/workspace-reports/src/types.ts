@@ -3,6 +3,26 @@ import type {
   ThreadStoreLike,
   ObservabilityStoreLike,
 } from '@tkottke90/thread-reports';
+import type {
+  TaskLike as TaskRunReportTaskLike,
+  TaskRunLike,
+  FailedRunStreakLike,
+  HandedOffRunSummaryLike,
+  TaskProgressEntryLike,
+  TaskRunRetrospective,
+  Anomaly,
+  HandoffSummary,
+} from '@tkottke90/task-run-reports';
+
+export type {
+  TaskRunLike,
+  FailedRunStreakLike,
+  HandedOffRunSummaryLike,
+  TaskProgressEntryLike,
+  TaskRunRetrospective,
+  Anomaly,
+  HandoffSummary,
+};
 
 // ---------------------------------------------------------------------------
 // Store shapes
@@ -23,57 +43,24 @@ export interface WorkspaceLike {
   createdAt: string;
 }
 
-export interface TaskLike {
-  id: string;
-  title: string;
-  status: string;
-  origin: 'user' | 'agent';
-  provider: string | null;
-  model: string | null;
+// Adds workspaceId on top of @tkottke90/task-run-reports' own TaskLike (not
+// imported directly — this package's build.ts still reads title/status/
+// origin/provider/model off a task the same way it always has) so that the
+// real WorkspaceStore.getTask() stays assignable everywhere this package
+// passes `stores` straight through to buildTaskRunReport().
+export interface TaskLike extends TaskRunReportTaskLike {
   trackerType: string | null;
   trackerId: string | null;
 }
 
-export interface TaskRunLike {
-  id: string;
-  runNumber: number;
-  status: string;
-  summary: string | null;
-  recoveryAttempts: number;
-  // null for a run that was never started (e.g. still queued) — its own
-  // 'task'-type thread is only minted on first start.
-  threadId: string | null;
-}
-
-export interface FailedRunStreakLike {
-  attempts: number;
-  lastSummary: string | null;
-}
-
-// A task's total count of Handed-Off Runs — not a streak, just a plain
-// count (a Handed-Off Run isn't a failure, so there's no boundary to stop
-// at). See api's own HandedOffRunSummary.
-export interface HandedOffRunSummaryLike {
-  count: number;
-  lastSummary: string | null;
-}
-
-export interface TaskProgressEntryLike {
-  taskId: string;
-  outcome: 'done' | 'failed' | 'handed_off';
-  summary: string;
-  filesChanged: string[];
-  commitShas: string[];
-  completedAt: string;
-}
-
 export interface WorkspaceStoreLike {
   getWorkspace(workspaceId: string): WorkspaceLike | null;
+  getTask(taskId: string): TaskLike | null;
   listTasks(filters: { workspaceId: string }): TaskLike[];
   listTaskRuns(taskId: string): TaskRunLike[];
   failedRunStreaks(taskIds: string[]): Map<string, FailedRunStreakLike>;
   handedOffRunCounts(taskIds: string[]): Map<string, HandedOffRunSummaryLike>;
-  listTaskProgressEntriesForWorkspace(workspaceId: string): TaskProgressEntryLike[];
+  listTaskProgressEntriesForTask(taskId: string): TaskProgressEntryLike[];
 }
 
 export interface WorkspaceReportStores {
@@ -86,15 +73,6 @@ export interface WorkspaceReportStores {
 // Report data
 // ---------------------------------------------------------------------------
 
-export interface TaskRunRetrospective {
-  runId: string;
-  runNumber: number;
-  status: string;
-  summary: string | null;
-  recoveryAttempts: number;
-  threadReport: ThreadReportData | null;
-}
-
 export interface TaskRetrospective {
   taskId: string;
   title: string;
@@ -104,43 +82,10 @@ export interface TaskRetrospective {
   model: string | null;
   runs: TaskRunRetrospective[];
   progressEntries: TaskProgressEntryLike[];
-}
-
-export type Anomaly =
-  | {
-      kind: 'repeated_failures';
-      taskId: string;
-      taskTitle: string;
-      attempts: number;
-      lastSummary: string | null;
-    }
-  | {
-      kind: 'wiki_mismatch';
-      threadId: string;
-      pageTitle: string;
-      pageKind: string;
-      actualWikiName: string;
-      expectedWikiId: string;
-      at: string;
-    }
-  | {
-      kind: 'recursion_escalation';
-      threadId: string;
-      taskId: string | null;
-      escalationKind: string;
-      question: string;
-      at: string;
-    };
-
-// A task with at least one Handed-Off Run, for the retrospective's own
-// "Handoffs" signal. Deliberately NOT a 4th Anomaly variant — a handoff is
-// a cooperative, user-requested stop with real progress, not a problem to
-// flag alongside wiki mismatches and recursion escalations.
-export interface HandoffSummary {
-  taskId: string;
-  taskTitle: string;
-  count: number;
-  lastSummary: string | null;
+  // Count of this task's runs up to and including the one that reached
+  // 'done', or null when the task hasn't reached 'done' yet. Composed
+  // straight from @tkottke90/task-run-reports' own TaskRunReportData.
+  runsToComplete: number | null;
 }
 
 export interface WorkspaceRetrospectiveSummary {

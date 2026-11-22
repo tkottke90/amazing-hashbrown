@@ -25,6 +25,7 @@ import {
   getQueueHandler,
   enqueueTaskHandler,
   listTaskRunsHandler,
+  generateTaskRunReportHandler,
   cancelTaskHandler,
   pauseTaskHandler,
   takeOverTaskHandler,
@@ -180,6 +181,21 @@ tasksRouter.get('/:id/runs', (req: Request, res: Response) => {
     return;
   }
   res.json(result.data);
+});
+
+// A Task Run Report covers every run of the task, end to end.
+tasksRouter.get('/:id/report', async (req: Request, res: Response) => {
+  const result = await generateTaskRunReportHandler(
+    getWorkspaceStore(),
+    getThreadStore(),
+    req.params['id'] as string,
+  );
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(result.data.html);
 });
 
 tasksRouter.post('/:id/enqueue', (req: Request, res: Response) => {

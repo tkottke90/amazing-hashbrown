@@ -42,6 +42,8 @@ import {
   runPathB,
 } from '../../agents/plan-generation.js';
 import { rewriteTaskForHandOffGuidance } from '../../agents/hand-off-guidance.js';
+import { buildTaskRunReport, renderTaskRunReportHtml } from '@tkottke90/task-run-reports';
+import { getObservabilityStore } from '../../services/observability.js';
 
 function ok<T>(data: T): HandlerResult<T> {
   return { ok: true, data };
@@ -475,6 +477,25 @@ export function listTaskRunsHandler(
 ): HandlerResult<ReturnType<WorkspaceStore['listTaskRuns']>> {
   if (!store.getTask(taskId)) return notFound(`Task ${taskId} not found`);
   return ok(store.listTaskRuns(taskId, opts));
+}
+
+// A Task Run Report covers every run of a task, end to end — unlike a
+// Thread Report (one run's thread), it works for any task regardless of
+// whether it belongs to a workspace. See
+// docs/superpowers/specs/2026-11-22-task-run-report-design.md.
+export async function generateTaskRunReportHandler(
+  workspaceStore: WorkspaceStore,
+  threadStore: ThreadStore,
+  taskId: string,
+): Promise<HandlerResult<{ html: string }>> {
+  const data = buildTaskRunReport(taskId, {
+    workspaceStore,
+    threadStore,
+    observabilityStore: getObservabilityStore(),
+  });
+  if (!data) return notFound(`Task ${taskId} not found`);
+  const html = await renderTaskRunReportHtml(data);
+  return ok({ html });
 }
 
 // 'not_task': an ordinary chat prompt — the caller resumes its own turn.

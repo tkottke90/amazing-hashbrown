@@ -510,6 +510,23 @@ describe('TaskDrawer — run history', () => {
   });
 });
 
+describe('TaskDrawer — Task Report button', () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+    cleanup();
+  });
+
+  it('shows the "Task Report" button for an existing task [unit]', () => {
+    renderDrawer(baseTask);
+    expect(screen.getByText('Task Report')).toBeInTheDocument();
+  });
+
+  it('shows nothing for a brand-new, unsaved task — there are no runs to report on yet [unit]', () => {
+    render(<TaskDrawer task={null} open={signal(true)} />);
+    expect(screen.queryByText('Task Report')).not.toBeInTheDocument();
+  });
+});
+
 describe('TaskDrawer — Depends on section', () => {
   afterEach(() => {
     jest.clearAllMocks();

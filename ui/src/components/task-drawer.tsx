@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useProviderModelPicker } from '@/components/provider-model-picker';
+import { TaskReportButton } from '@/components/task-report-button';
 import { CardBadge } from '@/components/card-badge';
 import { providers as providersSignal, fetchProviders } from '@/hooks/use-providers';
 import { cn } from '@/lib/utils';
@@ -1525,6 +1526,7 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
       </div>
 
       <div class="flex items-center gap-2 px-5 py-4 border-t border-border shrink-0 justify-end">
+        {!isNew && task && <TaskReportButton taskId={task.id} variant="outline" />}
         <Button type="button" variant="ghost" onClick={() => close()}>
           Cancel
         </Button>

@@ -1,13 +1,12 @@
 import { buildThreadReport } from '@tkottke90/thread-reports';
 import type { ThreadReportData, HitlPromptPayload } from '@tkottke90/thread-reports';
+import { buildTaskRunReport } from '@tkottke90/task-run-reports';
 import type {
   WorkspaceRetrospectiveData,
   WorkspaceReportStores,
   Anomaly,
   HandoffSummary,
   TaskRetrospective,
-  TaskRunRetrospective,
-  TaskProgressEntryLike,
 } from './types.js';
 
 export interface BuildWorkspaceRetrospectiveOptions {
@@ -17,6 +16,11 @@ export interface BuildWorkspaceRetrospectiveOptions {
 
 // The two HITL prompt kinds recursion-guard.middleware.ts raises when a run
 // gets a check-in interrupt — see api/src/agents/recursion-guard.middleware.ts.
+// Duplicated from @tkottke90/task-run-reports' build.ts (which runs the same
+// check per task run) rather than imported — that package doesn't export
+// these helpers, only buildTaskRunReport itself, and this copy is only ever
+// applied to the one thread (the workspace's own chat) that isn't part of
+// any task's run history, so buildTaskRunReport can't cover it.
 const RECURSION_ESCALATION_KINDS = new Set(['recursion_limit_warning', 'loop_stagnation_warning']);
 
 function findRecursionEscalations(report: ThreadReportData, taskId: string | null): Anomaly[] {
@@ -63,9 +67,10 @@ function anomalySortKey(anomaly: Anomaly): string {
   return anomaly.kind === 'repeated_failures' ? '' : anomaly.at;
 }
 
-// Composes @tkottke90/thread-reports' buildThreadReport per thread (the
-// workspace's own chat thread, plus every run thread of every task) rather
-// than re-deriving message/trace aggregation here — see AGENTS.md's
+// Composes @tkottke90/task-run-reports' buildTaskRunReport per task (and
+// @tkottke90/thread-reports' buildThreadReport directly for the workspace's
+// own chat thread, which isn't part of any task) rather than re-deriving
+// per-task anomaly/handoff/progress-entry aggregation here — see AGENTS.md's
 // "Composition over Customization" principle. Returns null only when the
 // workspace itself doesn't exist; a missing/empty chat thread or task list
 // still produces a (mostly empty) report.
@@ -93,56 +98,28 @@ export function buildWorkspaceRetrospective(
   }
 
   const tasksRaw = stores.workspaceStore.listTasks({ workspaceId });
-  const failedStreaks = stores.workspaceStore.failedRunStreaks(tasksRaw.map((t) => t.id));
-  const handoffCounts = stores.workspaceStore.handedOffRunCounts(tasksRaw.map((t) => t.id));
   const handoffs: HandoffSummary[] = [];
-  const progressEntries = stores.workspaceStore.listTaskProgressEntriesForWorkspace(workspaceId);
-  const progressByTask = new Map<string, TaskProgressEntryLike[]>();
-  for (const entry of progressEntries) {
-    const list = progressByTask.get(entry.taskId) ?? [];
-    list.push(entry);
-    progressByTask.set(entry.taskId, list);
-  }
 
   const tasks: TaskRetrospective[] = tasksRaw.map((task) => {
-    const runs: TaskRunRetrospective[] = stores.workspaceStore.listTaskRuns(task.id).map((run) => {
-      const threadReport = run.threadId
-        ? buildThreadReport(run.threadId, stores, reportOptions)
-        : null;
-      if (threadReport) {
-        anomalies.push(...findWikiMismatches(threadReport, workspace.wikiId));
-        anomalies.push(...findRecursionEscalations(threadReport, task.id));
-      }
+    // Only returns null if the task itself doesn't exist, which can't
+    // happen here — task was just read from listTasks() above.
+    const taskReport = buildTaskRunReport(task.id, stores, reportOptions);
+    if (!taskReport) {
       return {
-        runId: run.id,
-        runNumber: run.runNumber,
-        status: run.status,
-        summary: run.summary,
-        recoveryAttempts: run.recoveryAttempts,
-        threadReport,
+        taskId: task.id,
+        title: task.title,
+        status: task.status,
+        origin: task.origin,
+        provider: task.provider,
+        model: task.model,
+        runs: [],
+        progressEntries: [],
+        runsToComplete: null,
       };
-    });
-
-    const streak = failedStreaks.get(task.id);
-    if (streak) {
-      anomalies.push({
-        kind: 'repeated_failures',
-        taskId: task.id,
-        taskTitle: task.title,
-        attempts: streak.attempts,
-        lastSummary: streak.lastSummary,
-      });
     }
 
-    const handoff = handoffCounts.get(task.id);
-    if (handoff) {
-      handoffs.push({
-        taskId: task.id,
-        taskTitle: task.title,
-        count: handoff.count,
-        lastSummary: handoff.lastSummary,
-      });
-    }
+    anomalies.push(...taskReport.anomalies);
+    if (taskReport.handoff) handoffs.push(taskReport.handoff);
 
     return {
       taskId: task.id,
@@ -151,8 +128,9 @@ export function buildWorkspaceRetrospective(
       origin: task.origin,
       provider: task.provider,
       model: task.model,
-      runs,
-      progressEntries: progressByTask.get(task.id) ?? [],
+      runs: taskReport.runs,
+      progressEntries: taskReport.progressEntries,
+      runsToComplete: taskReport.runsToComplete,
     };
   });
 

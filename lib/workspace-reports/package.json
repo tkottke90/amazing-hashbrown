@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@tkottke90/observability": "*",
+    "@tkottke90/task-run-reports": "*",
     "@tkottke90/thread-reports": "*",
     "marked": "^15.0.0",
     "nunjucks": "^3.0.0"
