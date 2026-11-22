@@ -65,9 +65,15 @@ test.describe(
         await pauseBeforeAction(page, testInfo);
         await row.click();
 
+        // Scoped to the one open <dialog> — every other task's drawer on
+        // this Inbox page is also mounted (closed drawers hide via opacity,
+        // not display:none, see lib/preact-dialog/src/Drawer.tsx), so an
+        // unscoped page-wide role query matches one "Task Report" button
+        // per task on the page, not just the one just opened.
+        const openDrawer = page.locator('dialog[open]');
         const newPagePromise = page.context().waitForEvent('page');
         await pauseBeforeAction(page, testInfo);
-        await page.getByRole('button', { name: 'Task Report' }).click();
+        await openDrawer.getByRole('button', { name: 'Task Report' }).click();
         const reportPage = await newPagePromise;
 
         await reportPage.waitForLoadState();
@@ -84,7 +90,11 @@ test.describe(
       await pauseBeforeAction(page, testInfo);
       await page.getByRole('button', { name: 'New task' }).click();
 
-      await expect(page.getByRole('button', { name: 'Task Report' })).toHaveCount(0);
+      // Scoped to the open dialog for the same reason as above — other
+      // tasks' closed drawers on this page would otherwise also match.
+      await expect(
+        page.locator('dialog[open]').getByRole('button', { name: 'Task Report' }),
+      ).toHaveCount(0);
     });
   },
 );
