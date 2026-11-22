@@ -45,11 +45,7 @@ Separately, in the course of reading `provider-queue.ts` end to end, a second la
 
 ### 1. Refresh hook, not poll-on-every-call
 
-`ProviderQueue` gains:
-
-```ts
-refreshLimits(): void
-```
+`ProviderQueue` gains a public `refreshLimits(): void` method.
 
 For every gate currently in `this.gates`, it re-resolves `maxConcurrency` via the same injected `resolveMaxConcurrency(providerName)` the gate was originally built with, updates the stored value, then runs the same drain logic `releaseSlot` already uses (see §2) in case the new limit is higher than the old one. Finishes with the existing `emitActivity()` broadcast so an open Monitoring page updates live, same as any other gate mutation.
 

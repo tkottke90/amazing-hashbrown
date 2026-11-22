@@ -145,7 +145,14 @@ describe('routes/v1/settings.handlers', () => {
     });
 
     it('calls each dependency exactly once [orchestration]', async () => {
-      const counts = { reload: 0, load: 0, invalidate: 0, seed: 0, reloadTrackers: 0, refreshLimits: 0 };
+      const counts = {
+        reload: 0,
+        load: 0,
+        invalidate: 0,
+        seed: 0,
+        reloadTrackers: 0,
+        refreshLimits: 0,
+      };
       await reloadSettingsHandler(
         {
           reload: () => {
