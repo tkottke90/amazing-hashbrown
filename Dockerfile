@@ -19,6 +19,7 @@ COPY lib/preact-dialog/package.json ./lib/preact-dialog/package.json
 COPY lib/rlm/package.json ./lib/rlm/package.json
 COPY lib/shell-executor/package.json ./lib/shell-executor/package.json
 COPY lib/skills-manager/package.json ./lib/skills-manager/package.json
+COPY lib/task-run-reports/package.json ./lib/task-run-reports/package.json
 COPY lib/thread-reports/package.json ./lib/thread-reports/package.json
 COPY lib/tools-manager/package.json ./lib/tools-manager/package.json
 COPY lib/workspace-reports/package.json ./lib/workspace-reports/package.json
@@ -100,6 +101,9 @@ COPY --chown=appuser:appuser lib/shell-executor/package.json ./lib/shell-executo
 COPY --chown=appuser:appuser lib/shell-executor/dist ./lib/shell-executor/dist
 COPY --chown=appuser:appuser lib/skills-manager/package.json ./lib/skills-manager/package.json
 COPY --chown=appuser:appuser lib/skills-manager/dist ./lib/skills-manager/dist
+COPY --chown=appuser:appuser lib/task-run-reports/package.json ./lib/task-run-reports/package.json
+COPY --chown=appuser:appuser lib/task-run-reports/dist ./lib/task-run-reports/dist
+COPY --chown=appuser:appuser lib/task-run-reports/templates ./lib/task-run-reports/templates
 COPY --chown=appuser:appuser lib/thread-reports/package.json ./lib/thread-reports/package.json
 COPY --chown=appuser:appuser lib/thread-reports/dist ./lib/thread-reports/dist
 COPY --chown=appuser:appuser lib/thread-reports/templates ./lib/thread-reports/templates
