@@ -106,6 +106,10 @@ _Avoid_: Display format, render hint, formatting flag
 The Value Format that abbreviates a number into its largest applicable thousand/million/billion tier with a `k`/`M`/`B` suffix, rounded to at most one decimal place and dropping the decimal when it rounds to `.0` — e.g. `178693706` renders as `178.7M`, `122013` as `122k`. A number's unabbreviated form stays available on hover. A manually-authored widget's values (not backed by a Metric) never carry a Value Format and so are never shown this way.
 _Avoid_: Abbreviated number, short number, k/M notation
 
+**Failure Rate**:
+The `failure-rate-by-tool` Metric's own computation, scoped to that one Metric — not a general error-rate concept: `failed / total`, grouped by tool-call span name, where "failed" means that span's `error` is non-null. HITL-interrupted tool calls already carry `error: null` (ADR-0075), so they're never counted as failed.
+_Avoid_: Error rate, success rate
+
 # AfterAgent & Wiki Write Scope
 
 The background pipeline that inspects each conversational turn for durable knowledge and files it into the wiki, and the rule set that decides which wiki domain(s) a given turn — chat or AfterAgent — may write to.
