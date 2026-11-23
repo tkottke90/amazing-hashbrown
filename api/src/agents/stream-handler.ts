@@ -308,6 +308,12 @@ export async function pipeEvents(
         }
 
         case 'on_tool_start': {
+          // Flush whatever safe-margin tail flushDelta is still withholding
+          // before the tool call's own SSE events go out, so the live stream
+          // reflects the model's full in-flight text right away instead of
+          // visibly stalling until a later drain point (the next text
+          // segment, or stream end). No-ops when nothing is withheld.
+          drainBuffer(sink, currentSegmentId, parse);
           hadToolCall = true;
           if (evt.name !== 'ask_user') {
             const toolCallId = evt.run_id as string;
@@ -354,6 +360,13 @@ export async function pipeEvents(
       }
     }
   } catch (err) {
+    // Flush flushDelta's withheld safe-margin tail before packaging up the
+    // partial state — otherwise up to SAFE_MARGIN already-generated
+    // characters are silently lost on every mid-stream throw (the GLOSSARY's
+    // Exhausted Run / GraphRecursionError path chief among them), rather
+    // than surfacing in the Run's summary and the live chat row the way the
+    // clean-finish path below already does via its own drainBuffer call.
+    drainBuffer(sink, currentSegmentId, parse);
     throw new PipeEventsError(err, currentSegmentId, parse.content, parse.thought);
   }
 

@@ -2138,17 +2138,17 @@ describe('agents/task-execution', () => {
       expect(payload.promptKind).to.equal('shell_approval');
       expect(payload.command).to.equal('npm install');
 
-      // The pre-interrupt partial content must be preserved, not discarded —
-      // asserted as a prefix rather than an exact match since flushDelta
-      // withholds a small safety margin of trailing text in case it's a
-      // split <think> tag boundary (see stream-handler.ts's SAFE_MARGIN).
+      // The pre-interrupt partial content must be preserved in full, not
+      // discarded or truncated — pipeEvents' catch block now drains
+      // flushDelta's withheld safe-margin tail before throwing, so this is
+      // an exact match rather than a prefix (see stream-handler.ts's
+      // SAFE_MARGIN).
       const assistantRow = messages.find((m) => m.kind === 'assistant' && m.status === 'done');
       expect(assistantRow, 'expected the partial assistant turn to be finalized').to.not.equal(
         undefined,
       );
       const partialContent = (assistantRow!.payload as Record<string, unknown>).content as string;
-      expect(partialContent.length).to.be.greaterThan(0);
-      expect('Running the command...').to.include(partialContent);
+      expect(partialContent).to.equal('Running the command...');
     });
 
     it('records the end task_run_marker with outcome waiting_on_user', async () => {
