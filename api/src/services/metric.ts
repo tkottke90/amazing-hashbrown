@@ -1,6 +1,6 @@
 import type { ResolvedMetricValue } from '@tkottke90/amazing-hashbrown-widgets/types';
 import type { WorkspaceStore } from './workspace-store.js';
-import type { CostStore } from '@tkottke90/observability';
+import type { CostStore, ObservabilityStore } from '@tkottke90/observability';
 
 /**
  * What a Metric resolver needs to compute its value. Built fresh per GET by
@@ -12,6 +12,7 @@ import type { CostStore } from '@tkottke90/observability';
 export interface MetricDeps {
   workspaceStore: WorkspaceStore;
   usageStore: CostStore;
+  observabilityStore: ObservabilityStore;
   checkForUpdates: boolean;
   /** Injected only by `version-info`'s own tests; production always uses the global `fetch`. */
   fetchImpl?: typeof fetch;

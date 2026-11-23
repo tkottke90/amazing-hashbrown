@@ -1,6 +1,6 @@
 import { describe, it } from 'mocha';
 import { expect } from 'chai';
-import type { UsageRow, CostStore } from '@tkottke90/observability';
+import type { UsageRow, CostStore, ObservabilityStore } from '@tkottke90/observability';
 import type { WorkspaceStore } from '../workspace-store.js';
 import type { MetricDeps } from '../metric.js';
 import { usageByModelTokensMetric } from './usage-by-model-tokens.metric.js';
@@ -21,6 +21,7 @@ function makeDeps(rows: UsageRow[]): MetricDeps {
   return {
     usageStore: { queryUsage: () => rows } as unknown as CostStore,
     workspaceStore: {} as unknown as WorkspaceStore,
+    observabilityStore: {} as unknown as ObservabilityStore,
     checkForUpdates: false,
   };
 }

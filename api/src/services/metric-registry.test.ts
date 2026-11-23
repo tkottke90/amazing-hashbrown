@@ -6,7 +6,7 @@ import type {
   SystemWidget,
   ResolvedMetricValue,
 } from '@tkottke90/amazing-hashbrown-widgets/types';
-import type { CostStore } from '@tkottke90/observability';
+import type { CostStore, ObservabilityStore } from '@tkottke90/observability';
 import type { WorkspaceStore } from './workspace-store.js';
 import type { Metric, MetricDeps } from './metric.js';
 import { registerMetric, getMetric, listMetrics, resolveSystemWidget } from './metric-registry.js';
@@ -15,6 +15,7 @@ function makeDeps(): MetricDeps {
   return {
     workspaceStore: {} as unknown as WorkspaceStore,
     usageStore: {} as unknown as CostStore,
+    observabilityStore: {} as unknown as ObservabilityStore,
     checkForUpdates: false,
   };
 }
@@ -80,6 +81,8 @@ describe('services/metric-registry', () => {
         'usage-by-model-tokens',
         'avg-runs-to-complete',
         'task-non-completion-rate',
+        'usage-by-tool',
+        'failure-rate-by-tool',
       ]);
     });
   });
