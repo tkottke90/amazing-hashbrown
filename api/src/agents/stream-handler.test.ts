@@ -1367,12 +1367,77 @@ describe('agents/stream-handler', () => {
       expect(caught).to.be.instanceOf(PipeEventsError);
       const err = caught as PipeEventsError;
       expect(err.segmentId).to.equal('msg7');
-      expect(err.partialContent.length).to.be.greaterThan(0);
-      expect(longChunk.startsWith(err.partialContent)).to.equal(true);
+      // The catch block drains flushDelta's withheld safe-margin tail before
+      // throwing, so the full chunk survives — not just a prefix of it.
+      expect(err.partialContent).to.equal(longChunk);
 
       const recovered = extractPartialAssistantState(err, 'msg7');
       expect(recovered.segmentId).to.equal('msg7');
       expect(recovered.content).to.equal(err.partialContent);
+    });
+
+    it('preserves text shorter than the safe margin in full on a mid-stream failure', async () => {
+      recordAssistantStart(store, 't1', 'msg7b', TEST_SENT_AT);
+      const { sink } = fakeSink();
+      // Shorter than SAFE_MARGIN (8) — before the fix, flushDelta would never
+      // flush any of this into parse.content, and the catch block would see
+      // an empty partialContent instead of this text in full.
+      const shortChunk = 'Hi';
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      async function* throwingStream(): AsyncGenerator<any> {
+        yield { event: 'on_chat_model_stream', data: { chunk: { content: shortChunk } } };
+        throw new Error('boom');
+      }
+
+      let caught: unknown;
+      try {
+        await pipeEvents(sink, 'msg7b', throwingStream(), store, 't1', TEST_SENT_AT);
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).to.be.instanceOf(PipeEventsError);
+      expect((caught as PipeEventsError).partialContent).to.equal(shortChunk);
+    });
+
+    it('flushes the withheld tail to the live sink when a tool call starts, before the tool_call_start event', async () => {
+      recordAssistantStart(store, 't1', 'msg7c', TEST_SENT_AT);
+      const { sink, events } = fakeSink();
+      // Longer than SAFE_MARGIN so a tail is still withheld in parse.buf when
+      // on_tool_start fires, with nothing else following to drain it later —
+      // mirrors a tool call being the last thing in a turn before it ends.
+      const longText = 'Both schemas in hand, reading the proven invocation';
+      await pipeEvents(
+        sink,
+        'msg7c',
+        eventsFrom([
+          { event: 'on_chat_model_stream', data: { chunk: { content: longText } } },
+          {
+            event: 'on_tool_start',
+            name: 'shell_exec',
+            run_id: 'tc-drain',
+            data: { input: {} },
+          },
+        ]),
+        store,
+        't1',
+        TEST_SENT_AT,
+      );
+
+      const allEvents = events();
+      const toolStartIdx = allEvents.findIndex((e) => e.type === 'tool_call_start');
+      expect(toolStartIdx, 'expected a tool_call_start event').to.be.greaterThan(-1);
+
+      // The full text must already be on the wire before tool_call_start —
+      // not drained later (the next text segment, or stream end) — or the
+      // live chat UI visibly stalls a few characters short while the tool
+      // runs, the "pause before a tool call" symptom this fix addresses.
+      const textBeforeToolStart = allEvents
+        .slice(0, toolStartIdx)
+        .filter((e) => e.type === 'text_delta')
+        .map((e) => e.delta as string)
+        .join('');
+      expect(textBeforeToolStart).to.equal(longText);
     });
 
     it('extractPartialAssistantState falls back to the given id and empty content for a non-PipeEventsError', () => {
