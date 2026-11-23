@@ -10,6 +10,8 @@ import { usageByProviderTokensMetric } from './metrics/usage-by-provider-tokens.
 import { usageByModelTokensMetric } from './metrics/usage-by-model-tokens.metric.js';
 import { avgRunsToCompleteMetric } from './metrics/avg-runs-to-complete.metric.js';
 import { taskNonCompletionRateMetric } from './metrics/task-non-completion-rate.metric.js';
+import { usageByToolMetric } from './metrics/usage-by-tool.metric.js';
+import { failureRateByToolMetric } from './metrics/failure-rate-by-tool.metric.js';
 
 const metrics = new Map<string, Metric>();
 
@@ -38,6 +40,8 @@ registerMetric(usageByProviderTokensMetric);
 registerMetric(usageByModelTokensMetric);
 registerMetric(avgRunsToCompleteMetric);
 registerMetric(taskNonCompletionRateMetric);
+registerMetric(usageByToolMetric);
+registerMetric(failureRateByToolMetric);
 
 /**
  * Resolves a `source: 'system'` widget's live value in place (ADR-0011) —

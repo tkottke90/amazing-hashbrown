@@ -1,6 +1,7 @@
 import { getMetric, listMetrics } from '../../services/metric-registry.js';
 import { getWorkspaceStore } from '../../services/workspace-store.js';
 import { getUsageStore } from '../../services/usage.js';
+import { getObservabilityStore } from '../../services/observability.js';
 import { env } from '../../config/env.js';
 import type { MetricDeps, Metric } from '../../services/metric.js';
 import type { ResolvedMetricValue } from '@tkottke90/amazing-hashbrown-widgets/types';
@@ -35,6 +36,7 @@ function buildDefaultMetricDeps(): MetricDeps {
   return {
     workspaceStore: getWorkspaceStore(),
     usageStore: getUsageStore(),
+    observabilityStore: getObservabilityStore(),
     checkForUpdates: env.updates.checkForUpdates,
   };
 }

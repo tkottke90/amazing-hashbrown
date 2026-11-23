@@ -184,6 +184,22 @@ const RawSpanSchema = z
     interrupted: row.interrupted === 1,
   }));
 
+// Used by queryToolCallStats() — one row per distinct tool-call span name.
+const RawToolCallStatsSchema = z
+  .object({
+    name: z.string(),
+    total: z.number(),
+    // SUM() returns null for empty sets; GROUP BY guarantees ≥1 row per
+    // group here, but coerce defensively anyway, same as tool_call_count above.
+    failed: z
+      .number()
+      .nullable()
+      .transform((v) => v ?? 0),
+  })
+  .transform((row) => ({ name: row.name, total: row.total, failed: row.failed }));
+
+export type ToolCallStatsRow = z.output<typeof RawToolCallStatsSchema>;
+
 // ---------------------------------------------------------------------------
 // DDL migrations
 // ---------------------------------------------------------------------------
@@ -481,5 +497,23 @@ export class ObservabilityStore extends BaseStore implements IReadDao<TraceSumma
     const spans = spanRows.map((row) => RawSpanSchema.parse(row));
 
     return { ...trace, spans };
+  }
+
+  // Per-tool call/failure counts across all tool-call spans, all-time (no
+  // date range — nothing needs a narrower range yet). "Failed" is `error IS
+  // NOT NULL`; HITL-interrupted spans carry `error: null`, so they're never
+  // counted as failed.
+  queryToolCallStats(): ToolCallStatsRow[] {
+    const rows = this.db
+      .prepare(
+        `SELECT name,
+                COUNT(*) AS total,
+                SUM(CASE WHEN error IS NOT NULL THEN 1 ELSE 0 END) AS failed
+         FROM observability_spans
+         WHERE type = 'tool-call'
+         GROUP BY name`,
+      )
+      .all();
+    return rows.map((row) => RawToolCallStatsSchema.parse(row));
   }
 }

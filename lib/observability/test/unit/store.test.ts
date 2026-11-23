@@ -335,4 +335,67 @@ describe('ObservabilityStore', () => {
       assert.equal(summary.toolCallCount, 2);
     });
   });
+
+  describe('queryToolCallStats', () => {
+    let store: ObservabilityStore;
+    let dir: string;
+
+    before(() => ({ store, dir } = makeStore()));
+    after(() => {
+      store.close();
+      rmSync(dir, { recursive: true });
+    });
+
+    it('returns an empty array when there are no tool-call spans', () => {
+      assert.deepEqual(store.queryToolCallStats(), []);
+    });
+
+    it('groups total/failed counts by tool name', () => {
+      const traceId = store.startTrace({ provider: 'openai', model: 'gpt-4o' });
+      store.saveSpans([
+        makeSpan({ spanId: 'a1', traceId, type: 'tool-call', name: 'alpha', error: null }),
+        makeSpan({ spanId: 'a2', traceId, type: 'tool-call', name: 'alpha', error: 'boom' }),
+        makeSpan({ spanId: 'b1', traceId, type: 'tool-call', name: 'beta', error: null }),
+      ]);
+
+      const stats = store.queryToolCallStats();
+      const alpha = stats.find((s) => s.name === 'alpha');
+      const beta = stats.find((s) => s.name === 'beta');
+
+      assert.ok(alpha);
+      assert.equal(alpha.total, 2);
+      assert.equal(alpha.failed, 1);
+      assert.ok(beta);
+      assert.equal(beta.total, 1);
+      assert.equal(beta.failed, 0);
+    });
+
+    it('does not count an HITL-interrupted span as failed', () => {
+      const traceId = store.startTrace({ provider: 'openai', model: 'gpt-4o' });
+      store.saveSpans([
+        makeSpan({
+          spanId: 'i1',
+          traceId,
+          type: 'tool-call',
+          name: 'gamma',
+          error: null,
+          interrupted: true,
+        }),
+        makeSpan({
+          spanId: 'i2',
+          traceId,
+          type: 'tool-call',
+          name: 'gamma',
+          error: 'real failure',
+        }),
+      ]);
+
+      const stats = store.queryToolCallStats();
+      const gamma = stats.find((s) => s.name === 'gamma');
+
+      assert.ok(gamma);
+      assert.equal(gamma.total, 2);
+      assert.equal(gamma.failed, 1);
+    });
+  });
 });

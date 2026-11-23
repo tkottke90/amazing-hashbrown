@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
-import type { CostStore } from '@tkottke90/observability';
+import type { CostStore, ObservabilityStore } from '@tkottke90/observability';
 import type { WorkspaceStore } from '../workspace-store.js';
 import type { MetricDeps } from '../metric.js';
 import { versionInfoMetric } from './version-info.metric.js';
@@ -20,6 +20,7 @@ function makeDeps(checkForUpdates: boolean, fetchImpl?: typeof fetch): MetricDep
   return {
     workspaceStore: {} as unknown as WorkspaceStore,
     usageStore: {} as unknown as CostStore,
+    observabilityStore: {} as unknown as ObservabilityStore,
     checkForUpdates,
     fetchImpl,
   };

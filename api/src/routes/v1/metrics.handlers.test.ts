@@ -1,6 +1,6 @@
 import { describe, it } from 'mocha';
 import { expect } from 'chai';
-import type { CostStore } from '@tkottke90/observability';
+import type { CostStore, ObservabilityStore } from '@tkottke90/observability';
 import type { WorkspaceStore } from '../../services/workspace-store.js';
 import type { Metric, MetricDeps } from '../../services/metric.js';
 import { listMetricsHandler, previewMetricHandler, type MetricsDeps } from './metrics.handlers.js';
@@ -9,6 +9,7 @@ function makeMetricDeps(): MetricDeps {
   return {
     workspaceStore: {} as unknown as WorkspaceStore,
     usageStore: {} as unknown as CostStore,
+    observabilityStore: {} as unknown as ObservabilityStore,
     checkForUpdates: false,
   };
 }
