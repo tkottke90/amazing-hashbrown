@@ -1121,6 +1121,32 @@ const MIGRATIONS: DbMigration[] = [
 // rather than retrying forever. See recoverRunningQueueEntries() below.
 const MAX_QUEUE_RECOVERY_ATTEMPTS = 1;
 
+// The slice of a task that decides what its Tracker Link's Assignee Label
+// should be (see GLOSSARY.md "Assignee Label").
+export interface TaskTrackerAssignment {
+  assignedTo: Task['assignedTo'];
+  trackerType: string | null;
+  trackerId: string | null;
+}
+
+export interface TaskTrackerAssignmentChange {
+  taskId: string;
+  before: TaskTrackerAssignment | null; // null when the task was just created
+  after: TaskTrackerAssignment;
+}
+
+export type TaskTrackerAssignmentListener = (change: TaskTrackerAssignmentChange) => void;
+
+function assignmentOf(task: Task): TaskTrackerAssignment {
+  return { assignedTo: task.assignedTo, trackerType: task.trackerType, trackerId: task.trackerId };
+}
+
+function sameAssignment(a: TaskTrackerAssignment, b: TaskTrackerAssignment): boolean {
+  return (
+    a.assignedTo === b.assignedTo && a.trackerType === b.trackerType && a.trackerId === b.trackerId
+  );
+}
+
 export class WorkspaceStore extends BaseStore {
   // Origin='agent' rows recoverRunningQueueEntries() marks failed after
   // exhausting retries, collected here rather than notified immediately.
@@ -1137,10 +1163,42 @@ export class WorkspaceStore extends BaseStore {
   // docs/superpowers/specs/2026-11-01-sub-agent-delegation-design.md.
   private _pendingSubAgentCrashNotifications: { task: Task; runThreadId: string | null }[] = [];
 
+  // Notified synchronously after any write that changes a task's assignee or
+  // Tracker Link. The store itself never does network I/O; listeners (the
+  // Assignee Label service) defer their own side effects. Every assignment
+  // path funnels through createTask/patchTask/parkQueueEntryForHitl, except
+  // crash recovery in the constructor, which runs before anything can
+  // subscribe.
+  private _assignmentListeners = new Set<TaskTrackerAssignmentListener>();
+
   constructor(db: SqliteDatabase) {
     super(db);
     this.runMigrations(MIGRATIONS);
     this.recoverRunningQueueEntries();
+  }
+
+  onTaskTrackerAssignmentChanged(listener: TaskTrackerAssignmentListener): () => void {
+    this._assignmentListeners.add(listener);
+    return () => this._assignmentListeners.delete(listener);
+  }
+
+  private notifyAssignmentChanged(
+    taskId: string,
+    before: TaskTrackerAssignment | null,
+    after: TaskTrackerAssignment,
+  ): void {
+    if (before && sameAssignment(before, after)) return;
+    for (const listener of this._assignmentListeners) {
+      try {
+        listener({ taskId, before, after });
+      } catch (err) {
+        // A listener must never be able to fail the write that notified it.
+        logger.warn('task assignment listener threw', {
+          taskId,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
   }
 
   drainPendingSubAgentCrashNotifications(): { task: Task; runThreadId: string | null }[] {
@@ -1734,12 +1792,19 @@ export class WorkspaceStore extends BaseStore {
         now,
         now,
       );
-    return this.getTask(id)!;
+    const created = this.getTask(id)!;
+    this.notifyAssignmentChanged(id, null, assignmentOf(created));
+    return created;
   }
 
   patchTask(id: string, patch: PatchTaskInput): Task | null {
     const sets: string[] = [];
     const values: unknown[] = [];
+    const touchesAssignment =
+      patch.assignedTo !== undefined ||
+      patch.trackerType !== undefined ||
+      patch.trackerId !== undefined;
+    const beforeTask = touchesAssignment ? this.getTask(id) : null;
 
     if (patch.workspaceId !== undefined) {
       sets.push('workspace_id = ?');
@@ -1828,7 +1893,11 @@ export class WorkspaceStore extends BaseStore {
       .prepare(`UPDATE tasks SET ${sets.join(', ')} WHERE id = ?`)
       .run(...values, id);
     if (result.changes === 0) return null;
-    return this.getTask(id);
+    const updated = this.getTask(id);
+    if (beforeTask && updated) {
+      this.notifyAssignmentChanged(id, assignmentOf(beforeTask), assignmentOf(updated));
+    }
+    return updated;
   }
 
   // Does NOT bump updated_at — archiving isn't activity on the task itself
@@ -3019,11 +3088,16 @@ export class WorkspaceStore extends BaseStore {
     const row = this.db.prepare(`SELECT task_id FROM task_queue WHERE id = ?`).get(id) as
       { task_id: string } | undefined;
     if (row) {
+      const beforeTask = this.getTask(row.task_id);
       this.db
         .prepare(
           `UPDATE tasks SET status = 'waiting_on_user', assigned_to = 'user', updated_at = ? WHERE id = ?`,
         )
         .run(now, row.task_id);
+      const updated = this.getTask(row.task_id);
+      if (beforeTask && updated) {
+        this.notifyAssignmentChanged(row.task_id, assignmentOf(beforeTask), assignmentOf(updated));
+      }
     }
   }
 
