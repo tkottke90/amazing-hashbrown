@@ -192,6 +192,13 @@ describe('services/tracker-registry', () => {
       else process.env['TRACKER_PLUGINS'] = originalPlugins;
     });
 
+    it('always registers the built-in Todoist adapter, token or not, so Settings can offer it for configuration [unit]', () => {
+      bootTrackerRegistry();
+      expect(getTrackerRegistry().get('todoist'), 'todoist adapter not registered').to.not.equal(
+        undefined,
+      );
+    });
+
     it('always registers the built-in GitHub adapter', () => {
       delete process.env['TRACKER_PLUGINS'];
       bootTrackerRegistry();

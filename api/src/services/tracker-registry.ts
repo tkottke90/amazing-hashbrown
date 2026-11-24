@@ -2,6 +2,7 @@ import { createRequire } from 'node:module';
 import { logger } from '../config/logger.js';
 import type { TrackerAdapter, TrackerItem } from './tracker-adapter.js';
 import { createGithubTrackerAdapter } from '../adapters/tracker-github.js';
+import { createTodoistTrackerAdapter } from '../adapters/tracker-todoist.js';
 import { env } from '../config/env.js';
 
 // ESM has no ambient `require` — this project is "type": "module" — so a
@@ -74,6 +75,9 @@ function buildTrackerRegistry(): TrackerRegistry {
   const registry = new TrackerRegistry();
 
   registry.register(createGithubTrackerAdapter(env.workspaces.tasks?.trackers?.github?.token));
+  // Always registered so Settings can configure it; `configured` stays false
+  // (and it's hidden from linking) until a token is set.
+  registry.register(createTodoistTrackerAdapter(env.workspaces.tasks?.trackers?.todoist?.token));
 
   const pluginList = (process.env['TRACKER_PLUGINS'] ?? '')
     .split(',')

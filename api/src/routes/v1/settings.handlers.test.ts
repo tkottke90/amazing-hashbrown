@@ -1618,6 +1618,87 @@ describe('routes/v1/settings.handlers', () => {
       });
     });
 
+    describe('trackers slug — todoist token', () => {
+      async function patchTrackers(body: unknown, config: ConfigManagerAccessor) {
+        const {
+          loadAgentInstructions,
+          invalidateChatAgent,
+          seedProviderCosts,
+          reloadTrackerRegistry,
+          refreshProviderQueueLimits,
+        } = makeSideEffects();
+        return patchSettingsSectionHandler(
+          'trackers',
+          body,
+          config,
+          makeEnv(),
+          loadAgentInstructions,
+          invalidateChatAgent,
+          seedProviderCosts,
+          reloadTrackerRegistry,
+          refreshProviderQueueLimits,
+        );
+      }
+
+      type TrackersYaml = {
+        tasks: { trackers: { github?: { token?: string }; todoist?: { token?: string } } };
+      };
+
+      it('masks a stored literal todoist token on GET, so the secret never reaches the UI [unit]', () => {
+        writeYaml(tmpDir, {
+          workspaces: { tasks: { trackers: { todoist: { token: 'todoist_real' } } } },
+        });
+        const result = getSettingsSectionHandler('trackers', makeEnv(), makeConfig(tmpDir));
+        expect(result.ok).to.equal(true);
+        if (result.ok) {
+          const data = result.data as { todoist: { token?: string } };
+          expect(data.todoist.token).to.equal('****');
+        }
+      });
+
+      it('writes a todoist token nested under workspaces.tasks.trackers.todoist [unit]', async () => {
+        await patchTrackers({ todoist: { token: 'todoist_new' } }, makeConfig(tmpDir));
+        const workspaces = readYaml(tmpDir).workspaces as TrackersYaml;
+        expect(workspaces.tasks.trackers.todoist?.token).to.equal('todoist_new');
+      });
+
+      it('keeps the stored todoist token when the masked sentinel is sent back [unit]', async () => {
+        writeYaml(tmpDir, {
+          workspaces: { tasks: { trackers: { todoist: { token: 'todoist_stored' } } } },
+        });
+        await patchTrackers({ todoist: { token: '****' } }, makeConfig(tmpDir));
+        const workspaces = readYaml(tmpDir).workspaces as TrackersYaml;
+        expect(workspaces.tasks.trackers.todoist?.token).to.equal('todoist_stored');
+      });
+
+      it('saving only a todoist token leaves the stored github token untouched [unit]', async () => {
+        writeYaml(tmpDir, {
+          workspaces: { tasks: { trackers: { github: { token: 'ghp_stored' } } } },
+        });
+        await patchTrackers({ todoist: { token: 'todoist_new' } }, makeConfig(tmpDir));
+        const workspaces = readYaml(tmpDir).workspaces as TrackersYaml;
+        expect(
+          workspaces.tasks.trackers.github?.token,
+          'a patch without a github key must not clear the github token',
+        ).to.equal('ghp_stored');
+        expect(workspaces.tasks.trackers.todoist?.token).to.equal('todoist_new');
+      });
+
+      it('rejects a todoist ${VAR} reference to an unset variable with a todoist.token error [unit]', async () => {
+        const result = await patchTrackers(
+          { todoist: { token: '${DEFINITELY_UNSET_TODOIST_VAR}' } },
+          makeConfig(tmpDir),
+        );
+        expect(result.ok).to.equal(false);
+        if (!result.ok) {
+          expect(result.status).to.equal(400);
+          expect(result.fieldErrors?.['todoist.token']?.[0]).to.include(
+            'DEFINITELY_UNSET_TODOIST_VAR',
+          );
+        }
+      });
+    });
+
     it('clears apiKey when incoming is empty string for model-providers [unit]', async () => {
       const storedProviders: EnvAccessor['providers'] = [
         { name: 'openai', type: 'openai', apiKey: 'sk-old-key' },

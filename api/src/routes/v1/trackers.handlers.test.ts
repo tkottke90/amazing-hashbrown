@@ -9,6 +9,7 @@ import {
   createTrackerItemHandler,
   listTrackerContainersHandler,
   verifyGithubTokenHandler,
+  verifyTodoistTokenHandler,
 } from './trackers.handlers.js';
 
 const SAMPLE_ITEM: TrackerItem = {
@@ -379,6 +380,55 @@ describe('routes/v1/trackers.handlers', () => {
         expect(result.data.valid).to.equal(false);
         expect(result.data.error).to.equal('network unreachable');
       }
+    });
+  });
+
+  describe('verifyTodoistTokenHandler()', () => {
+    // Targets Todoist API v1 (2026-11): GET /projects is an authenticated read.
+    const originalFetch = globalThis.fetch;
+    afterEach(() => {
+      globalThis.fetch = originalFetch;
+    });
+
+    it('returns 400 when no token is supplied [unit]', async () => {
+      const result = await verifyTodoistTokenHandler({});
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+    });
+
+    it('checks the token with a 1-item project list, sent as a Bearer token [external-orchestration]', async () => {
+      const seen: Array<{ url: string; auth: string | undefined }> = [];
+      globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+        seen.push({
+          url: String(input),
+          auth: (init?.headers as Record<string, string> | undefined)?.['Authorization'],
+        });
+        return new Response('{"results":[],"next_cursor":null}', { status: 200 });
+      }) as typeof fetch;
+      const result = await verifyTodoistTokenHandler({ token: 'todoist_token' });
+      expect(result.ok && result.data.valid).to.equal(true);
+      expect(seen).to.deep.equal([
+        { url: 'https://api.todoist.com/api/v1/projects?limit=1', auth: 'Bearer todoist_token' },
+      ]);
+    });
+
+    it('reports valid: false with the status when Todoist rejects the token [external-orchestration]', async () => {
+      globalThis.fetch = (async () => new Response('Forbidden', { status: 401 })) as typeof fetch;
+      const result = await verifyTodoistTokenHandler({ token: 'bad' });
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(result.data.valid).to.equal(false);
+        expect(result.data.error).to.contain('401');
+      }
+    });
+
+    it('reports valid: false instead of throwing when the request fails [external-orchestration]', async () => {
+      globalThis.fetch = (async () => {
+        throw new Error('network unreachable');
+      }) as typeof fetch;
+      const result = await verifyTodoistTokenHandler({ token: 'x' });
+      expect(result.ok && result.data.valid).to.equal(false);
+      if (result.ok) expect(result.data.error).to.contain('network unreachable');
     });
   });
 });

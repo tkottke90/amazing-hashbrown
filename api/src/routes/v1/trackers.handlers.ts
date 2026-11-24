@@ -1,5 +1,6 @@
 import type { TrackerRegistry } from '../../services/tracker-registry.js';
 import type { TrackerContainer } from '../../services/tracker-adapter.js';
+import { TODOIST_API } from '../../adapters/tracker-todoist.js';
 import type { HandlerFailure, HandlerResult } from './threads.handlers.js';
 
 function ok<T>(data: T): HandlerResult<T> {
@@ -192,5 +193,27 @@ export async function verifyGithubTokenHandler(body: {
       tokenType: 'unknown',
       error: errorMessage(err),
     });
+  }
+}
+
+interface TodoistVerifyResult {
+  valid: boolean;
+  error?: string;
+}
+
+// Todoist has no token-introspection endpoint; any authenticated read that
+// succeeds proves the token works, and a 1-item project list is the cheapest.
+export async function verifyTodoistTokenHandler(body: {
+  token?: unknown;
+}): Promise<HandlerResult<TodoistVerifyResult>> {
+  if (!body.token || typeof body.token !== 'string') return badRequest('token is required');
+  try {
+    const res = await fetch(`${TODOIST_API}/projects?limit=1`, {
+      headers: { Authorization: `Bearer ${body.token}` },
+    });
+    if (!res.ok) return ok({ valid: false, error: `Todoist API error ${res.status}` });
+    return ok({ valid: true });
+  } catch (err) {
+    return ok({ valid: false, error: errorMessage(err) });
   }
 }

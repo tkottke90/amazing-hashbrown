@@ -15,6 +15,7 @@ import {
   AnyProviderSchema,
   FavoriteModelSchema,
   GithubTrackerSchema,
+  TodoistTrackerSchema,
   WorkspacesSchema,
   type AnyProviderConfig,
   type AzureOpenAiProviderConfig,
@@ -223,7 +224,10 @@ export type ModelSettingsEntry = {
 
 export type ModelSettingsSettings = { models: ModelSettingsEntry[]; legacyCosts: string[] };
 
-export type TrackersSettings = { github: z.infer<typeof GithubTrackerSchema> };
+export type TrackersSettings = {
+  github: z.infer<typeof GithubTrackerSchema>;
+  todoist: z.infer<typeof TodoistTrackerSchema>;
+};
 
 export type GitCredentialsSettings = { github: z.infer<typeof GithubTrackerSchema> };
 
@@ -281,11 +285,21 @@ export function validateFavoriteModels(
 // sentinel/undefined (an unchanged or cleared field), and otherwise checks
 // a ${VAR}-shaped token against validateCredentialValue (config/credential-value.ts).
 function validateGithubTokenField(v: unknown): Record<string, string[]> | null {
-  const data = v as { github?: { token?: string } };
-  const token = data.github?.token;
-  if (token === undefined || token === MASK) return null;
-  const error = validateCredentialValue(token);
-  return error ? { 'github.token': [error] } : null;
+  return validateTokenFields(v, ['github']);
+}
+
+// Same check as above, for any `{ <key>: { token } }` entries in a patch —
+// the trackers slug carries one token per tracker type.
+function validateTokenFields(v: unknown, keys: string[]): Record<string, string[]> | null {
+  const data = v as Record<string, { token?: string } | undefined>;
+  const errors: Record<string, string[]> = {};
+  for (const key of keys) {
+    const token = data[key]?.token;
+    if (token === undefined || token === MASK) continue;
+    const error = validateCredentialValue(token);
+    if (error) errors[`${key}.token`] = [error];
+  }
+  return Object.keys(errors).length > 0 ? errors : null;
 }
 
 const SLUG_MAP: Record<string, SlugDef> = {
@@ -580,19 +594,30 @@ const SLUG_MAP: Record<string, SlugDef> = {
   trackers: {
     get: (_env, config) => {
       const raw = readRawWorkspacesConfig(config.getConfigDir());
-      return { github: { token: displayCredential(raw.tasks?.trackers?.github?.token) } };
+      return {
+        github: { token: displayCredential(raw.tasks?.trackers?.github?.token) },
+        todoist: { token: displayCredential(raw.tasks?.trackers?.todoist?.token) },
+      };
     },
-    patchSchema: z.object({ github: GithubTrackerSchema.partial().optional() }).partial(),
-    validate: (v) => validateGithubTokenField(v),
+    patchSchema: z
+      .object({
+        github: GithubTrackerSchema.partial().optional(),
+        todoist: TodoistTrackerSchema.partial().optional(),
+      })
+      .partial(),
+    validate: (v) => validateTokenFields(v, ['github', 'todoist']),
     write: (v, configDir) => {
-      const data = v as { github?: { token?: string } };
+      const data = v as Partial<Record<'github' | 'todoist', { token?: string }>>;
       const current = readRawWorkspacesConfig(configDir);
-      const token = unmaskApiKey(data.github?.token, current.tasks?.trackers?.github?.token);
+      const trackers = { ...current.tasks?.trackers };
+      // Only trackers present in the patch are touched — a patch carrying
+      // just one tracker must not clear another tracker's stored token.
+      for (const key of ['github', 'todoist'] as const) {
+        if (data[key] === undefined) continue;
+        trackers[key] = { token: unmaskApiKey(data[key]!.token, trackers[key]?.token) };
+      }
       mergeConfigYaml(configDir, {
-        workspaces: {
-          ...current,
-          tasks: { ...current.tasks, trackers: { ...current.tasks?.trackers, github: { token } } },
-        },
+        workspaces: { ...current, tasks: { ...current.tasks, trackers } },
       });
     },
   },
