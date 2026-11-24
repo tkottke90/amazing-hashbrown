@@ -1,7 +1,7 @@
 # Todoist Tracker Adapter Design
 
 **Date:** 2026-11-24
-**Status:** Draft, awaiting review
+**Status:** Approved
 **Issue:** [tkottke90/amazing-hashbrown#82](https://github.com/tkottke90/amazing-hashbrown/issues/82)
 
 ## Goal
@@ -31,11 +31,11 @@ The issue was written before #73 landed and against an API version Todoist has s
 5. Todoist token in Settings, with a Verify button
 6. Assignee Labels on linked Todoist items, kept current on every reassignment
 
-### Out of scope (follow-up issues, filed after this spec is approved)
+### Out of scope (follow-up issues)
 
-- Todoist state sync via webhooks. Webhooks require a registered OAuth app, a public HTTPS endpoint, and a per-user OAuth flow; a personal token can't activate them.
-- GitHub `updateState` write-back.
-- Todoist `updateState` write-back (close / reopen).
+- [#444](https://github.com/tkottke90/amazing-hashbrown/issues/444) Todoist state sync via webhooks. Webhooks require a registered OAuth app, a public HTTPS endpoint, and a per-user OAuth flow; a personal token can't activate them.
+- [#445](https://github.com/tkottke90/amazing-hashbrown/issues/445) GitHub `updateState` write-back.
+- [#446](https://github.com/tkottke90/amazing-hashbrown/issues/446) Todoist `updateState` write-back (close / reopen).
 
 ## Adapter interface changes (`api/src/services/tracker-adapter.ts`)
 
