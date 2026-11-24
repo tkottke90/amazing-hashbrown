@@ -128,7 +128,7 @@ export const GitHubTrackerWorkflow: TestSuite = {
           .locator('[data-slot="tracker-row"]', { hasText: 'GitHub' })
           .getByRole('button', { name: 'Configure' })
           .click();
-        await expect(page.getByText('Currently set')).toBeVisible();
+        await expect(page.locator('dialog[open]').getByText('Currently set')).toBeVisible();
         await page.locator('dialog[open]').getByRole('button', { name: 'Cancel' }).click();
       },
     },
@@ -276,7 +276,7 @@ export const GitHubTrackerWorkflow: TestSuite = {
           .locator('[data-slot="tracker-row"]', { hasText: 'GitHub' })
           .getByRole('button', { name: 'Configure' })
           .click();
-        await expect(page.getByText('Currently set')).not.toBeVisible();
+        await expect(page.locator('dialog[open]').getByText('Currently set')).not.toBeVisible();
         await page.locator('dialog[open]').getByRole('button', { name: 'Cancel' }).click();
 
         // A fresh task drawer should no longer offer "Create new GitHub item" —

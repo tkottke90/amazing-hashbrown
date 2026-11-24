@@ -178,7 +178,7 @@ export const TodoistTrackerWorkflow: TestSuite = {
 
         await page.reload();
         await row.getByRole('button', { name: 'Configure' }).click();
-        await expect(page.getByText('Currently set')).toBeVisible();
+        await expect(page.locator('dialog[open]').getByText('Currently set')).toBeVisible();
 
         await pauseForVideo(page, TodoistTrackerWorkflow, testInfo);
         await page.locator('dialog[open]').getByRole('button', { name: 'Remove' }).click();
