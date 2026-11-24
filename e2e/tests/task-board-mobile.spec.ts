@@ -287,7 +287,9 @@ test.describe(
       await page.setViewportSize({ width: 390, height: 240 });
 
       await page.getByTestId('quick-add-button').click();
-      const sheet = page.getByRole('dialog', { name: 'New task' });
+      // The sheet has no accessible name (its title is a bare <h2>), and
+      // closed sheets stay in the accessibility tree — target the open one.
+      const sheet = page.locator('dialog[open]');
       await expect(sheet).toBeVisible();
       await pauseBeforeAction(page, testInfo);
 

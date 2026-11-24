@@ -306,7 +306,9 @@ test.describe('Settings skills panel', { annotation: suiteAnnotations(suite) }, 
     await page.getByRole('button', { name: 'Create skill' }).click();
 
     await expect(page.getByRole('alert')).toContainText('created');
-    await expect(page.getByLabel('Name')).toHaveValue('my-new-skill');
+    // exact: the tools picker's checkbox labels (loaded async) can contain
+    // "name" too, which made a substring match flaky.
+    await expect(page.getByLabel('Name', { exact: true })).toHaveValue('my-new-skill');
   });
 
   test('Edits description and body, saves @user-workflow', async ({ page }, testInfo) => {
@@ -499,7 +501,7 @@ test.describe('Settings skills panel', { annotation: suiteAnnotations(suite) }, 
       await skillRow(page, 'create-workspace').waitFor();
 
       await page.getByRole('button', { name: '+ New skill' }).click();
-      const dialog = page.getByRole('dialog');
+      const dialog = page.locator('dialog[open]');
       await expect(dialog).toBeVisible();
       await pauseBeforeAction(page, testInfo);
 
@@ -513,7 +515,7 @@ test.describe('Settings skills panel', { annotation: suiteAnnotations(suite) }, 
       await page.goto('/settings?section=skills');
 
       await skillRow(page, 'brainstorming').getByRole('button', { name: 'Edit' }).click();
-      const dialog = page.getByRole('dialog');
+      const dialog = page.locator('dialog[open]');
       await expect(dialog.getByLabel('Description')).toBeVisible();
       await pauseBeforeAction(page, testInfo);
 

@@ -215,7 +215,9 @@ test.describe(
       }, testInfo) => {
         await page.goto('/');
         await page.getByTestId('dashboard-settings-trigger').click();
-        const dialog = page.getByRole('dialog');
+        // Closed drawers stay in the accessibility tree (opacity-0, not
+        // display:none), so getByRole('dialog') matches every mounted one.
+        const dialog = page.locator('dialog[open]');
         await expect(dialog).toBeVisible();
         await pauseBeforeAction(page, testInfo);
 
