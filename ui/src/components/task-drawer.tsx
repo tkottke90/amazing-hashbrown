@@ -562,6 +562,10 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
     const type = trackerType.value;
     if (!type) return;
     showCreateForm.value = true;
+    // Seed from the drawer's current fields, not the saved task — a new
+    // task has no saved title yet, and an existing one may have been edited.
+    createTitle.value = title.value;
+    createBody.value = description.value;
     createContainer.value = '';
     containers.value = [];
     containerError.value = '';

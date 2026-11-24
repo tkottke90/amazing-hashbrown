@@ -164,15 +164,15 @@ export const GitHubTrackerWorkflow: TestSuite = {
         await drawer.getByTestId('task-tracker-type-select').selectOption('github');
 
         await pauseForVideo(page, GitHubTrackerWorkflow, testInfo);
-        await drawer.getByRole('button', { name: 'Create new issue' }).click();
+        await drawer.getByRole('button', { name: 'Create new GitHub item' }).click();
 
         // The repo field should already be prefilled from the workspace's
         // remoteUrl — confirm the prefill worked rather than typing over it.
         await expect(drawer.locator('input[placeholder="owner/repo"]')).toHaveValue(TEST_REPO!);
-        await drawer.locator('input[placeholder="Issue title"]').fill(taskTitle);
+        await drawer.locator('input[placeholder="Title"]').fill(taskTitle);
 
         await pauseForVideo(page, GitHubTrackerWorkflow, testInfo);
-        await drawer.getByRole('button', { name: 'Create issue' }).click();
+        await drawer.getByRole('button', { name: 'Create', exact: true }).click();
 
         const preview = drawer.getByTestId('task-tracker-preview');
         await expect(preview).toBeVisible({ timeout: 15_000 });
@@ -244,7 +244,7 @@ export const GitHubTrackerWorkflow: TestSuite = {
     {
       action: 'Remove the GitHub personal access token',
       expectedOutcome:
-        'The token no longer shows as configured, and "Create new issue" is hidden in the task drawer — while linking still works unauthenticated',
+        'The token no longer shows as configured, and "Create new GitHub item" is hidden in the task drawer — while linking still works unauthenticated',
       // Flaky against GitHub's 60 req/hr unauthenticated rate limit, shared
       // across whatever else hits api.github.com from the CI runner's IP —
       // confirmed the adapter/frontend code is correct (proper error
@@ -279,7 +279,7 @@ export const GitHubTrackerWorkflow: TestSuite = {
         await expect(page.getByText('Currently set')).not.toBeVisible();
         await page.locator('dialog[open]').getByRole('button', { name: 'Cancel' }).click();
 
-        // A fresh task drawer should no longer offer "Create new issue" —
+        // A fresh task drawer should no longer offer "Create new GitHub item" —
         // and pasting the same issue URL should still resolve unauthenticated.
         expect(workspaceTasksUrl, 'step 2 should have captured the workspace tasks URL').not.toBe(
           '',
@@ -295,7 +295,9 @@ export const GitHubTrackerWorkflow: TestSuite = {
         const drawer = page.locator('dialog[open]');
         await drawer.getByTestId('task-tracker-type-select').selectOption('github');
 
-        await expect(drawer.getByRole('button', { name: 'Create new issue' })).not.toBeVisible();
+        await expect(
+          drawer.getByRole('button', { name: 'Create new GitHub item' }),
+        ).not.toBeVisible();
 
         await drawer
           .locator('input[placeholder="Paste a tracker URL to link it"]')

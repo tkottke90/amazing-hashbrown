@@ -1082,4 +1082,16 @@ describe('TaskDrawer — tracker linking (Todoist, issue #82)', () => {
     expect(await screen.findByPlaceholderText('owner/repo')).toBeInTheDocument();
     expect(screen.queryByTestId('task-tracker-container-select')).toBeNull();
   });
+
+  it("pre-fills the create form's title and description from the drawer's current fields [unit]", async () => {
+    mockListTrackers.mockResolvedValueOnce([TODOIST]);
+    mockListTrackerContainers.mockResolvedValueOnce([]);
+    renderDrawer(baseTask);
+    fireEvent.input(screen.getByPlaceholderText('Task title'), {
+      target: { value: 'Edited title' },
+    });
+    await chooseTracker('todoist');
+    fireEvent.click(await screen.findByRole('button', { name: /Create new Todoist item/ }));
+    expect(await screen.findByPlaceholderText('Title')).toHaveValue('Edited title');
+  });
 });
