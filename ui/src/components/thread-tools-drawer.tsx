@@ -1,6 +1,6 @@
 import { useEffect } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
-import { Drawer } from '@tkottke90/preact-dialog';
+import { DialogBody, DialogFooter, Drawer } from '@tkottke90/preact-dialog';
 import { Loader2 } from 'lucide-preact';
 import { Button } from '@/components/ui/button';
 import { ClearableInput } from '@/components/ui/input';
@@ -147,12 +147,12 @@ function ThreadToolsBody() {
   }
 
   return (
-    <div class="flex flex-1 min-h-0 flex-col overflow-hidden px-6">
-      <p>
+    <div class="contents">
+      <p class="shrink-0 px-5 pt-2">
         Edit the tools the Agent has access to in this thread. Add/Remove tools by clicking the
         button next to the tool itself.
       </p>
-      <div class="flex-1 space-y-6 overflow-y-auto py-6">
+      <DialogBody className="space-y-6 py-6">
         <div>
           <h3 class="mb-1 text-sm font-medium text-muted-foreground">Built-in</h3>
           <ul>
@@ -223,9 +223,9 @@ function ThreadToolsBody() {
             )}
           </div>
         )}
-      </div>
+      </DialogBody>
 
-      <div class="flex justify-end gap-2 border-t border-border p-4">
+      <DialogFooter className="border-border">
         <Button
           type="button"
           size="sm"
@@ -235,7 +235,7 @@ function ThreadToolsBody() {
           {threadToolsSaving.value && <Loader2 class="size-3.5 animate-spin" />}
           Save
         </Button>
-      </div>
+      </DialogFooter>
     </div>
   );
 }
@@ -251,7 +251,7 @@ export function ThreadToolsDrawer() {
     <Drawer
       open={threadToolsDrawerOpen}
       title="Edit Tools"
-      className="w-[90vw]! rounded-none! border-0! bg-background! p-0! border-l border-border sm:max-w-5xl"
+      className="w-[90vw]! rounded-none! border-0! bg-background! border-l border-border sm:max-w-5xl"
     >
       <ThreadToolsBody />
     </Drawer>

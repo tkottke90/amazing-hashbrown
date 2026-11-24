@@ -3,7 +3,7 @@ import { useSignal, useComputed } from '@preact/signals';
 import { useLocation } from 'preact-iso';
 import { Plus, FolderOpen, Search } from 'lucide-preact';
 
-import { Drawer, useDialog } from '@tkottke90/preact-dialog';
+import { DialogBody, DialogFooter, Drawer, useDialog } from '@tkottke90/preact-dialog';
 import { Layout } from '@/components/layout';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -56,7 +56,7 @@ function CreateWorkspaceDrawer() {
   return (
     <Drawer
       title="New workspace"
-      className="!p-0 !bg-background !rounded-none !border-0 border-l border-border"
+      className="!bg-background !rounded-none !border-0 border-l border-border"
       onOpen={() => {
         openCount.value++;
       }}
@@ -210,8 +210,8 @@ export function CreateWorkspaceForm() {
   }
 
   return (
-    <div class="flex flex-col flex-1 min-h-0 mt-2">
-      <div class="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4">
+    <form onSubmit={handleSubmit} class="contents" data-testid="create-workspace-form">
+      <DialogBody className="flex flex-col gap-4">
         <div class="flex items-center gap-1 border border-border rounded-lg overflow-hidden w-fit text-sm">
           <button
             type="button"
@@ -243,7 +243,7 @@ export function CreateWorkspaceForm() {
           </button>
         </div>
 
-        <form id="create-workspace-form" onSubmit={handleSubmit} class="flex flex-col gap-4">
+        <div class="flex flex-col gap-4">
           <div class="grid grid-cols-2 gap-3">
             <div class="flex flex-col gap-1">
               <label class="text-xs font-medium text-muted-foreground">
@@ -470,16 +470,15 @@ export function CreateWorkspaceForm() {
           )}
 
           {error.value && <p class="text-sm text-destructive">{error.value}</p>}
-        </form>
-      </div>
+        </div>
+      </DialogBody>
 
-      <div class="flex items-center gap-2 px-5 py-4 border-t border-border shrink-0 justify-end">
+      <DialogFooter className="border-border">
         <Button type="button" variant="ghost" onClick={() => close()}>
           Cancel
         </Button>
         <Button
           type="submit"
-          form="create-workspace-form"
           disabled={saving.value || wikiDomainsError.value || !!wikiNameError.value}
         >
           {saving.value
@@ -488,8 +487,8 @@ export function CreateWorkspaceForm() {
               ? 'Create project'
               : 'Create workspace'}
         </Button>
-      </div>
-    </div>
+      </DialogFooter>
+    </form>
   );
 }
 

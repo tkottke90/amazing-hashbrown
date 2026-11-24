@@ -16,7 +16,7 @@ describe('BottomSheet', () => {
     expect(dialog.className).toContain('max-h-[90dvh]');
   });
 
-  it('wraps children in a scrollable region so content past the height cap scrolls instead of clipping', () => {
+  it('renders children directly in the content column so a DialogBody/DialogFooter pair can pin the footer', () => {
     const { container } = render(
       <BottomSheet>
         <div data-testid="child">content</div>
@@ -24,10 +24,42 @@ describe('BottomSheet', () => {
     );
 
     const child = container.querySelector('[data-testid="child"]');
-    const wrapper = child?.parentElement;
-    expect(wrapper?.className).toContain('flex-auto');
-    expect(wrapper?.className).toContain('min-h-0');
-    expect(wrapper?.className).toContain('overflow-y-auto');
+    const contentWrapper = getDialogEl(container).querySelector('div');
+    expect(child?.parentElement).toBe(contentWrapper);
+  });
+
+  it('carries no panel padding so the body and footer own their own', () => {
+    const { container } = render(<BottomSheet>content</BottomSheet>);
+
+    expect(getDialogEl(container).className.split(/\s+/)).toContain('p-0');
+  });
+
+  it('pads the header to line up with DialogBody/DialogFooter by default', () => {
+    const { container } = render(<BottomSheet title="Sheet">content</BottomSheet>);
+    const header = getDialogEl(container).querySelector('h2')?.parentElement;
+
+    expect(header?.className).toContain('px-5 pt-4 pb-2');
+  });
+
+  it('uses a caller-provided headerClassName instead of the default', () => {
+    const { container } = render(
+      <BottomSheet title="Sheet" headerClassName="px-2">
+        content
+      </BottomSheet>,
+    );
+    const header = getDialogEl(container).querySelector('h2')?.parentElement;
+
+    expect(header?.className).toContain('px-2');
+    expect(header?.className).not.toContain('px-5');
+  });
+
+  it('merges a caller contentClassName with the slide classes instead of replacing them', () => {
+    const { container } = render(<BottomSheet contentClassName="gap-4">content</BottomSheet>);
+    const inner = getDialogEl(container).querySelector('div');
+
+    expect(inner?.className).toContain('gap-4');
+    expect(inner?.className).toContain('translate-y-full');
+    expect(inner?.className).toContain('backdrop-blur-sm');
   });
 
   it('slides up from fully off-screen below, easing out', () => {

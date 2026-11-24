@@ -1,6 +1,7 @@
 import { useSignal } from '@preact/signals';
 import { useRef } from 'preact/hooks';
 import type { EditorView } from '@codemirror/view';
+import { DialogBody } from '@tkottke90/preact-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { CodeEditor } from '@/pages/workspaces/code-editor';
@@ -69,7 +70,7 @@ export function SkillFilesTab({ skillName, dir, files }: SkillFilesTabProps) {
   const basenames = Object.keys(files).sort();
 
   return (
-    <div class="flex min-h-full">
+    <DialogBody className="flex p-0">
       <div class="flex w-56 shrink-0 flex-col border-r border-border">
         <div class="flex items-center gap-1.5 border-b border-border p-2">
           <Input
@@ -142,6 +143,6 @@ export function SkillFilesTab({ skillName, dir, files }: SkillFilesTabProps) {
           </>
         )}
       </div>
-    </div>
+    </DialogBody>
   );
 }

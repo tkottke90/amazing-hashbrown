@@ -1,5 +1,5 @@
 import type { Signal } from '@preact/signals';
-import { BottomSheet } from '@tkottke90/preact-dialog';
+import { BottomSheet, DialogBody } from '@tkottke90/preact-dialog';
 import type { ComponentChildren } from 'preact';
 
 import { ThemeToggle } from '@/components/theme-toggle';
@@ -40,7 +40,7 @@ export function WorkspaceActionsSheet({
 }) {
   return (
     <BottomSheet title="Actions" open={open}>
-      <div class="flex flex-col px-1">
+      <DialogBody className="flex flex-col">
         {!isTerminal && (
           <ActionRow>
             <span class="text-sm font-medium">Edit workspace</span>
@@ -96,7 +96,7 @@ export function WorkspaceActionsSheet({
           <span class="text-sm font-medium">Theme</span>
           <ThemeToggle />
         </ActionRow>
-      </div>
+      </DialogBody>
     </BottomSheet>
   );
 }

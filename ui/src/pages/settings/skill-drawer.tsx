@@ -2,7 +2,7 @@ import { useSignal } from '@preact/signals';
 import { useEffect, useRef } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import type { EditorView } from '@codemirror/view';
-import { Drawer } from '@tkottke90/preact-dialog';
+import { DialogBody, DialogFooter, Drawer } from '@tkottke90/preact-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -78,8 +78,8 @@ function CreateSkillForm() {
   }
 
   return (
-    <div class="flex flex-1 min-h-0 flex-col">
-      <div class="flex-1 space-y-6 overflow-y-auto p-4">
+    <div class="contents">
+      <DialogBody className="space-y-6">
         <FormLayout>
           <div class="space-y-1.5">
             <Label htmlFor="new-skill-name">Name</Label>
@@ -113,9 +113,9 @@ function CreateSkillForm() {
             />
           </div>
         </div>
-      </div>
+      </DialogBody>
 
-      <div class="flex items-center justify-end gap-2 border-t border-border p-3">
+      <DialogFooter className="border-border">
         <Button type="button" variant="ghost" onClick={closeDrawer}>
           Cancel
         </Button>
@@ -126,7 +126,7 @@ function CreateSkillForm() {
         >
           {saving.value ? 'Creating…' : 'Create skill'}
         </Button>
-      </div>
+      </DialogFooter>
     </div>
   );
 }
@@ -140,25 +140,25 @@ function EditSkillView() {
 
   if (selectedSkillLoading.value) {
     return (
-      <div class="flex h-full items-center justify-center text-sm text-muted-foreground">
+      <DialogBody className="flex items-center justify-center text-sm text-muted-foreground">
         Loading…
-      </div>
+      </DialogBody>
     );
   }
 
   if (!selectedSkill.value) {
     return (
-      <div class="flex h-full items-center justify-center text-sm text-muted-foreground">
+      <DialogBody className="flex items-center justify-center text-sm text-muted-foreground">
         Failed to load this skill.
-      </div>
+      </DialogBody>
     );
   }
 
   const skill = selectedSkill.value;
 
   return (
-    <div class="flex h-full flex-col">
-      <div class="flex items-center gap-1 border-b border-border px-2">
+    <div class="flex flex-auto min-h-0 flex-col">
+      <div class="flex shrink-0 items-center gap-1 border-b border-border px-2">
         {TABS.map((tab) => (
           <SkillTabButton
             key={tab.id}
@@ -169,7 +169,10 @@ function EditSkillView() {
           </SkillTabButton>
         ))}
       </div>
-      <div class="min-h-0 flex-1 overflow-y-auto">
+      {/* Not a scroller: each tab renders its own DialogBody (and
+          DialogFooter, where it has actions) so its footer stays pinned
+          below the tab content instead of scrolling away with it. */}
+      <div class="flex flex-auto min-h-0 flex-col">
         {activeTab.value === 'details' && <SkillDetailsTab key={skill.name} skill={skill} />}
         {activeTab.value === 'scripts' && (
           <SkillFilesTab
@@ -207,7 +210,7 @@ export function SkillDrawer() {
     <Drawer
       open={drawerOpen}
       title={creatingSkill.value ? 'New skill' : (selectedSkill.value?.name ?? 'Skill')}
-      className="w-[90vw]! rounded-none! border-0! bg-background! p-0! border-l border-border sm:w-9/12! sm:max-w-[90vw]!"
+      className="w-[90vw]! rounded-none! border-0! bg-background! border-l border-border sm:w-9/12! sm:max-w-[90vw]!"
     >
       {creatingSkill.value ? <CreateSkillForm /> : <EditSkillView />}
     </Drawer>

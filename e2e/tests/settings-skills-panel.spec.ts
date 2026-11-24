@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
 import { pauseBeforeAction } from '../lib/video.js';
+import { expectPinnedFooter } from '../lib/dialog.js';
 
 const suite: TestSuite = {
   id: 27,
@@ -66,6 +67,19 @@ const suite: TestSuite = {
       tags: ['@smoke'],
       action: 'Add a script file to a skill, then close and reopen the drawer',
       expectedOutcome: 'The Scripts badge for that skill switches from off to on styling',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: 'On a short viewport, open the New skill drawer and scroll its form',
+      expectedOutcome: 'Cancel / Create skill stay pinned at the bottom of the drawer',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: "On a short viewport, open an existing skill's Details tab and scroll it",
+      expectedOutcome:
+        'Delete / Save stay pinned below the tab content instead of scrolling away with it',
       test: () => {},
     },
   ],
@@ -470,5 +484,40 @@ test.describe('Settings skills panel', { annotation: suiteAnnotations(suite) }, 
     // The aside list refreshes as soon as the save resolves — no need to
     // close the drawer first.
     await expect(scriptsBadge).not.toHaveClass(/opacity-50/);
+  });
+
+  // The skill drawer's footers used to live inside the tab's scroll region,
+  // so on a short viewport Save scrolled away with the content.
+  test.describe('Short viewport', () => {
+    test.use({ viewport: { width: 1280, height: 480 } });
+
+    test('New skill drawer keeps Cancel/Create pinned while the form scrolls @user-workflow', async ({
+      page,
+    }, testInfo) => {
+      await mockSkillsApi(page, SEED());
+      await page.goto('/settings?section=skills');
+      await skillRow(page, 'create-workspace').waitFor();
+
+      await page.getByRole('button', { name: '+ New skill' }).click();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog).toBeVisible();
+      await pauseBeforeAction(page, testInfo);
+
+      await expectPinnedFooter(page, dialog);
+    });
+
+    test("an existing skill's Details tab keeps Delete/Save pinned while it scrolls @user-workflow", async ({
+      page,
+    }, testInfo) => {
+      await mockSkillsApi(page, SEED());
+      await page.goto('/settings?section=skills');
+
+      await skillRow(page, 'brainstorming').getByRole('button', { name: 'Edit' }).click();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog.getByLabel('Description')).toBeVisible();
+      await pauseBeforeAction(page, testInfo);
+
+      await expectPinnedFooter(page, dialog);
+    });
   });
 });

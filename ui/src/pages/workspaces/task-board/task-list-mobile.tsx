@@ -1,6 +1,6 @@
 import type { Signal } from '@preact/signals';
 import { useSignal } from '@preact/signals';
-import { BottomSheet } from '@tkottke90/preact-dialog';
+import { BottomSheet, DialogBody, DialogFooter } from '@tkottke90/preact-dialog';
 import { ChevronDown, ChevronRight, Plus } from 'lucide-preact';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -119,42 +119,44 @@ function QuickAddForm({
   }
 
   return (
-    <form onSubmit={submit} class="flex flex-col gap-3" data-testid="quick-add-form">
-      <Input
-        aria-label="Task title"
-        placeholder="What needs doing?"
-        value={title.value}
-        onInput={(e) => {
-          title.value = (e.target as HTMLInputElement).value;
-        }}
-      />
-      <div class="flex gap-2" role="radiogroup" aria-label="Assign to">
-        {(['agent', 'user'] as const).map((who) => (
-          <Button
-            key={who}
-            type="button"
-            size="sm"
-            role="radio"
-            aria-checked={assignee.value === who}
-            variant={assignee.value === who ? 'default' : 'outline'}
-            onClick={() => (assignee.value = who)}
-          >
-            {who === 'agent' ? 'Agent' : 'Me'}
-          </Button>
-        ))}
-      </div>
-      <label class="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={addToQueue.value && assignee.value === 'agent'}
-          disabled={assignee.value !== 'agent'}
-          onChange={(e) => {
-            addToQueue.value = (e.target as HTMLInputElement).checked;
+    <form onSubmit={submit} class="contents" data-testid="quick-add-form">
+      <DialogBody className="flex flex-col gap-3">
+        <Input
+          aria-label="Task title"
+          placeholder="What needs doing?"
+          value={title.value}
+          onInput={(e) => {
+            title.value = (e.target as HTMLInputElement).value;
           }}
         />
-        Add to queue now
-      </label>
-      <div class="flex justify-between gap-2">
+        <div class="flex gap-2" role="radiogroup" aria-label="Assign to">
+          {(['agent', 'user'] as const).map((who) => (
+            <Button
+              key={who}
+              type="button"
+              size="sm"
+              role="radio"
+              aria-checked={assignee.value === who}
+              variant={assignee.value === who ? 'default' : 'outline'}
+              onClick={() => (assignee.value = who)}
+            >
+              {who === 'agent' ? 'Agent' : 'Me'}
+            </Button>
+          ))}
+        </div>
+        <label class="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={addToQueue.value && assignee.value === 'agent'}
+            disabled={assignee.value !== 'agent'}
+            onChange={(e) => {
+              addToQueue.value = (e.target as HTMLInputElement).checked;
+            }}
+          />
+          Add to queue now
+        </label>
+      </DialogBody>
+      <DialogFooter className="justify-between border-border">
         <Button
           type="button"
           variant="ghost"
@@ -172,7 +174,7 @@ function QuickAddForm({
         <Button type="submit" size="sm" disabled={saving.value || !title.value.trim()}>
           {saving.value ? 'Adding…' : 'Add'}
         </Button>
-      </div>
+      </DialogFooter>
     </form>
   );
 }
@@ -357,14 +359,18 @@ export function TaskListMobile({
       )}
 
       <BottomSheet title="Answer the agent" open={replyOpen}>
-        {replyTask && replyReason?.kind === 'waiting_on_user' && (
-          <ReplyForm
-            key={replyTask.id}
-            task={replyTask}
-            reason={replyReason}
-            onSent={() => (replyOpen.value = false)}
-          />
-        )}
+        {/* ReplyForm is shared with the inline board callout, so its Send
+            button stays inline rather than moving into a DialogFooter. */}
+        <DialogBody>
+          {replyTask && replyReason?.kind === 'waiting_on_user' && (
+            <ReplyForm
+              key={replyTask.id}
+              task={replyTask}
+              reason={replyReason}
+              onSent={() => (replyOpen.value = false)}
+            />
+          )}
+        </DialogBody>
       </BottomSheet>
 
       <QuickAddSheet workspaceId={workspaceId} open={quickAddOpen} onSaved={onSaved} />

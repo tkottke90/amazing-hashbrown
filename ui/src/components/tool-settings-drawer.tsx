@@ -1,6 +1,6 @@
 import { useSignal, type Signal } from '@preact/signals';
 import { useEffect } from 'preact/hooks';
-import { Drawer, useDialog } from '@tkottke90/preact-dialog';
+import { DialogBody, DialogFooter, Drawer, useDialog } from '@tkottke90/preact-dialog';
 import { Loader2 } from 'lucide-preact';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -334,8 +334,8 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
   }
 
   return (
-    <form onSubmit={handleSave} class="flex grow flex-col overflow-hidden">
-      <div class="flex-1 space-y-4 overflow-y-auto p-4">
+    <form onSubmit={handleSave} class="contents">
+      <DialogBody className="space-y-4">
         <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span
             data-slot="tool-settings-source-badge"
@@ -655,10 +655,10 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
         )}
 
         {saveError.value && <p class="text-xs text-destructive">{saveError.value}</p>}
-      </div>
+      </DialogBody>
 
       {!isSkillGated && (
-        <div class="flex justify-between gap-2 border-t border-border p-3">
+        <DialogFooter className="justify-between border-border">
           <Button
             type="button"
             variant="ghost"
@@ -673,7 +673,7 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
             {isSaving.value && <Loader2 class="size-3.5 animate-spin" />}
             Save
           </Button>
-        </div>
+        </DialogFooter>
       )}
     </form>
   );

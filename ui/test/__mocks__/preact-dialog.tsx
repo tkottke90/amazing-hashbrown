@@ -47,3 +47,33 @@ export { Dialog, Dialog as Modal, Dialog as Drawer, Dialog as BottomSheet };
 export function useDialog() {
   return useContext(DialogCtx);
 }
+
+// Pass-through layout pieces: render the real data-slot hooks so tests can
+// locate a dialog's body/footer the same way E2E does.
+export function DialogBody({
+  className,
+  children,
+}: {
+  className?: string;
+  children?: ComponentChildren;
+}) {
+  return (
+    <div data-slot="dialog-body" className={className}>
+      {children}
+    </div>
+  );
+}
+
+export function DialogFooter({
+  className,
+  children,
+}: {
+  className?: string;
+  children?: ComponentChildren;
+}) {
+  return (
+    <div data-slot="dialog-footer" className={className}>
+      {children}
+    </div>
+  );
+}

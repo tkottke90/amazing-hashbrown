@@ -106,10 +106,12 @@ No props beyond `DialogProps`.
 Docks to a viewport edge and slides in horizontally. Full viewport height; 90% viewport width on mobile, sized to content (capped at 100ch) on larger screens. Use it for drilling into details, settings, or forms without leaving the current page context.
 
 ```tsx
-import { Drawer } from '@tkottke90/preact-dialog';
+import { DialogBody, Drawer } from '@tkottke90/preact-dialog';
 
 <Drawer trigger={<button>Edit</button>} title="Edit item" side="left">
-  <p>Form fields go here.</p>
+  <DialogBody>
+    <p>Form fields go here.</p>
+  </DialogBody>
 </Drawer>;
 ```
 
@@ -119,17 +121,53 @@ import { Drawer } from '@tkottke90/preact-dialog';
 
 ### `<BottomSheet>`
 
-Slides up from the bottom edge. Full width, capped at 90% of the viewport height (scrolls beyond that). Primarily a mobile/tablet pattern — a one-handed-friendly alternative to a side drawer.
+Slides up from the bottom edge. Full width, capped at 90% of the viewport height. Primarily a mobile/tablet pattern — a one-handed-friendly alternative to a side drawer.
 
 ```tsx
-import { BottomSheet } from '@tkottke90/preact-dialog';
+import { BottomSheet, DialogBody } from '@tkottke90/preact-dialog';
 
 <BottomSheet trigger={<button>Actions</button>}>
-  <p>Action list goes here.</p>
+  <DialogBody>
+    <p>Action list goes here.</p>
+  </DialogBody>
 </BottomSheet>;
 ```
 
-No props beyond `DialogProps`.
+No props beyond `DialogProps`. A caller's `contentClassName` is merged with the slide/blur classes, not substituted for them.
+
+> **Breaking (since pinned footers):** `BottomSheet` no longer wraps its children in a scroll region. Content past the 90% cap only scrolls inside a [`DialogBody`](#body--footer-layout).
+
+### Body & footer layout
+
+`Drawer` and `BottomSheet` render only a header. Put the content in `DialogBody` and the actions in `DialogFooter`:
+
+- **`DialogBody`** is the scroll region (`flex-auto min-h-0 overflow-y-auto`, padding `px-5 py-4`).
+- **`DialogFooter`** stays pinned to the bottom of the panel, whatever the body's length (`shrink-0`, `border-t`, right-aligned actions, padding `px-5 py-4`).
+
+Both take an optional `className`. It is merged with tailwind-merge, so conflicting utilities **replace** the defaults instead of stacking with them: `className="p-0"` removes the padding, `justify-between` replaces `justify-end`, and `border-border` replaces the default `border-neutral-400/50`.
+
+Both must be **direct flex children** of the panel's content column. If a `<form>` wraps them, so the footer's submit button still submits it, give the form `className="contents"`:
+
+```tsx
+import { DialogBody, DialogFooter, Drawer, useDialog } from '@tkottke90/preact-dialog';
+
+function EditForm() {
+  const { close } = useDialog();
+  return (
+    <form onSubmit={save} className="contents">
+      <DialogBody>{/* fields */}</DialogBody>
+      <DialogFooter>
+        <button type="button" onClick={() => close()}>
+          Cancel
+        </button>
+        <button type="submit">Save</button>
+      </DialogFooter>
+    </form>
+  );
+}
+```
+
+`display: contents` takes the form's own box out of the layout, while submit and validation behave as normal. Without it, the form becomes a single flex item: the footer still shows, because the body scrolls inside the form, but it is no longer pinned to the panel.
 
 ---
 

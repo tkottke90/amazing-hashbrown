@@ -1,6 +1,6 @@
 import { useSignal, type Signal } from '@preact/signals';
 import { useEffect } from 'preact/hooks';
-import { Drawer, useDialog } from '@tkottke90/preact-dialog';
+import { DialogBody, DialogFooter, Drawer, useDialog } from '@tkottke90/preact-dialog';
 import { Loader2 } from 'lucide-preact';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -41,7 +41,7 @@ export function RoleDrawer({ mode, initial, onSave, trigger }: RoleDrawerProps) 
     <Drawer
       title={mode === 'add' ? 'Add role' : 'Edit role'}
       side="right"
-      className="w-[90vw]! sm:w-md! sm:max-w-[90vw]! py-4"
+      className="w-[90vw]! sm:w-md! sm:max-w-[90vw]!"
       trigger={trigger}
       onOpen={() => {
         openCount.value++;
@@ -121,8 +121,8 @@ function RoleForm({ mode, initial, onSave, openCount }: RoleFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} class="flex flex-1 min-h-0 flex-col">
-      <div class="flex-1 space-y-4 overflow-y-auto p-4">
+    <form onSubmit={handleSubmit} class="contents">
+      <DialogBody className="space-y-4">
         <div class="space-y-1.5">
           <Label htmlFor={`role-name-${instanceKey}`}>Name</Label>
           <Input
@@ -186,9 +186,9 @@ function RoleForm({ mode, initial, onSave, openCount }: RoleFormProps) {
         </div>
 
         {saveError.value && <p class="text-xs text-destructive">{saveError.value}</p>}
-      </div>
+      </DialogBody>
 
-      <div class="flex justify-end gap-2 border-t border-border px-3 py-2">
+      <DialogFooter className="border-border">
         <Button type="button" variant="ghost" size="sm" onClick={() => close()}>
           Cancel
         </Button>
@@ -196,7 +196,7 @@ function RoleForm({ mode, initial, onSave, openCount }: RoleFormProps) {
           {isSaving.value && <Loader2 class="size-3.5 animate-spin" />}
           {mode === 'add' ? 'Add role' : 'Save'}
         </Button>
-      </div>
+      </DialogFooter>
     </form>
   );
 }
