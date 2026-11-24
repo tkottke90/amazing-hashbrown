@@ -215,9 +215,9 @@ test.describe(
       }, testInfo) => {
         await page.goto('/');
         await page.getByTestId('dashboard-settings-trigger').click();
-        // Closed drawers stay in the accessibility tree (opacity-0, not
-        // display:none), so getByRole('dialog') matches every mounted one.
-        const dialog = page.locator('dialog[open]');
+        // Closed drawers are aria-hidden, so this matches only the open one
+        // even though every widget's drawer is mounted on the page.
+        const dialog = page.getByRole('dialog', { name: 'Dashboard settings' });
         await expect(dialog).toBeVisible();
         await pauseBeforeAction(page, testInfo);
 

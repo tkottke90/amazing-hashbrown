@@ -1,7 +1,7 @@
 import { Signal, useSignal } from '@preact/signals';
 import { X as XIcon } from 'lucide-preact';
 import { cloneElement, ComponentChildren, createContext, type JSX } from 'preact';
-import { useContext, useEffect, useRef } from 'preact/hooks';
+import { useContext, useEffect, useId, useRef } from 'preact/hooks';
 import { cn } from './cn';
 import { registerEvent, useHtmlElementListeners } from './eventListeners';
 
@@ -50,6 +50,23 @@ export function Dialog({
 }: DialogProps) {
   const modalValue = useSignal<string | undefined>();
   const modalRef = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+
+  // Every overlay variant overrides the UA `dialog:not([open]) { display:
+  // none }` (Drawer/BottomSheet with `flex`, Modal with `block`) so its exit
+  // transition can play — which leaves a closed dialog rendered at opacity-0
+  // and still exposed: screen readers and role queries see every mounted
+  // one, and Tab can reach the controls inside it. Mark it hidden + inert
+  // while closed. Done imperatively (not as JSX props) because open state
+  // lives on the native element, not in render state; openModal() and the
+  // controlled-open effect below un-hide it *before* showModal(), since
+  // showModal() can't move focus into a still-inert dialog.
+  useEffect(() => {
+    const dialogEl = modalRef.current;
+    if (!dialogEl) return;
+    if (!dialogEl.open) setDialogHidden(dialogEl, true);
+    return registerEvent(dialogEl, 'close', () => setDialogHidden(dialogEl, true));
+  }, []);
 
   // Controlled-open sync: a caller driving `open` (e.g. a dialog with no
   // visible trigger of its own, opened as a side effect of something else
@@ -65,6 +82,7 @@ export function Dialog({
     const dialogEl = modalRef.current;
     if (!dialogEl) return;
     if (openValue && !dialogEl.open) {
+      setDialogHidden(dialogEl, false);
       dialogEl.showModal();
     } else if (!openValue && dialogEl.open) {
       dialogEl.close();
@@ -117,6 +135,7 @@ export function Dialog({
       {triggerElement}
       <dialog
         ref={modalRef}
+        aria-labelledby={title ? titleId : undefined}
         className={cn(
           'p-6 text-neutral-800 dark:text-neutral-200 bg-neutral-50/80 dark:bg-neutral-700/80 rounded border border-neutral-400/50',
           className,
@@ -153,7 +172,9 @@ export function Dialog({
         */}
         <div className={`flex flex-col flex-auto min-h-0 ${contentClassName ?? ''}`}>
           <div className={`flex items-center shrink-0 ${headerClassName ?? ''}`}>
-            <h2 className="grow">{title}</h2>
+            <h2 id={titleId} className="grow">
+              {title}
+            </h2>
             {!disableClose && (
               <button
                 aria-label="Close"
@@ -180,6 +201,7 @@ export function openModal(modal: ModalRef, onOpen?: () => void) {
       onOpen();
     }
 
+    setDialogHidden(modal, false);
     modal.showModal();
   }
 }
@@ -196,4 +218,16 @@ export function cancelModal(modal: ModalRef, onCancel?: () => void) {
   }
 
   closeModal(modal);
+}
+
+/** Hides a closed dialog from assistive tech and keyboard focus (see the
+ *  comment on the effect in Dialog for why a closed dialog needs this). */
+function setDialogHidden(modal: HTMLDialogElement, hidden: boolean) {
+  if (hidden) {
+    modal.setAttribute('aria-hidden', 'true');
+    modal.setAttribute('inert', '');
+  } else {
+    modal.removeAttribute('aria-hidden');
+    modal.removeAttribute('inert');
+  }
 }

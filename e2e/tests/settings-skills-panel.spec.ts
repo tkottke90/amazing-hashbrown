@@ -501,7 +501,7 @@ test.describe('Settings skills panel', { annotation: suiteAnnotations(suite) }, 
       await skillRow(page, 'create-workspace').waitFor();
 
       await page.getByRole('button', { name: '+ New skill' }).click();
-      const dialog = page.locator('dialog[open]');
+      const dialog = page.getByRole('dialog', { name: 'New skill' });
       await expect(dialog).toBeVisible();
       await pauseBeforeAction(page, testInfo);
 
@@ -515,7 +515,7 @@ test.describe('Settings skills panel', { annotation: suiteAnnotations(suite) }, 
       await page.goto('/settings?section=skills');
 
       await skillRow(page, 'brainstorming').getByRole('button', { name: 'Edit' }).click();
-      const dialog = page.locator('dialog[open]');
+      const dialog = page.getByRole('dialog', { name: 'brainstorming' });
       await expect(dialog.getByLabel('Description')).toBeVisible();
       await pauseBeforeAction(page, testInfo);
 
