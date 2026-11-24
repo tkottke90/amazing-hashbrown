@@ -695,3 +695,7 @@ _Avoid_: Registered tracker (every built-in tracker is registered), enabled trac
 **Tracker Container**:
 The place in an external tracker that a newly created item lands in: a repository for GitHub, a project for Todoist.
 _Avoid_: Repo (GitHub-specific), project (Todoist-specific; also collides with hashbrown Projects), destination
+
+**Assignee Label**:
+The tracker-side label naming who a linked task is assigned to in hashbrown (`AH:User` or `AH:Agent` in Todoist). Owned by hashbrown: every label starting with `AH:` is hashbrown's, and every other label on the item belongs to the user. Kept current for as long as the Tracker Link exists, and removed when the link ends.
+_Avoid_: Assignment tag, owner label
