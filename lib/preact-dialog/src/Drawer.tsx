@@ -9,11 +9,13 @@ export interface DrawerProps extends DialogProps {
 }
 
 // Docked to a viewport edge, full height, and fades its backdrop like Modal.
+// p-0: the panel carries no padding — the header (headerClassName below),
+// DialogBody, and DialogFooter each own theirs on a shared px-5.
 // Mobile is 90% viewport width; larger screens size to content but cap at 100ch.
 // overflow-hidden clips the content wrapper during its slide-in animation so
 // that width recalculations (sm:w-fit resolving) don't produce a visible jump.
 const DRAWER_CLASSNAME = `
-  fixed inset-y-0 m-0 h-dvh max-h-none overflow-hidden
+  fixed inset-y-0 m-0 p-0 h-dvh max-h-none overflow-hidden
   flex flex-col pointer-events-none opacity-0
   w-[90vw] sm:w-fit sm:max-w-[100ch]
   transition-opacity transition-discrete duration-200 ease-out

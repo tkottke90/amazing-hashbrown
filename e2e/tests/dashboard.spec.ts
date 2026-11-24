@@ -1,6 +1,7 @@
 import { test, expect, type Page, type Locator, type APIRequestContext } from '@playwright/test';
 import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
 import { pauseBeforeAction } from '../lib/video.js';
+import { expectPinnedFooter } from '../lib/dialog.js';
 
 // CM6's `.cm-content` is a real contenteditable root, not a form control —
 // there's no `<label>`/`value` for `.fill()`/`getByLabel()` to use. Select
@@ -54,6 +55,13 @@ const suite: TestSuite = {
       tags: ['@smoke'],
       action: 'Resize to mobile/tablet/desktop widths',
       expectedOutcome: 'Grid column count changes per breakpoint with no horizontal overflow',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: 'On a short viewport, open Dashboard settings and scroll its form',
+      expectedOutcome:
+        'Cancel/Save stay pinned on-screen at the bottom of the drawer, reachable without scrolling',
       test: () => {},
     },
   ],
@@ -193,6 +201,30 @@ test.describe(
 
         const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
         expect(scrollWidth).toBeLessThanOrEqual(1280 + 1);
+      });
+    });
+
+    // Regression: the settings form used to have no scroll region, so on a
+    // short viewport the <dialog>'s overflow-hidden clipped Cancel/Save and
+    // they couldn't be reached at all. Read-only — exits via Cancel.
+    test.describe('Short viewport', () => {
+      test.use({ viewport: { width: 1280, height: 420 } });
+
+      test('Dashboard settings keeps Cancel/Save pinned on-screen while the form scrolls', async ({
+        page,
+      }, testInfo) => {
+        await page.goto('/');
+        await page.getByTestId('dashboard-settings-trigger').click();
+        // Closed drawers are aria-hidden, so this matches only the open one
+        // even though every widget's drawer is mounted on the page.
+        const dialog = page.getByRole('dialog', { name: 'Dashboard settings' });
+        await expect(dialog).toBeVisible();
+        await pauseBeforeAction(page, testInfo);
+
+        await expectPinnedFooter(page, dialog);
+
+        await dialog.getByRole('button', { name: 'Cancel' }).click();
+        await expect(dialog).toBeHidden();
       });
     });
   },

@@ -1,6 +1,8 @@
 export { Dialog, useDialog } from './Dialog.js';
 export type { DialogProps } from './Dialog.js';
 export { Modal } from './Modal.js';
+export { DialogBody, DialogFooter } from './DialogLayout.js';
+export type { DialogSectionProps } from './DialogLayout.js';
 export { Drawer } from './Drawer.js';
 export type { DrawerProps } from './Drawer.js';
 export { BottomSheet } from './BottomSheet.js';

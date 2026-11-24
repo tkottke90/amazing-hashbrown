@@ -35,6 +35,12 @@ describe('Drawer', () => {
     expect(getDialogEl(container).className).toContain('h-dvh');
   });
 
+  it('carries no panel padding so the header, body, and footer own their own', () => {
+    const { container } = render(<Drawer>content</Drawer>);
+
+    expect(getDialogEl(container).className.split(/\s+/)).toContain('p-0');
+  });
+
   it('appends a caller-provided className to the base drawer styles', () => {
     const { container } = render(<Drawer className="extra-class">content</Drawer>);
 

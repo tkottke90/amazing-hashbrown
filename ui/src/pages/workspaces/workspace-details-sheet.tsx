@@ -1,5 +1,5 @@
 import type { Signal } from '@preact/signals';
-import { BottomSheet } from '@tkottke90/preact-dialog';
+import { BottomSheet, DialogBody } from '@tkottke90/preact-dialog';
 import type { ComponentChildren } from 'preact';
 import { GitBranch, BookOpen, Calendar } from 'lucide-preact';
 
@@ -31,7 +31,7 @@ export function WorkspaceDetailsSheet({
 }) {
   return (
     <BottomSheet title="Details" open={open}>
-      <div class="px-1">
+      <DialogBody>
         <DetailRow label="Location">
           <span class="font-mono text-xs" data-testid="details-location" title={workspace.location}>
             {truncateStart(workspace.location)}
@@ -80,7 +80,7 @@ export function WorkspaceDetailsSheet({
             </span>
           </DetailRow>
         )}
-      </div>
+      </DialogBody>
     </BottomSheet>
   );
 }

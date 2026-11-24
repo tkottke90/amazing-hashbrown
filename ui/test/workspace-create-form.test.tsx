@@ -47,15 +47,14 @@ function fillName(value: string) {
   input.blur();
 }
 
-// The submit button lives outside the <form> and is associated via the HTML
-// `form` attribute; jsdom correctly runs native required-field constraint
-// validation on a button-triggered submit, which would block these tests
-// from ever reaching handleSubmit before its own JS-level checks run (that
-// browser-level blocking is exercised for real in the Playwright E2E suite
-// instead). Dispatching `submit` directly on the form bypasses constraint
-// validation, so it isolates handleSubmit's own validation/payload logic.
+// jsdom correctly runs native required-field constraint validation on a
+// button-triggered submit, which would block these tests from ever reaching
+// handleSubmit before its own JS-level checks run (that browser-level
+// blocking is exercised for real in the Playwright E2E suite instead).
+// Dispatching `submit` directly on the form bypasses constraint validation,
+// so it isolates handleSubmit's own validation/payload logic.
 function submitForm() {
-  fireEvent.submit(document.getElementById('create-workspace-form')!);
+  fireEvent.submit(document.querySelector('[data-testid="create-workspace-form"]')!);
 }
 
 describe('CreateWorkspaceForm — Git repository section', () => {

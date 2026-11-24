@@ -1,6 +1,7 @@
 import { useSignal } from '@preact/signals';
 import { useEffect } from 'preact/hooks';
 import { AlertTriangle } from 'lucide-preact';
+import { DialogBody, DialogFooter } from '@tkottke90/preact-dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -59,12 +60,12 @@ export function SkillEvalsTab({ skillName }: { skillName: string }) {
   }
 
   if (evals.value === null) {
-    return <div class="p-4 text-sm text-muted-foreground">Loading…</div>;
+    return <DialogBody className="text-sm text-muted-foreground">Loading…</DialogBody>;
   }
 
   return (
-    <div class="flex min-h-full flex-col">
-      <div class="flex-1 space-y-4 p-4">
+    <div class="contents">
+      <DialogBody className="space-y-4">
         <p class="flex items-center gap-1.5 text-sm text-amber-700 dark:text-amber-400">
           <AlertTriangle class="size-4 shrink-0" />
           Evals can be edited here, but running a suite from this UI isn&apos;t implemented yet.
@@ -116,13 +117,13 @@ export function SkillEvalsTab({ skillName }: { skillName: string }) {
         <Button type="button" variant="outline" size="sm" onClick={addCase}>
           + Add case
         </Button>
-      </div>
+      </DialogBody>
 
-      <div class="flex items-center justify-end gap-2 border-t border-border p-3">
+      <DialogFooter className="border-border">
         <Button type="button" disabled={saving.value} onClick={() => void handleSave()}>
           {saving.value ? 'Saving…' : 'Save'}
         </Button>
-      </div>
+      </DialogFooter>
     </div>
   );
 }

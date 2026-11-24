@@ -1,7 +1,7 @@
 import { useSignal, useComputed } from '@preact/signals';
 import { useEffect } from 'preact/hooks';
 import type { JSX } from 'preact';
-import { Drawer, useDialog } from '@tkottke90/preact-dialog';
+import { DialogBody, DialogFooter, Drawer, useDialog } from '@tkottke90/preact-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -72,71 +72,69 @@ function DashboardSettingsForm({ dashboard }: { dashboard: DashboardListEntry })
   }
 
   return (
-    <form
-      data-testid="dashboard-settings-form"
-      className="flex flex-col gap-4 p-4"
-      onSubmit={handleSubmit}
-    >
-      <p className="text-sm text-muted-foreground">
-        Metadata agents and system graphs read before writing to this dashboard.
-      </p>
-
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="dashboard-settings-name">Name</Label>
-        <Input
-          id="dashboard-settings-name"
-          value={name.value}
-          onInput={(e) => (name.value = (e.target as HTMLInputElement).value)}
-          required
-        />
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="dashboard-settings-description">Description</Label>
-        <Textarea
-          id="dashboard-settings-description"
-          placeholder="What belongs on this dashboard"
-          value={description.value}
-          onInput={(e) => (description.value = (e.target as HTMLTextAreaElement).value)}
-        />
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Label>Density</Label>
-        <DensityToggle value={density.value} onChange={(v) => (density.value = v)} />
-        <p className="text-xs text-muted-foreground">
-          Compact packs more on screen; Roomy gives each widget more air.
+    <form data-testid="dashboard-settings-form" className="contents" onSubmit={handleSubmit}>
+      <DialogBody className="flex flex-col gap-4">
+        <p className="text-sm text-muted-foreground">
+          Metadata agents and system graphs read before writing to this dashboard.
         </p>
-      </div>
 
-      <div className="flex flex-col gap-2">
-        <Label>Folder</Label>
-        <Input value={dashboard.path} disabled readOnly data-testid="dashboard-settings-path" />
-      </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="dashboard-settings-name">Name</Label>
+          <Input
+            id="dashboard-settings-name"
+            value={name.value}
+            onInput={(e) => (name.value = (e.target as HTMLInputElement).value)}
+            required
+          />
+        </div>
 
-      {saveError.value && <p className="text-sm text-destructive">{saveError.value}</p>}
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="dashboard-settings-description">Description</Label>
+          <Textarea
+            id="dashboard-settings-description"
+            placeholder="What belongs on this dashboard"
+            value={description.value}
+            onInput={(e) => (description.value = (e.target as HTMLTextAreaElement).value)}
+          />
+        </div>
 
-      {canDelete.value && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="self-start text-destructive hover:text-destructive"
-          data-testid="dashboard-settings-delete"
-          onClick={handleDelete}
-        >
-          Delete dashboard
-        </Button>
-      )}
+        <div className="flex flex-col gap-2">
+          <Label>Density</Label>
+          <DensityToggle value={density.value} onChange={(v) => (density.value = v)} />
+          <p className="text-xs text-muted-foreground">
+            Compact packs more on screen; Roomy gives each widget more air.
+          </p>
+        </div>
 
-      <div className="flex justify-end gap-2">
+        <div className="flex flex-col gap-2">
+          <Label>Folder</Label>
+          <Input value={dashboard.path} disabled readOnly data-testid="dashboard-settings-path" />
+        </div>
+
+        {saveError.value && <p className="text-sm text-destructive">{saveError.value}</p>}
+
+        {canDelete.value && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="self-start text-destructive hover:text-destructive"
+            data-testid="dashboard-settings-delete"
+            onClick={handleDelete}
+          >
+            Delete dashboard
+          </Button>
+        )}
+      </DialogBody>
+
+      <DialogFooter className="border-border">
         <Button type="button" variant="outline" onClick={() => close()}>
           Cancel
         </Button>
         <Button type="submit" disabled={isSaving.value}>
           {isSaving.value ? 'Saving…' : 'Save changes'}
         </Button>
-      </div>
+      </DialogFooter>
     </form>
   );
 }

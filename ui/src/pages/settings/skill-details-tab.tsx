@@ -1,6 +1,7 @@
 import { useSignal } from '@preact/signals';
 import { useRef } from 'preact/hooks';
 import type { EditorView } from '@codemirror/view';
+import { DialogBody, DialogFooter } from '@tkottke90/preact-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -43,8 +44,8 @@ export function SkillDetailsTab({ skill }: { skill: SkillDetail }) {
   }
 
   return (
-    <div class="flex min-h-full flex-col">
-      <div class="flex-1 space-y-6 p-4">
+    <div class="contents">
+      <DialogBody className="space-y-6">
         <FormLayout>
           <div class="space-y-1.5">
             <Label htmlFor="skill-name">Name</Label>
@@ -87,9 +88,9 @@ export function SkillDetailsTab({ skill }: { skill: SkillDetail }) {
             />
           </div>
         </div>
-      </div>
+      </DialogBody>
 
-      <div class="flex items-center justify-between gap-2 border-t border-border p-3">
+      <DialogFooter className="justify-between border-border">
         <Button
           type="button"
           variant="destructive"
@@ -102,7 +103,7 @@ export function SkillDetailsTab({ skill }: { skill: SkillDetail }) {
         <Button type="button" disabled={saving.value} onClick={() => void handleSave()}>
           {saving.value ? 'Saving…' : 'Save'}
         </Button>
-      </div>
+      </DialogFooter>
     </div>
   );
 }

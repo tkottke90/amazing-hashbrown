@@ -1,6 +1,7 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { suiteAnnotations, type TestSuite } from '../lib/suite.js';
 import { pauseBeforeAction } from '../lib/video.js';
+import { expectPinnedFooter } from '../lib/dialog.js';
 
 const suite: TestSuite = {
   id: 46,
@@ -45,6 +46,12 @@ const suite: TestSuite = {
       tags: ['@user-workflow'],
       action: 'Quick add a task with "Add to queue now" on',
       expectedOutcome: 'The task is created and queued for the agent',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: 'On a very short phone screen, open quick add and scroll the sheet',
+      expectedOutcome: 'More details / Add stay pinned at the bottom of the sheet',
       test: () => {},
     },
   ],
@@ -267,6 +274,24 @@ test.describe(
       await expect(
         page.getByTestId('task-card').filter({ hasText: 'Renew certificates' }),
       ).toBeVisible();
+    });
+
+    test('quick add keeps its actions pinned when the sheet has to scroll', async ({
+      page,
+      request,
+    }, testInfo) => {
+      const ws = await createWorkspace(request, 'mobile-quick-add-pinned');
+      await openTasksTab(page, ws.id);
+      // Short enough that the sheet hits its 90dvh cap and the body scrolls
+      // — previously the actions scrolled away with the fields.
+      await page.setViewportSize({ width: 390, height: 240 });
+
+      await page.getByTestId('quick-add-button').click();
+      const sheet = page.getByRole('dialog', { name: 'New task' });
+      await expect(sheet).toBeVisible();
+      await pauseBeforeAction(page, testInfo);
+
+      await expectPinnedFooter(page, sheet);
     });
   },
 );

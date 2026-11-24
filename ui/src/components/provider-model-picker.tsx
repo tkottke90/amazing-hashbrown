@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'preact/hooks';
 import { useSignal } from '@preact/signals';
 import { flushSync } from 'preact/compat';
 import { CheckIcon } from 'lucide-preact';
-import { BottomSheet } from '@tkottke90/preact-dialog';
+import { BottomSheet, DialogBody } from '@tkottke90/preact-dialog';
 import {
   DropdownMenuCheckboxItem,
   DropdownMenuItem,
@@ -258,39 +258,38 @@ export function useProviderModelPicker({
       contentClassName="gap-4 h-full"
       title={sheetProviderName.value ?? undefined}
     >
-      <div
-        className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto"
-        data-slot="provider-model-picker-sheet-list"
-      >
-        {sheetModels.map((m) => {
-          const isChecked = m.id === activeModel && sheetProviderName.value === activeProvider;
-          return (
-            <button
-              key={m.id}
-              type="button"
-              data-slot="provider-model-picker-sheet-item"
-              className="relative flex min-h-11 w-full cursor-default items-center gap-1.5 rounded-md py-2 pr-8 pl-1.5 text-left text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground"
-              onClick={() => {
-                onSelect(sheetProviderName.value as string, m.id);
-                sheetOpen.value = false;
-              }}
-            >
-              {m.id}
-              {m.inputPricePerM !== undefined && m.outputPricePerM !== undefined && (
-                <DropdownMenuLabel className="ml-2 text-xs text-muted-foreground">
-                  ${m.inputPricePerM} / 1M in · ${m.outputPricePerM} / 1M out
-                </DropdownMenuLabel>
-              )}
-              <span
-                className="pointer-events-none absolute right-2 flex items-center justify-center"
-                data-slot="provider-model-picker-sheet-item-indicator"
+      <DialogBody className="px-2">
+        <div className="flex flex-col gap-1" data-slot="provider-model-picker-sheet-list">
+          {sheetModels.map((m) => {
+            const isChecked = m.id === activeModel && sheetProviderName.value === activeProvider;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                data-slot="provider-model-picker-sheet-item"
+                className="relative flex min-h-11 w-full cursor-default items-center gap-1.5 rounded-md py-2 pr-8 pl-1.5 text-left text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground"
+                onClick={() => {
+                  onSelect(sheetProviderName.value as string, m.id);
+                  sheetOpen.value = false;
+                }}
               >
-                {isChecked && <CheckIcon />}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+                {m.id}
+                {m.inputPricePerM !== undefined && m.outputPricePerM !== undefined && (
+                  <DropdownMenuLabel className="ml-2 text-xs text-muted-foreground">
+                    ${m.inputPricePerM} / 1M in · ${m.outputPricePerM} / 1M out
+                  </DropdownMenuLabel>
+                )}
+                <span
+                  className="pointer-events-none absolute right-2 flex items-center justify-center"
+                  data-slot="provider-model-picker-sheet-item-indicator"
+                >
+                  {isChecked && <CheckIcon />}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </DialogBody>
     </BottomSheet>
   );
 

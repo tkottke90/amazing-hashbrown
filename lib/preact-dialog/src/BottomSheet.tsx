@@ -1,18 +1,22 @@
+import { cn } from './cn';
 import { Dialog, DialogProps } from './Dialog';
 
 // Docked to the bottom edge, full width, and fades its backdrop like Modal.
-// Height fits content up to 90% of the viewport, scrolling beyond that.
+// Height fits content up to 90% of the viewport; past that, DialogBody is
+// the scroll region (children are expected to be DialogBody/DialogFooter —
+// a child that isn't won't scroll).
 // flex flex-col makes <dialog> a flex container so Dialog.tsx's inner
-// wrapper (flex flex-col flex-1 min-h-0) actually stretches to fill the
-// bounded height below, instead of just sizing to its own content and
-// leaving the <dialog>'s native default `overflow: auto` to become the
-// (wrong) scroll container — see Drawer.tsx's DRAWER_CLASSNAME, which
-// already needed and has this same pattern for the same reason.
+// wrapper actually stretches to fill the bounded height below, instead of
+// just sizing to its own content and leaving the <dialog>'s native default
+// `overflow: auto` to become the (wrong) scroll container — see Drawer.tsx's
+// DRAWER_CLASSNAME, which needs this same pattern for the same reason.
 // max-w-none overrides the browser's own UA default for a top-layer
 // <dialog> (`max-width: calc(100% - 38px)`), which otherwise wins over
 // `w-full` and leaves a ~38px gap on the right edge.
+// p-0: the panel carries no padding — header, DialogBody, and DialogFooter
+// own theirs.
 const BOTTOM_SHEET_CLASSNAME = `
-  fixed inset-x-0 bottom-0 top-auto m-0
+  fixed inset-x-0 bottom-0 top-auto m-0 p-0
   flex flex-col overflow-hidden pointer-events-none opacity-0
   w-full max-w-none max-h-[90dvh]
   transition-opacity transition-discrete duration-200 ease-out
@@ -35,23 +39,23 @@ const BOTTOM_SHEET_CONTENT_CLASSNAME = `
  * the screen.  This makes it friendly to one-handed use and is typically used as an alternative
  * to side-bar navigation or for input forms.
  */
-export function BottomSheet({ children, className, ...props }: DialogProps) {
+export function BottomSheet({
+  children,
+  className,
+  contentClassName,
+  headerClassName,
+  ...props
+}: DialogProps) {
   return (
     <Dialog
       className={`${BOTTOM_SHEET_CLASSNAME} ${className ?? ''}`}
-      contentClassName={BOTTOM_SHEET_CONTENT_CLASSNAME}
+      // Merged, not replaced: a caller's contentClassName (e.g. a gap) must
+      // not strip the slide/blur classes.
+      contentClassName={cn(BOTTOM_SHEET_CONTENT_CLASSNAME, contentClassName)}
+      headerClassName={headerClassName ?? 'px-5 pt-4 pb-2'}
       {...props}
     >
-      {/* flex-auto (not flex-1 — see Dialog.tsx's own wrapper for why
-          flex-basis: 0 breaks an auto-height <dialog> in WebKit) lets this
-          fill available space when there's room, and min-h-0 lets it shrink
-          below its content size once the dialog hits its max-h-[90dvh] cap
-          — instead of relying on the outer wrapper's h-full against an
-          auto-height <dialog>, a percentage-height-vs-auto-container case
-          browser engines resolve inconsistently. overflow-y-auto is what
-          makes content past that cap reachable instead of silently clipped
-          by the <dialog>'s own overflow-hidden. */}
-      <div className="flex-auto min-h-0 overflow-y-auto">{children}</div>
+      {children}
     </Dialog>
   );
 }

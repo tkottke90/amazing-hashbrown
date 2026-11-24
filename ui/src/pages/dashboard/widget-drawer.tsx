@@ -1,6 +1,6 @@
 import { useSignal, type Signal } from '@preact/signals';
 import { useEffect, useRef } from 'preact/hooks';
-import { Drawer, useDialog } from '@tkottke90/preact-dialog';
+import { DialogBody, DialogFooter, Drawer, useDialog } from '@tkottke90/preact-dialog';
 import type { EditorView } from '@codemirror/view';
 import type { JSX } from 'preact';
 import type {
@@ -77,7 +77,7 @@ export function WidgetDrawer(props: WidgetDrawerProps) {
     <Drawer
       title={props.mode === 'add' ? 'Add widget' : 'Edit widget'}
       side="right"
-      className="w-[90vw]! sm:w-lg! sm:max-w-[90vw]! py-4"
+      className="w-[90vw]! sm:w-lg! sm:max-w-[90vw]!"
       trigger={props.trigger}
       open={props.open}
       onOpen={() => {
@@ -483,12 +483,8 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
   }
 
   return (
-    <form
-      data-testid="widget-drawer-form"
-      className="flex flex-1 min-h-0 flex-col gap-4"
-      onSubmit={handleSubmit}
-    >
-      <div className="flex flex-1 min-h-0 flex-col gap-4 overflow-y-auto">
+    <form data-testid="widget-drawer-form" className="contents" onSubmit={handleSubmit}>
+      <DialogBody className="flex flex-col gap-4">
         {mode === 'edit' && widgetType.value !== 'system' && (
           <div className="flex gap-1">
             <Button
@@ -782,16 +778,16 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
         )}
 
         {saveError.value && <p className="text-sm text-destructive">{saveError.value}</p>}
-      </div>
+      </DialogBody>
 
-      <div className="flex shrink-0 justify-end gap-2 border-t border-border pt-4">
+      <DialogFooter className="border-border">
         <Button type="button" variant="outline" onClick={() => close()}>
           Cancel
         </Button>
         <Button type="submit" disabled={isSaving.value || isValidating.value}>
           {isSaving.value ? 'Saving…' : 'Save'}
         </Button>
-      </div>
+      </DialogFooter>
     </form>
   );
 }

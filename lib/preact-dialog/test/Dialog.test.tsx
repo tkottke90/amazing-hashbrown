@@ -236,3 +236,97 @@ describe('Dialog — controlled open signal', () => {
     expect(closeSpy).not.toHaveBeenCalled();
   });
 });
+
+// Overlay variants keep a closed <dialog> rendered (opacity-0) so its exit
+// transition can play, so the closed state has to be hidden explicitly —
+// otherwise screen readers and role queries see every mounted dialog, and
+// Tab can reach the controls inside one that's closed.
+describe('Dialog — accessibility', () => {
+  it('hides a closed dialog from assistive tech and makes it inert', () => {
+    const { container } = render(<Dialog>content</Dialog>);
+    const dialog = getDialogEl(container);
+
+    expect(dialog).toHaveAttribute('aria-hidden', 'true');
+    expect(dialog).toHaveAttribute('inert');
+  });
+
+  it('un-hides the dialog when the trigger opens it', () => {
+    const { container } = render(<Dialog>content</Dialog>);
+    const dialog = openDialog(container);
+
+    expect(dialog).not.toHaveAttribute('aria-hidden');
+    expect(dialog).not.toHaveAttribute('inert');
+  });
+
+  it('un-hides the dialog before showModal() runs, so the browser can move focus into it', () => {
+    const { container } = render(<Dialog>content</Dialog>);
+    const dialog = getDialogEl(container);
+    let inertWhenShown: boolean | undefined;
+    const originalShowModal = dialog.showModal.bind(dialog);
+    dialog.showModal = () => {
+      inertWhenShown = dialog.hasAttribute('inert');
+      originalShowModal();
+    };
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+
+    expect(inertWhenShown).toBe(false);
+  });
+
+  it('hides the dialog again once it closes via the X button', () => {
+    const { container } = render(<Dialog title="Settings">content</Dialog>);
+    const dialog = openDialog(container);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(dialog).toHaveAttribute('aria-hidden', 'true');
+    expect(dialog).toHaveAttribute('inert');
+  });
+
+  it('hides the dialog again when it is dismissed natively (e.g. Escape)', () => {
+    const { container } = render(<Dialog>content</Dialog>);
+    const dialog = openDialog(container);
+
+    act(() => {
+      dialog.removeAttribute('open');
+      dialog.dispatchEvent(new Event('close'));
+    });
+
+    expect(dialog).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('un-hides a dialog opened through the controlled `open` signal', () => {
+    const open = signal(false);
+    const { container } = render(<Dialog open={open}>content</Dialog>);
+    const dialog = getDialogEl(container);
+    expect(dialog).toHaveAttribute('aria-hidden', 'true');
+
+    act(() => {
+      open.value = true;
+    });
+
+    expect(dialog).toHaveAttribute('open');
+    expect(dialog).not.toHaveAttribute('aria-hidden');
+    expect(dialog).not.toHaveAttribute('inert');
+  });
+
+  it('starts visible when the controlled `open` signal is already true on mount', () => {
+    const open = signal(true);
+    const { container } = render(<Dialog open={open}>content</Dialog>);
+
+    expect(getDialogEl(container)).not.toHaveAttribute('aria-hidden');
+  });
+
+  it('takes its accessible name from the title', () => {
+    const { container } = render(<Dialog title="Settings">content</Dialog>);
+    openDialog(container);
+
+    expect(screen.getByRole('dialog', { name: 'Settings' })).toBe(getDialogEl(container));
+  });
+
+  it('has no aria-labelledby when there is no title to point at', () => {
+    const { container } = render(<Dialog>content</Dialog>);
+
+    expect(getDialogEl(container)).not.toHaveAttribute('aria-labelledby');
+  });
+});

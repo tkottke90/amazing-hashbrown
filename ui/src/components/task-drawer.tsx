@@ -3,7 +3,7 @@ import { Sparkles, GripVertical, Plus, X, Loader2, ExternalLink, Copy, Check } f
 import type { JSX } from 'preact';
 import { useRef, useEffect } from 'preact/hooks';
 
-import { Drawer, useDialog } from '@tkottke90/preact-dialog';
+import { DialogBody, DialogFooter, Drawer, useDialog } from '@tkottke90/preact-dialog';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -149,7 +149,7 @@ export function TaskDrawer({
       trigger={trigger}
       open={open}
       title={isNew ? 'New task' : 'Task details'}
-      className="!p-0 !bg-background !rounded-none !border-0 border-l border-border"
+      className="!bg-background !rounded-none !border-0 border-l border-border"
     >
       <TaskForm
         key={task?.id ?? `new:${JSON.stringify(draft ?? null)}`}
@@ -768,8 +768,8 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
   const planProgress = totalCount.value > 0 ? (completedCount.value / totalCount.value) * 100 : 0;
 
   return (
-    <form onSubmit={handleSave} class="flex flex-col flex-1 min-h-0 mt-2">
-      <div class="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4">
+    <form onSubmit={handleSave} class="contents">
+      <DialogBody className="flex flex-col gap-4">
         <div class="flex flex-col gap-1">
           <label class="text-xs font-medium text-muted-foreground">Title</label>
           <Input
@@ -1523,9 +1523,9 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
         </div>
 
         {error.value && <p class="text-sm text-destructive">{error.value}</p>}
-      </div>
+      </DialogBody>
 
-      <div class="flex items-center gap-2 px-5 py-4 border-t border-border shrink-0 justify-end">
+      <DialogFooter className="border-border">
         {!isNew && task && <TaskReportButton taskId={task.id} variant="outline" />}
         <Button type="button" variant="ghost" onClick={() => close()}>
           Cancel
@@ -1533,7 +1533,7 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
         <Button type="submit" disabled={saving.value || scheduleBlocksSave}>
           {saving.value ? 'Saving…' : isNew ? 'Create task' : 'Save changes'}
         </Button>
-      </div>
+      </DialogFooter>
     </form>
   );
 }
