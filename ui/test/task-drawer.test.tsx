@@ -904,7 +904,14 @@ describe('TaskDrawer — mobile-safe font sizes (issue #397)', () => {
 
   it('renders the Tracker type picker, and the Create new issue body textarea, at a mobile-safe size', async () => {
     mockListTrackers.mockResolvedValueOnce([
-      { type: 'github', displayName: 'GitHub', icon: 'github', canCreate: true, authSchema: [] },
+      {
+        type: 'github',
+        displayName: 'GitHub',
+        icon: 'github',
+        canCreate: true,
+        configured: true,
+        authSchema: [],
+      },
     ]);
     renderDrawer(baseTask);
 

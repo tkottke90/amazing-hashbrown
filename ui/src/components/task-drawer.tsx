@@ -565,7 +565,7 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
       const item = await createTrackerItem(trackerType.value, {
         title: createTitle.value.trim(),
         body: createBody.value.trim() || undefined,
-        repo: createRepo.value.trim() || undefined,
+        container: createRepo.value.trim() || undefined,
       });
       trackerId.value = item.id;
       trackerPreview.value = item;

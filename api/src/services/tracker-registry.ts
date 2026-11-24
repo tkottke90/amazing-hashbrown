@@ -40,7 +40,9 @@ export async function resolveTrackerUrlAnyAdapter(
   url: string,
 ): Promise<{ type: string; item: TrackerItem }> {
   const attempts: string[] = [];
-  for (const adapter of registry.list()) {
+  // An unconfigured adapter (e.g. Todoist without a token) can't answer for
+  // any URL, so it's skipped rather than reported as a failed attempt.
+  for (const adapter of registry.list().filter((a) => a.configured)) {
     try {
       const item = await adapter.resolveUrl(url);
       return { type: adapter.type, item };
@@ -80,6 +82,9 @@ function buildTrackerRegistry(): TrackerRegistry {
   for (const pkg of pluginList) {
     try {
       const adapter = require(pkg) as TrackerAdapter;
+      // Plugins written before `configured` existed don't declare it; treat
+      // them as configured so they keep appearing for linking as before.
+      if (typeof adapter.configured !== 'boolean') adapter.configured = true;
       registry.register(adapter);
       logger.info('Tracker plugin registered', { pkg, type: adapter.type });
     } catch (err) {

@@ -7,6 +7,7 @@ const GITHUB_TRACKER: Tracker = {
   displayName: 'GitHub',
   icon: '<svg></svg>',
   canCreate: true,
+  configured: true,
   authSchema: [
     {
       key: 'token',
@@ -23,6 +24,7 @@ const GENERIC_TRACKER: Tracker = {
   displayName: 'Todoist',
   icon: '<svg></svg>',
   canCreate: true,
+  configured: true,
   authSchema: [{ key: 'apiKey', label: 'API key', type: 'password', required: false }],
 };
 

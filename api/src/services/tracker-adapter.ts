@@ -11,6 +11,25 @@ export interface TrackerItem {
   title: string;
   state: CanonicalState;
   trackerState: string; // raw state string from the external system
+  dueAt: string | null; // YYYY-MM-DD; null when the tracker has no due date for this item
+}
+
+// Who a hashbrown task is assigned to — mapped by each adapter onto its own
+// representation (e.g. Todoist's Assignee Labels). See GLOSSARY.md.
+export type Assignee = 'user' | 'agent' | null;
+
+// A place a newly created item can land in: a GitHub repository, a Todoist
+// project. See GLOSSARY.md "Tracker Container".
+export interface TrackerContainer {
+  id: string;
+  name: string;
+}
+
+export interface CreateTrackerItemParams {
+  title: string;
+  body?: string;
+  container?: string; // Tracker Container id; adapter default when omitted
+  dueAt?: string | null; // YYYY-MM-DD
 }
 
 export interface AuthField {
@@ -31,9 +50,17 @@ export interface TrackerAdapter {
   authSchema: AuthField[];
 
   canCreate: boolean; // set at registration time based on config/token presence
+  // Whether the adapter has what it needs to answer requests at all (e.g. a
+  // required token). Every built-in adapter is always registered so Settings
+  // can configure it; only configured adapters are offered for linking.
+  configured: boolean;
 
   resolveUrl(url: string): Promise<TrackerItem>;
   getItem(id: string): Promise<TrackerItem>;
-  createItem(params: { title: string; body?: string; repo?: string }): Promise<TrackerItem>;
+  createItem(params: CreateTrackerItemParams): Promise<TrackerItem>;
   updateState(id: string, state: CanonicalState): Promise<TrackerItem>;
+  // Optional: list the Tracker Containers a new item can be created in.
+  listContainers?(): Promise<TrackerContainer[]>;
+  // Optional: reflect a hashbrown task's assignee onto the linked item.
+  setAssignee?(id: string, assignee: Assignee): Promise<void>;
 }

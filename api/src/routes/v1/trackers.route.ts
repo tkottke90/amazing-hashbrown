@@ -6,6 +6,7 @@ import {
   resolveTrackerUrlHandler,
   getTrackerItemHandler,
   createTrackerItemHandler,
+  listTrackerContainersHandler,
   verifyGithubTokenHandler,
 } from './trackers.handlers.js';
 
@@ -71,4 +72,16 @@ trackersRouter.post('/:type/items', async (req: Request, res: Response) => {
     return;
   }
   res.status(201).json(result.data);
+});
+
+trackersRouter.get('/:type/containers', async (req: Request, res: Response) => {
+  const result = await listTrackerContainersHandler(
+    getTrackerRegistry(),
+    req.params['type'] as string,
+  );
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(result.data);
 });

@@ -7,6 +7,7 @@ import {
   resolveTrackerUrlHandler,
   getTrackerItemHandler,
   createTrackerItemHandler,
+  listTrackerContainersHandler,
   verifyGithubTokenHandler,
 } from './trackers.handlers.js';
 
@@ -16,6 +17,7 @@ const SAMPLE_ITEM: TrackerItem = {
   title: 'Sample issue',
   state: 'pending',
   trackerState: 'open',
+  dueAt: null,
 };
 
 function fakeAdapter(overrides: Partial<TrackerAdapter> = {}): TrackerAdapter {
@@ -25,6 +27,7 @@ function fakeAdapter(overrides: Partial<TrackerAdapter> = {}): TrackerAdapter {
     icon: '<svg></svg>',
     authSchema: [],
     canCreate: false,
+    configured: true,
     resolveUrl: async () => SAMPLE_ITEM,
     getItem: async () => SAMPLE_ITEM,
     createItem: async () => SAMPLE_ITEM,
@@ -37,7 +40,9 @@ describe('routes/v1/trackers.handlers', () => {
   describe('listTrackersHandler()', () => {
     it('maps registered adapters to their public summary shape', () => {
       const registry = new TrackerRegistry();
-      registry.register(fakeAdapter({ type: 'fake', displayName: 'Fake', canCreate: true }));
+      registry.register(
+        fakeAdapter({ type: 'fake', displayName: 'Fake', canCreate: true, configured: false }),
+      );
       const result = listTrackersHandler(registry);
       expect(result.ok).to.equal(true);
       if (result.ok) {
@@ -47,6 +52,7 @@ describe('routes/v1/trackers.handlers', () => {
             displayName: 'Fake',
             icon: '<svg></svg>',
             canCreate: true,
+            configured: false,
             authSchema: [],
           },
         ]);
@@ -160,10 +166,113 @@ describe('routes/v1/trackers.handlers', () => {
       registry.register(fakeAdapter({ canCreate: true }));
       const result = await createTrackerItemHandler(registry, 'fake', {
         title: 'New issue',
-        repo: 'octo/repo',
+        container: 'octo/repo',
       });
       expect(result.ok).to.equal(true);
       if (result.ok) expect(result.data).to.deep.equal(SAMPLE_ITEM);
+    });
+
+    it('passes title, body, container and dueAt through to the adapter unchanged [unit]', async () => {
+      const registry = new TrackerRegistry();
+      const received: unknown[] = [];
+      registry.register(
+        fakeAdapter({
+          canCreate: true,
+          createItem: async (params) => {
+            received.push(params);
+            return SAMPLE_ITEM;
+          },
+        }),
+      );
+      await createTrackerItemHandler(registry, 'fake', {
+        title: 'New task',
+        body: 'Details',
+        container: 'proj-1',
+        dueAt: '2026-12-01',
+      });
+      expect(received, 'adapter should receive the create params as sent').to.deep.equal([
+        { title: 'New task', body: 'Details', container: 'proj-1', dueAt: '2026-12-01' },
+      ]);
+    });
+
+    it('treats an empty container as "use the adapter default" rather than an empty id [unit]', async () => {
+      const registry = new TrackerRegistry();
+      const received: Array<{ container?: string }> = [];
+      registry.register(
+        fakeAdapter({
+          canCreate: true,
+          createItem: async (params) => {
+            received.push(params);
+            return SAMPLE_ITEM;
+          },
+        }),
+      );
+      await createTrackerItemHandler(registry, 'fake', { title: 'x', container: '' });
+      expect(received[0]!.container).to.equal(undefined);
+    });
+
+    it('rejects a dueAt that is not a YYYY-MM-DD date with 400, without calling the adapter [unit]', async () => {
+      const registry = new TrackerRegistry();
+      let called = false;
+      registry.register(
+        fakeAdapter({
+          canCreate: true,
+          createItem: async () => {
+            called = true;
+            return SAMPLE_ITEM;
+          },
+        }),
+      );
+      const result = await createTrackerItemHandler(registry, 'fake', {
+        title: 'x',
+        dueAt: 'next tuesday',
+      });
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+      expect(called, 'an invalid dueAt must not reach the tracker').to.equal(false);
+    });
+  });
+
+  describe('listTrackerContainersHandler()', () => {
+    it('returns 404 for an unregistered tracker type [unit]', async () => {
+      const result = await listTrackerContainersHandler(new TrackerRegistry(), 'missing');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(404);
+    });
+
+    it('returns 400 when the adapter does not list containers, so the UI falls back to free text [unit]', async () => {
+      const registry = new TrackerRegistry();
+      registry.register(fakeAdapter());
+      const result = await listTrackerContainersHandler(registry, 'fake');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+    });
+
+    it("returns the adapter's containers on success [unit]", async () => {
+      const registry = new TrackerRegistry();
+      registry.register(
+        fakeAdapter({ listContainers: async () => [{ id: 'p1', name: 'Personal' }] }),
+      );
+      const result = await listTrackerContainersHandler(registry, 'fake');
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data).to.deep.equal([{ id: 'p1', name: 'Personal' }]);
+    });
+
+    it('returns 500 with the adapter error message when listing fails [unit]', async () => {
+      const registry = new TrackerRegistry();
+      registry.register(
+        fakeAdapter({
+          listContainers: async () => {
+            throw new Error('Todoist API error 503');
+          },
+        }),
+      );
+      const result = await listTrackerContainersHandler(registry, 'fake');
+      expect(result.ok).to.equal(false);
+      if (!result.ok) {
+        expect(result.status).to.equal(500);
+        expect(result.error).to.contain('503');
+      }
     });
   });
 
