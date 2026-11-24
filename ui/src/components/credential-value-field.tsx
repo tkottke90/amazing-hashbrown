@@ -89,7 +89,7 @@ export function CredentialValueField({
             type="text"
             value={envName.value}
             disabled={disabled}
-            placeholder="GH_TOKEN"
+            placeholder={suggestedEnvName ?? 'GH_TOKEN'}
             onInput={(e) => handleEnvNameInput((e.target as HTMLInputElement).value)}
             onKeyDown={onKeyDown}
           />

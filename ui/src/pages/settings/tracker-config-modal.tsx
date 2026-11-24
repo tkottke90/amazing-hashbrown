@@ -5,14 +5,74 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { CredentialValueField } from '@/components/credential-value-field';
-import { verifyGithubToken, type AuthField, type Tracker } from '@/services/trackers-api';
+import {
+  verifyGithubToken,
+  verifyTodoistToken,
+  type AuthField,
+  type Tracker,
+} from '@/services/trackers-api';
 import type { JSX } from 'preact';
+
+type VerifyOutcome =
+  | { ok: true; tone: 'success' | 'warning'; message: JSX.Element | string }
+  | { ok: false; error: string };
 
 type TestState =
   | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'success'; canCreate: boolean; tokenType: 'classic' | 'fine-grained' | 'unknown' }
+  | { status: 'success'; tone: 'success' | 'warning'; message: JSX.Element | string }
   | { status: 'error'; error: string };
+
+// Per-tracker Settings behaviour. Each tracker keeps its own verify endpoint
+// and result shape; only the button wiring is shared. A tracker with no
+// `verify` entry (e.g. a TRACKER_PLUGINS adapter) gets no Verify button.
+interface TrackerSettingsEntry {
+  suggestedEnvName?: string;
+  verify?: (token: string) => Promise<VerifyOutcome>;
+}
+
+export const TRACKER_SETTINGS: Record<string, TrackerSettingsEntry> = {
+  github: {
+    suggestedEnvName: 'GH_TOKEN',
+    verify: async (token) => {
+      const result = await verifyGithubToken(token);
+      if (!result.valid)
+        return { ok: false, error: result.error ?? 'Token could not be verified.' };
+      if (result.tokenType === 'fine-grained') {
+        return {
+          ok: true,
+          tone: 'success',
+          message: (
+            <>
+              Connected — fine-grained token (grant <code>Issues: Read and write</code> on each
+              repository you want to create issues in)
+            </>
+          ),
+        };
+      }
+      return result.canCreate
+        ? { ok: true, tone: 'success', message: 'Connected — read & write (create issues enabled)' }
+        : {
+            ok: true,
+            tone: 'warning',
+            message: (
+              <>
+                Connected — read-only (token needs <code>repo</code> scope to create issues)
+              </>
+            ),
+          };
+    },
+  },
+  todoist: {
+    suggestedEnvName: 'TODOIST_TOKEN',
+    verify: async (token) => {
+      const result = await verifyTodoistToken(token);
+      return result.valid
+        ? { ok: true, tone: 'success', message: 'Connected' }
+        : { ok: false, error: result.error ?? 'Token could not be verified.' };
+    },
+  },
+};
 
 interface TrackerConfigModalProps {
   tracker: Tracker;
@@ -58,6 +118,7 @@ function TrackerConfigForm({ tracker, initial, onSave }: Omit<TrackerConfigModal
   );
   const removed = useSignal<Record<string, boolean>>({});
   const testState = useSignal<TestState>({ status: 'idle' });
+  const settings: TrackerSettingsEntry = TRACKER_SETTINGS[tracker.type] ?? {};
 
   function updateFieldValue(key: string, next: string) {
     values.value = { ...values.value, [key]: next };
@@ -70,19 +131,10 @@ function TrackerConfigForm({ tracker, initial, onSave }: Omit<TrackerConfigModal
   async function runVerify() {
     testState.value = { status: 'loading' };
     try {
-      const result = await verifyGithubToken(values.value['token'] ?? '');
-      if (!result.valid) {
-        testState.value = {
-          status: 'error',
-          error: result.error ?? 'Token could not be verified.',
-        };
-      } else {
-        testState.value = {
-          status: 'success',
-          canCreate: result.canCreate,
-          tokenType: result.tokenType,
-        };
-      }
+      const outcome = await settings.verify!(values.value['token'] ?? '');
+      testState.value = outcome.ok
+        ? { status: 'success', tone: outcome.tone, message: outcome.message }
+        : { status: 'error', error: outcome.error };
     } catch (err) {
       testState.value = {
         status: 'error',
@@ -143,7 +195,7 @@ function TrackerConfigForm({ tracker, initial, onSave }: Omit<TrackerConfigModal
                     value={values.value[field.key] ?? ''}
                     onChange={(next) => updateFieldValue(field.key, next)}
                     disabled={isRemoved}
-                    suggestedEnvName="GH_TOKEN"
+                    suggestedEnvName={settings.suggestedEnvName}
                     placeholder={stored ? 'Leave blank to keep the saved value' : undefined}
                     helperText={
                       stored ? (isRemoved ? 'Will be removed on save' : 'Currently set') : undefined
@@ -181,7 +233,7 @@ function TrackerConfigForm({ tracker, initial, onSave }: Omit<TrackerConfigModal
         );
       })}
 
-      {tracker.type === 'github' && (
+      {settings.verify && (
         <div class="flex items-center gap-3">
           <Button
             type="button"
@@ -200,29 +252,18 @@ function TrackerConfigForm({ tracker, initial, onSave }: Omit<TrackerConfigModal
             )}
           </Button>
 
-          {testState.value.status === 'success' && testState.value.tokenType === 'fine-grained' && (
+          {testState.value.status === 'success' && testState.value.tone === 'success' && (
             <span class="flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400">
               <CheckCircle2 class="size-4 shrink-0" />
-              Connected — fine-grained token (grant <code>Issues: Read and write</code> on each
-              repository you want to create issues in)
+              {testState.value.message}
             </span>
           )}
-          {testState.value.status === 'success' &&
-            testState.value.tokenType !== 'fine-grained' &&
-            testState.value.canCreate && (
-              <span class="flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400">
-                <CheckCircle2 class="size-4 shrink-0" />
-                Connected — read &amp; write (create issues enabled)
-              </span>
-            )}
-          {testState.value.status === 'success' &&
-            testState.value.tokenType !== 'fine-grained' &&
-            !testState.value.canCreate && (
-              <span class="flex items-center gap-1.5 text-sm text-amber-700 dark:text-amber-400">
-                <AlertTriangle class="size-4 shrink-0" />
-                Connected — read-only (token needs <code>repo</code> scope to create issues)
-              </span>
-            )}
+          {testState.value.status === 'success' && testState.value.tone === 'warning' && (
+            <span class="flex items-center gap-1.5 text-sm text-amber-700 dark:text-amber-400">
+              <AlertTriangle class="size-4 shrink-0" />
+              {testState.value.message}
+            </span>
+          )}
           {testState.value.status === 'error' && (
             <span class="flex items-center gap-1.5 text-sm text-destructive">
               <XCircle class="size-4 shrink-0" />

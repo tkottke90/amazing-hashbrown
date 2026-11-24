@@ -53,6 +53,11 @@ export interface GithubVerifyResult {
   error?: string;
 }
 
+export interface TodoistVerifyResult {
+  valid: boolean;
+  error?: string;
+}
+
 export async function listTrackers(): Promise<Tracker[]> {
   return request<Tracker[]>('/api/v1/trackers');
 }
@@ -77,6 +82,20 @@ export async function createTrackerItem(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
+  });
+}
+
+// Rejects with a RequestError (status 400) when the tracker doesn't list
+// containers — callers fall back to a free-text container field.
+export async function listTrackerContainers(type: string): Promise<TrackerContainer[]> {
+  return request<TrackerContainer[]>(`/api/v1/trackers/${type}/containers`);
+}
+
+export async function verifyTodoistToken(token: string): Promise<TodoistVerifyResult> {
+  return request<TodoistVerifyResult>('/api/v1/trackers/todoist/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
   });
 }
 
