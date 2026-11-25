@@ -40,9 +40,15 @@ jest.mock('@/services/tasks-api', () => ({
 }));
 
 const mockListTrackers = jest.fn().mockResolvedValue([]);
+const mockListTrackerContainers = jest.fn();
+const mockCreateTrackerItem = jest.fn();
+const mockGetTrackerItem = jest.fn();
 jest.mock('@/services/trackers-api', () => ({
   ...jest.requireActual('@/services/trackers-api'),
   listTrackers: () => mockListTrackers(),
+  listTrackerContainers: (type: string) => mockListTrackerContainers(type),
+  createTrackerItem: (type: string, params: unknown) => mockCreateTrackerItem(type, params),
+  getTrackerItem: (type: string, id: string) => mockGetTrackerItem(type, id),
 }));
 
 // The drawer's Model field now fetches the provider list to power its
@@ -60,6 +66,8 @@ jest.mock('@/hooks/use-providers', () => ({
 import { TaskDrawer } from '@/components/task-drawer';
 import { tasks } from '@/hooks/use-tasks';
 import type { Task, TaskDependency, TaskRun } from '@/services/tasks-api';
+import type { Tracker, TrackerItem } from '@/services/trackers-api';
+import { RequestError } from '@/utils/fetch.utils';
 
 const baseTask: Task = {
   id: 'task-1',
@@ -904,7 +912,14 @@ describe('TaskDrawer — mobile-safe font sizes (issue #397)', () => {
 
   it('renders the Tracker type picker, and the Create new issue body textarea, at a mobile-safe size', async () => {
     mockListTrackers.mockResolvedValueOnce([
-      { type: 'github', displayName: 'GitHub', icon: 'github', canCreate: true, authSchema: [] },
+      {
+        type: 'github',
+        displayName: 'GitHub',
+        icon: 'github',
+        canCreate: true,
+        configured: true,
+        authSchema: [],
+      },
     ]);
     renderDrawer(baseTask);
 
@@ -917,10 +932,166 @@ describe('TaskDrawer — mobile-safe font sizes (issue #397)', () => {
     act(() => {
       trackerSelect.dispatchEvent(new Event('change', { bubbles: true }));
     });
-    fireEvent.click(await screen.findByRole('button', { name: /Create new issue/ }));
+    mockListTrackerContainers.mockRejectedValueOnce(new RequestError('no containers', 400));
+    fireEvent.click(await screen.findByRole('button', { name: /Create new GitHub item/ }));
 
-    const issueBody = await screen.findByPlaceholderText('Issue body (optional)');
+    const issueBody = await screen.findByPlaceholderText('Description (optional)');
     expectMobileSafe(issueBody);
     expect(issueBody).toHaveClass('field-sizing-fixed', 'h-16', 'resize-none');
+  });
+});
+
+describe('TaskDrawer — tracker linking (Todoist, issue #82)', () => {
+  const TODOIST: Tracker = {
+    type: 'todoist',
+    displayName: 'Todoist',
+    icon: '',
+    canCreate: true,
+    configured: true,
+    authSchema: [],
+  };
+  const GITHUB: Tracker = {
+    type: 'github',
+    displayName: 'GitHub',
+    icon: '',
+    canCreate: true,
+    configured: true,
+    authSchema: [],
+  };
+  const ITEM: TrackerItem = {
+    id: 'td1',
+    url: 'https://app.todoist.com/app/task/td1',
+    title: 'Buy milk',
+    state: 'pending',
+    trackerState: 'active',
+    dueAt: '2026-12-01',
+  };
+
+  afterEach(() => {
+    jest.clearAllMocks();
+    mockListTrackers.mockResolvedValue([]);
+  });
+
+  async function chooseTracker(type: string) {
+    const select = (await screen.findByTestId('task-tracker-type-select')) as HTMLSelectElement;
+    await waitFor(() =>
+      expect(within(select).queryByRole('option', { name: /Todoist|GitHub/ })).not.toBeNull(),
+    );
+    select.value = type;
+    act(() => {
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  }
+
+  it('hides a tracker that is not configured from the type select [unit]', async () => {
+    mockListTrackers.mockResolvedValueOnce([GITHUB, { ...TODOIST, configured: false }]);
+    renderDrawer(baseTask);
+    const select = await screen.findByTestId('task-tracker-type-select');
+    await waitFor(() =>
+      expect(within(select).getByRole('option', { name: 'GitHub' })).toBeInTheDocument(),
+    );
+    expect(within(select).queryByRole('option', { name: 'Todoist' })).toBeNull();
+  });
+
+  it("keeps an unconfigured tracker in the select when it is the task's existing link [unit]", async () => {
+    mockListTrackers.mockResolvedValueOnce([{ ...TODOIST, configured: false }]);
+    mockGetTrackerItem.mockRejectedValueOnce(new Error('not configured'));
+    renderDrawer({ ...baseTask, trackerType: 'todoist', trackerId: 'td1' });
+    const select = await screen.findByTestId('task-tracker-type-select');
+    await waitFor(() =>
+      expect(within(select).getByRole('option', { name: 'Todoist' })).toBeInTheDocument(),
+    );
+  });
+
+  it("shows the linked item's due date in the preview [unit]", async () => {
+    mockListTrackers.mockResolvedValueOnce([TODOIST]);
+    mockGetTrackerItem.mockResolvedValueOnce(ITEM);
+    renderDrawer({ ...baseTask, trackerType: 'todoist', trackerId: 'td1' });
+    expect(await screen.findByTestId('task-tracker-preview-due')).toHaveTextContent(
+      'Due 2026-12-01',
+    );
+  });
+
+  it('offers a project select defaulting to Inbox when the tracker lists containers [unit]', async () => {
+    mockListTrackers.mockResolvedValueOnce([TODOIST]);
+    mockListTrackerContainers.mockResolvedValueOnce([{ id: 'p1', name: 'Work' }]);
+    renderDrawer(baseTask);
+    await chooseTracker('todoist');
+    fireEvent.click(await screen.findByRole('button', { name: /Create new Todoist item/ }));
+    const projects = (await screen.findByTestId(
+      'task-tracker-container-select',
+    )) as HTMLSelectElement;
+    await waitFor(() =>
+      expect(within(projects).getByRole('option', { name: 'Work' })).toBeInTheDocument(),
+    );
+    expect(projects.value).toBe('');
+    expect(within(projects).getByRole('option', { name: 'Inbox' })).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('owner/repo')).toBeNull();
+  });
+
+  it('falls back to Inbox only, still allowing create, when the project list fails to load [unit]', async () => {
+    mockListTrackers.mockResolvedValueOnce([TODOIST]);
+    mockListTrackerContainers.mockRejectedValueOnce(new RequestError('Todoist API error 503', 500));
+    mockCreateTrackerItem.mockResolvedValueOnce(ITEM);
+    renderDrawer(baseTask);
+    await chooseTracker('todoist');
+    fireEvent.click(await screen.findByRole('button', { name: /Create new Todoist item/ }));
+    expect(await screen.findByText(/Could not load projects/)).toBeInTheDocument();
+    const create = screen.getByRole('button', { name: 'Create' });
+    await waitFor(() => expect(create).not.toBeDisabled());
+    fireEvent.click(create);
+    await waitFor(() => expect(mockCreateTrackerItem).toHaveBeenCalled());
+    expect(mockCreateTrackerItem.mock.calls[0][1]).toMatchObject({ container: undefined });
+  });
+
+  it("sends the chosen project and the task's due date when creating, then links the new item [unit]", async () => {
+    mockListTrackers.mockResolvedValueOnce([TODOIST]);
+    mockListTrackerContainers.mockResolvedValueOnce([{ id: 'p1', name: 'Work' }]);
+    mockCreateTrackerItem.mockResolvedValueOnce(ITEM);
+    renderDrawer({ ...baseTask, dueAt: '2026-12-01T00:00:00.000Z' });
+    await chooseTracker('todoist');
+    fireEvent.click(await screen.findByRole('button', { name: /Create new Todoist item/ }));
+    const projects = (await screen.findByTestId(
+      'task-tracker-container-select',
+    )) as HTMLSelectElement;
+    await waitFor(() =>
+      expect(within(projects).getByRole('option', { name: 'Work' })).toBeInTheDocument(),
+    );
+    projects.value = 'p1';
+    act(() => {
+      projects.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() =>
+      expect(mockCreateTrackerItem).toHaveBeenCalledWith('todoist', {
+        title: 'Do the thing',
+        body: undefined,
+        container: 'p1',
+        dueAt: '2026-12-01',
+      }),
+    );
+    expect(await screen.findByTestId('task-tracker-preview')).toHaveTextContent('Buy milk');
+  });
+
+  it('uses a free-text repo field for a tracker without a container list (GitHub) [unit]', async () => {
+    mockListTrackers.mockResolvedValueOnce([GITHUB]);
+    mockListTrackerContainers.mockRejectedValueOnce(new RequestError('no containers', 400));
+    renderDrawer(baseTask);
+    await chooseTracker('github');
+    fireEvent.click(await screen.findByRole('button', { name: /Create new GitHub item/ }));
+    expect(await screen.findByPlaceholderText('owner/repo')).toBeInTheDocument();
+    expect(screen.queryByTestId('task-tracker-container-select')).toBeNull();
+  });
+
+  it("pre-fills the create form's title and description from the drawer's current fields [unit]", async () => {
+    mockListTrackers.mockResolvedValueOnce([TODOIST]);
+    mockListTrackerContainers.mockResolvedValueOnce([]);
+    renderDrawer(baseTask);
+    fireEvent.input(screen.getByPlaceholderText('Task title'), {
+      target: { value: 'Edited title' },
+    });
+    await chooseTracker('todoist');
+    fireEvent.click(await screen.findByRole('button', { name: /Create new Todoist item/ }));
+    expect(await screen.findByPlaceholderText('Title')).toHaveValue('Edited title');
   });
 });

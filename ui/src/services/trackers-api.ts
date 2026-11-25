@@ -17,6 +17,9 @@ export interface Tracker {
   displayName: string;
   icon: string;
   canCreate: boolean;
+  // Whether the tracker has what it needs (e.g. a token) to answer requests.
+  // Only configured trackers are offered for linking.
+  configured: boolean;
   authSchema: AuthField[];
 }
 
@@ -26,6 +29,20 @@ export interface TrackerItem {
   title: string;
   state: CanonicalState;
   trackerState: string;
+  dueAt: string | null; // YYYY-MM-DD
+}
+
+// A place a new tracker item can be created in (a GitHub repo, a Todoist project).
+export interface TrackerContainer {
+  id: string;
+  name: string;
+}
+
+export interface CreateTrackerItemParams {
+  title: string;
+  body?: string;
+  container?: string;
+  dueAt?: string | null;
 }
 
 export interface GithubVerifyResult {
@@ -33,6 +50,11 @@ export interface GithubVerifyResult {
   scopes: string[];
   canCreate: boolean;
   tokenType: 'classic' | 'fine-grained' | 'unknown';
+  error?: string;
+}
+
+export interface TodoistVerifyResult {
+  valid: boolean;
   error?: string;
 }
 
@@ -54,12 +76,26 @@ export async function getTrackerItem(type: string, id: string): Promise<TrackerI
 
 export async function createTrackerItem(
   type: string,
-  params: { title: string; body?: string; repo?: string },
+  params: CreateTrackerItemParams,
 ): Promise<TrackerItem> {
   return request<TrackerItem>(`/api/v1/trackers/${type}/items`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
+  });
+}
+
+// Rejects with a RequestError (status 400) when the tracker doesn't list
+// containers — callers fall back to a free-text container field.
+export async function listTrackerContainers(type: string): Promise<TrackerContainer[]> {
+  return request<TrackerContainer[]>(`/api/v1/trackers/${type}/containers`);
+}
+
+export async function verifyTodoistToken(token: string): Promise<TodoistVerifyResult> {
+  return request<TodoistVerifyResult>('/api/v1/trackers/todoist/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
   });
 }
 

@@ -10,6 +10,7 @@ import {
   WorkspaceStore,
   isSubAgentTask,
   subAgentTaskSql,
+  type TaskTrackerAssignmentChange,
 } from './workspace-store.js';
 
 describe('services/workspace-store', () => {
@@ -2764,6 +2765,139 @@ describe('services/workspace-store', () => {
       ).to.equal(true);
     });
   });
+
+  // The Assignee Label service subscribes here; every path that changes who
+  // a task is assigned to, or what tracker item it's linked to, must notify.
+  describe('onTaskTrackerAssignmentChanged()', () => {
+    let store: WorkspaceStore;
+    let dir: string;
+    let changes: TaskTrackerAssignmentChange[];
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-store-assignment-test-'));
+      store = new WorkspaceStore(openDatabase(join(dir, 'test.db')));
+      changes = [];
+      store.onTaskTrackerAssignmentChanged((c) => changes.push(c));
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('notifies on create with a null before, carrying the new link and assignee [unit]', () => {
+      const task = store.createTask({
+        title: 't',
+        assignedTo: 'user',
+        trackerType: 'todoist',
+        trackerId: 'abc',
+      });
+      expect(changes).to.deep.equal([
+        {
+          taskId: task.id,
+          before: null,
+          after: { assignedTo: 'user', trackerType: 'todoist', trackerId: 'abc' },
+        },
+      ]);
+    });
+
+    it('notifies with before/after when a task is reassigned [unit]', () => {
+      const task = store.createTask({
+        title: 't',
+        assignedTo: 'user',
+        trackerType: 'todoist',
+        trackerId: 'abc',
+      });
+      changes = [];
+      store.patchTask(task.id, { assignedTo: 'agent' });
+      expect(changes).to.have.length(1);
+      expect(changes[0]!.before?.assignedTo).to.equal('user');
+      expect(changes[0]!.after.assignedTo).to.equal('agent');
+    });
+
+    it('notifies when a link is added, moved or removed [unit]', () => {
+      const task = store.createTask({ title: 't', assignedTo: 'user' });
+      changes = [];
+      store.patchTask(task.id, { trackerType: 'todoist', trackerId: 'a' });
+      store.patchTask(task.id, { trackerId: 'b' });
+      store.patchTask(task.id, { trackerId: null });
+      expect(changes.map((c) => [c.before?.trackerId, c.after.trackerId])).to.deep.equal([
+        [null, 'a'],
+        ['a', 'b'],
+        ['b', null],
+      ]);
+    });
+
+    it('stays silent for a patch that does not touch assignee or link [unit]', () => {
+      const task = store.createTask({ title: 't', assignedTo: 'user' });
+      changes = [];
+      store.patchTask(task.id, { title: 'renamed', description: 'x' });
+      expect(changes).to.have.length(0);
+    });
+
+    it('stays silent when an assignment field is re-sent with its current value, as the drawer save does [unit]', () => {
+      const task = store.createTask({
+        title: 't',
+        assignedTo: 'user',
+        trackerType: 'todoist',
+        trackerId: 'a',
+      });
+      changes = [];
+      store.patchTask(task.id, { assignedTo: 'user', trackerType: 'todoist', trackerId: 'a' });
+      expect(changes).to.have.length(0);
+    });
+
+    it("notifies when a running agent task is parked for a HITL answer and becomes the user's [unit]", () => {
+      const task = store.createTask({
+        title: 't',
+        assignedTo: 'agent',
+        trackerType: 'todoist',
+        trackerId: 'a',
+      });
+      const entry = store.enqueueTask(task.id);
+      changes = [];
+      store.parkQueueEntryForHitl(entry.id);
+      expect(changes).to.have.length(1);
+      expect(changes[0]!.before?.assignedTo).to.equal('agent');
+      expect(changes[0]!.after.assignedTo).to.equal('user');
+    });
+
+    it('does not notify when a scheduled-task create is deduplicated onto an existing task [unit]', () => {
+      const config = {
+        fireAt: '2026-11-06T13:05:00.000Z',
+        timezone: 'UTC',
+        enabled: true,
+        enabledAt: '2026-11-06T12:00:00.000Z',
+        lastFiredAt: null,
+      };
+      store.createTask({ title: 'once', triggerType: 'cron_once', triggerConfig: config });
+      changes = [];
+      const second = store.createTask({
+        title: 'once',
+        triggerType: 'cron_once',
+        triggerConfig: config,
+      });
+      expect(second.reused).to.equal(true);
+      expect(changes).to.have.length(0);
+    });
+
+    it('still completes the write when a listener throws [unit]', () => {
+      store.onTaskTrackerAssignmentChanged(() => {
+        throw new Error('listener boom');
+      });
+      const task = store.createTask({ title: 't', assignedTo: 'user' });
+      const patched = store.patchTask(task.id, { assignedTo: 'agent' });
+      expect(patched?.assignedTo, 'a throwing listener must not fail the patch').to.equal('agent');
+    });
+
+    it('stops notifying a listener after it unsubscribes [unit]', () => {
+      const seen: TaskTrackerAssignmentChange[] = [];
+      const unsubscribe = store.onTaskTrackerAssignmentChanged((c) => seen.push(c));
+      unsubscribe();
+      store.createTask({ title: 't', assignedTo: 'user' });
+      expect(seen).to.have.length(0);
+    });
+  });
+
   describe('Sub-Agent Task vs Placement Review Task (origin=agent without a dispatching parent)', () => {
     let db: ReturnType<typeof openDatabase>;
     let store: WorkspaceStore;

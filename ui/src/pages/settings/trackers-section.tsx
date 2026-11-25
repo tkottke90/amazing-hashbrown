@@ -75,7 +75,11 @@ export function TrackersSection() {
                         dangerouslySetInnerHTML={{ __html: tracker.icon }}
                       />
                       <span class="font-medium text-sm">{tracker.displayName}</span>
-                      {tracker.canCreate ? (
+                      {!tracker.configured ? (
+                        <span class="rounded border border-dashed border-border px-1.5 py-0.5 text-xs text-muted-foreground">
+                          Not configured
+                        </span>
+                      ) : tracker.canCreate ? (
                         <span class="rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary">
                           Link &amp; create
                         </span>

@@ -1,4 +1,6 @@
 import type { TrackerRegistry } from '../../services/tracker-registry.js';
+import type { TrackerContainer } from '../../services/tracker-adapter.js';
+import { TODOIST_API } from '../../adapters/tracker-todoist.js';
 import type { HandlerFailure, HandlerResult } from './threads.handlers.js';
 
 function ok<T>(data: T): HandlerResult<T> {
@@ -17,6 +19,8 @@ function serverError(error: string): HandlerFailure {
   return { ok: false, status: 500, error };
 }
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
@@ -26,6 +30,7 @@ export interface TrackerSummary {
   displayName: string;
   icon: string;
   canCreate: boolean;
+  configured: boolean;
   authSchema: unknown;
 }
 
@@ -36,6 +41,7 @@ export function listTrackersHandler(registry: TrackerRegistry): HandlerResult<Tr
       displayName: a.displayName,
       icon: a.icon,
       canCreate: a.canCreate,
+      configured: a.configured,
       authSchema: a.authSchema,
     })),
   );
@@ -73,20 +79,43 @@ export async function getTrackerItemHandler(
 export async function createTrackerItemHandler(
   registry: TrackerRegistry,
   type: string,
-  body: { title?: unknown; body?: unknown; repo?: unknown },
+  body: { title?: unknown; body?: unknown; container?: unknown; dueAt?: unknown },
 ): Promise<HandlerResult<unknown>> {
   const adapter = registry.get(type);
   if (!adapter) return notFound(`Tracker "${type}" is not registered`);
   if (!adapter.canCreate) return badRequest(`Tracker "${type}" cannot create items`);
   if (!body.title || typeof body.title !== 'string') return badRequest('title is required');
+  if (
+    body.dueAt !== undefined &&
+    body.dueAt !== null &&
+    (typeof body.dueAt !== 'string' || !DATE_RE.test(body.dueAt))
+  ) {
+    return badRequest('dueAt must be a YYYY-MM-DD date');
+  }
   try {
     return ok(
       await adapter.createItem({
         title: body.title,
         body: typeof body.body === 'string' ? body.body : undefined,
-        repo: typeof body.repo === 'string' ? body.repo : undefined,
+        container:
+          typeof body.container === 'string' && body.container ? body.container : undefined,
+        dueAt: typeof body.dueAt === 'string' ? body.dueAt : null,
       }),
     );
+  } catch (err) {
+    return serverError(errorMessage(err));
+  }
+}
+
+export async function listTrackerContainersHandler(
+  registry: TrackerRegistry,
+  type: string,
+): Promise<HandlerResult<TrackerContainer[]>> {
+  const adapter = registry.get(type);
+  if (!adapter) return notFound(`Tracker "${type}" is not registered`);
+  if (!adapter.listContainers) return badRequest(`Tracker "${type}" does not list containers`);
+  try {
+    return ok(await adapter.listContainers());
   } catch (err) {
     return serverError(errorMessage(err));
   }
@@ -164,5 +193,27 @@ export async function verifyGithubTokenHandler(body: {
       tokenType: 'unknown',
       error: errorMessage(err),
     });
+  }
+}
+
+interface TodoistVerifyResult {
+  valid: boolean;
+  error?: string;
+}
+
+// Todoist has no token-introspection endpoint; any authenticated read that
+// succeeds proves the token works, and a 1-item project list is the cheapest.
+export async function verifyTodoistTokenHandler(body: {
+  token?: unknown;
+}): Promise<HandlerResult<TodoistVerifyResult>> {
+  if (!body.token || typeof body.token !== 'string') return badRequest('token is required');
+  try {
+    const res = await fetch(`${TODOIST_API}/projects?limit=1`, {
+      headers: { Authorization: `Bearer ${body.token}` },
+    });
+    if (!res.ok) return ok({ valid: false, error: `Todoist API error ${res.status}` });
+    return ok({ valid: true });
+  } catch (err) {
+    return ok({ valid: false, error: errorMessage(err) });
   }
 }
