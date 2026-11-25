@@ -1,6 +1,7 @@
 import type {
   AuthField,
   CanonicalState,
+  CreateTrackerItemParams,
   TrackerAdapter,
   TrackerItem,
 } from '../services/tracker-adapter.js';
@@ -41,6 +42,7 @@ function toTrackerItem(owner: string, repo: string, num: string, issue: GithubIs
     title: issue.title,
     state: toCanonicalState(issue),
     trackerState: issue.state,
+    dueAt: null,
   };
 }
 
@@ -69,6 +71,8 @@ export function createGithubTrackerAdapter(token?: string): TrackerAdapter {
     icon: GITHUB_ICON,
     authSchema: AUTH_SCHEMA,
     canCreate,
+    // Public issues resolve without a token, so GitHub is always usable for linking.
+    configured: true,
 
     async resolveUrl(url: string): Promise<TrackerItem> {
       const match = ISSUE_URL_RE.exec(url.trim());
@@ -86,15 +90,13 @@ export function createGithubTrackerAdapter(token?: string): TrackerAdapter {
       return toTrackerItem(owner, repo, num, issue);
     },
 
-    async createItem(params: {
-      title: string;
-      body?: string;
-      repo?: string;
-    }): Promise<TrackerItem> {
+    async createItem(params: CreateTrackerItemParams): Promise<TrackerItem> {
       if (!canCreate) throw new Error('GitHub adapter is not configured for creating issues');
-      if (!params.repo) throw new Error('repo is required to create a GitHub issue');
-      const [owner, repo] = params.repo.split('/');
-      if (!owner || !repo) throw new Error(`Invalid repo "${params.repo}", expected "owner/repo"`);
+      // The Tracker Container for GitHub is an "owner/repo" string.
+      if (!params.container) throw new Error('repo is required to create a GitHub issue');
+      const [owner, repo] = params.container.split('/');
+      if (!owner || !repo)
+        throw new Error(`Invalid repo "${params.container}", expected "owner/repo"`);
       const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/issues`, {
         method: 'POST',
         headers: { ...headers(), 'Content-Type': 'application/json' },

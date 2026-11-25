@@ -6,7 +6,9 @@ import {
   resolveTrackerUrlHandler,
   getTrackerItemHandler,
   createTrackerItemHandler,
+  listTrackerContainersHandler,
   verifyGithubTokenHandler,
+  verifyTodoistTokenHandler,
 } from './trackers.handlers.js';
 
 export const trackersRouter = Router();
@@ -16,6 +18,15 @@ export const trackersRouter = Router();
 // same convention with /queue.
 trackersRouter.post('/github/verify', async (req: Request, res: Response) => {
   const result = await verifyGithubTokenHandler(req.body as Record<string, unknown>);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(result.data);
+});
+
+trackersRouter.post('/todoist/verify', async (req: Request, res: Response) => {
+  const result = await verifyTodoistTokenHandler(req.body as Record<string, unknown>);
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;
@@ -71,4 +82,16 @@ trackersRouter.post('/:type/items', async (req: Request, res: Response) => {
     return;
   }
   res.status(201).json(result.data);
+});
+
+trackersRouter.get('/:type/containers', async (req: Request, res: Response) => {
+  const result = await listTrackerContainersHandler(
+    getTrackerRegistry(),
+    req.params['type'] as string,
+  );
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json(result.data);
 });

@@ -13,7 +13,8 @@ import { bootToolSettingsStore, getToolSettingsStore } from './services/tool-set
 import { TOOL_CATALOG } from './agents/tool-catalog.js';
 import { bootWorkspaceStore, getWorkspaceStore } from './services/workspace-store.js';
 import { bootApiKeyStore } from './services/api-key-store.js';
-import { bootTrackerRegistry } from './services/tracker-registry.js';
+import { bootTrackerRegistry, getTrackerRegistry } from './services/tracker-registry.js';
+import { bootTrackerAssigneeLabels } from './services/tracker-assignee-labels.js';
 import { bootTaskScheduler } from './services/task-scheduler.js';
 import { bootCronRegistry, getCronRegistry, withCronResync } from './services/cron-registry.js';
 import { bootKnowledgeBase } from './knowledge-base/index.js';
@@ -65,6 +66,8 @@ bootApiKeyStore(db);
 app.logger.info('API key store booted');
 bootTrackerRegistry();
 app.logger.info('Tracker registry booted');
+bootTrackerAssigneeLabels(getWorkspaceStore(), getTrackerRegistry);
+app.logger.info('Tracker assignee labels booted');
 await bootArtifactStore();
 app.logger.info('Artifact store booted');
 startArtifactGc();

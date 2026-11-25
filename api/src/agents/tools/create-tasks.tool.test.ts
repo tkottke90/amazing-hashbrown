@@ -22,6 +22,7 @@ function fakeAdapter(type: string, overrides: Partial<TrackerAdapter> = {}): Tra
     icon: '<svg></svg>',
     authSchema: [],
     canCreate: false,
+    configured: true,
     resolveUrl: async () => {
       throw new Error('not implemented');
     },
@@ -158,6 +159,7 @@ describe('agents/tools/create-tasks', () => {
           title: 'Fix the bug',
           state: 'pending',
           trackerState: 'open',
+          dueAt: null,
         }),
       }),
     );

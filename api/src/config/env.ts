@@ -644,8 +644,13 @@ export const GithubTrackerSchema = z.object({
   token: z.string().optional(),
 });
 
+export const TodoistTrackerSchema = z.object({
+  token: z.string().optional(),
+});
+
 export const TrackersConfigSchema = z.object({
   github: GithubTrackerSchema.optional(),
+  todoist: TodoistTrackerSchema.optional(),
 });
 
 export const TasksConfigSchema = z.object({

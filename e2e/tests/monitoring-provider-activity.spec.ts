@@ -151,9 +151,14 @@ test.describe.serial('@user-workflow', { annotation: suiteAnnotations(suite) }, 
       await expect(providerBar(page, E2E_PROVIDER_1)).toBeVisible();
       await expect(providerBar(page, E2E_PROVIDER_2)).toBeVisible();
 
-      const chip = greenRoomLane(page, E2E_PROVIDER_1).getByTestId('green-room-chip-ready');
+      // Scoped to this test's own task: E2E_PROVIDER_1 is also the default
+      // provider, so a parallel spec's unpinned ready task (e.g.
+      // monitoring-task-queue.spec.ts's) can share this lane — the lane
+      // isn't this test's to own, only its task's chip is.
+      const chip = greenRoomLane(page, E2E_PROVIDER_1)
+        .getByTestId('green-room-chip-ready')
+        .filter({ hasText: 'Provider activity: ready task' });
       await expect(chip).toBeVisible();
-      await expect(chip).toContainText('Provider activity: ready task');
     });
   });
 });

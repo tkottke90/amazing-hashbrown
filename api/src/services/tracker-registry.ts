@@ -2,6 +2,7 @@ import { createRequire } from 'node:module';
 import { logger } from '../config/logger.js';
 import type { TrackerAdapter, TrackerItem } from './tracker-adapter.js';
 import { createGithubTrackerAdapter } from '../adapters/tracker-github.js';
+import { createTodoistTrackerAdapter } from '../adapters/tracker-todoist.js';
 import { env } from '../config/env.js';
 
 // ESM has no ambient `require` — this project is "type": "module" — so a
@@ -40,7 +41,9 @@ export async function resolveTrackerUrlAnyAdapter(
   url: string,
 ): Promise<{ type: string; item: TrackerItem }> {
   const attempts: string[] = [];
-  for (const adapter of registry.list()) {
+  // An unconfigured adapter (e.g. Todoist without a token) can't answer for
+  // any URL, so it's skipped rather than reported as a failed attempt.
+  for (const adapter of registry.list().filter((a) => a.configured)) {
     try {
       const item = await adapter.resolveUrl(url);
       return { type: adapter.type, item };
@@ -72,6 +75,9 @@ function buildTrackerRegistry(): TrackerRegistry {
   const registry = new TrackerRegistry();
 
   registry.register(createGithubTrackerAdapter(env.workspaces.tasks?.trackers?.github?.token));
+  // Always registered so Settings can configure it; `configured` stays false
+  // (and it's hidden from linking) until a token is set.
+  registry.register(createTodoistTrackerAdapter(env.workspaces.tasks?.trackers?.todoist?.token));
 
   const pluginList = (process.env['TRACKER_PLUGINS'] ?? '')
     .split(',')
@@ -80,6 +86,9 @@ function buildTrackerRegistry(): TrackerRegistry {
   for (const pkg of pluginList) {
     try {
       const adapter = require(pkg) as TrackerAdapter;
+      // Plugins written before `configured` existed don't declare it; treat
+      // them as configured so they keep appearing for linking as before.
+      if (typeof adapter.configured !== 'boolean') adapter.configured = true;
       registry.register(adapter);
       logger.info('Tracker plugin registered', { pkg, type: adapter.type });
     } catch (err) {

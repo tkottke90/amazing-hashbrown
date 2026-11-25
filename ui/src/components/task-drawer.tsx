@@ -72,9 +72,12 @@ import {
   resolveTrackerUrl,
   getTrackerItem,
   createTrackerItem,
+  listTrackerContainers,
   type Tracker,
+  type TrackerContainer,
   type TrackerItem,
 } from '@/services/trackers-api';
+import { RequestError } from '@/utils/fetch.utils';
 
 const TRACKER_STATE_LABELS: Record<TrackerItem['state'], string> = {
   pending: 'Pending',
@@ -265,12 +268,22 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
   const showCreateForm = useSignal(false);
   const createTitle = useSignal(task?.title ?? '');
   const createBody = useSignal(task?.description ?? '');
-  const createRepo = useSignal('');
+  // The Tracker Container (GitHub repo, Todoist project) a new item lands in.
+  // 'select' when the tracker lists its containers, 'text' when it doesn't.
+  const createContainer = useSignal('');
+  const containerMode = useSignal<'loading' | 'select' | 'text'>('loading');
+  const containers = useSignal<TrackerContainer[]>([]);
+  const containerError = useSignal('');
   const createSaving = useSignal(false);
   const createError = useSignal('');
 
   const selectedTracker = useComputed(() =>
     trackers.value.find((t) => t.type === trackerType.value),
+  );
+  // Only Configured Trackers are offered for linking — except the task's
+  // current tracker, so an existing link stays visible after its token goes.
+  const linkableTrackers = useComputed(() =>
+    trackers.value.filter((t) => t.configured || t.type === trackerType.value),
   );
 
   useEffect(() => {
@@ -308,11 +321,6 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
         });
     }
   }, []);
-
-  useEffect(() => {
-    const ws = workspaces.value.find((w) => w.id === workspaceId.value);
-    createRepo.value = parseGithubRepo(ws?.remoteUrl);
-  }, [workspaceId.value]);
 
   useEffect(() => {
     if (!task) return;
@@ -550,6 +558,38 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
     }
   }
 
+  async function openCreateForm() {
+    const type = trackerType.value;
+    if (!type) return;
+    showCreateForm.value = true;
+    // Seed from the drawer's current fields, not the saved task — a new
+    // task has no saved title yet, and an existing one may have been edited.
+    createTitle.value = title.value;
+    createBody.value = description.value;
+    createContainer.value = '';
+    containers.value = [];
+    containerError.value = '';
+    containerMode.value = 'loading';
+    try {
+      containers.value = await listTrackerContainers(type);
+      containerMode.value = 'select';
+    } catch (err) {
+      if (err instanceof RequestError && err.status === 400) {
+        // This tracker doesn't list containers — free-text entry, prefilled
+        // from the workspace remote for GitHub.
+        containerMode.value = 'text';
+        if (type === 'github') {
+          const ws = workspaces.value.find((w) => w.id === workspaceId.value);
+          createContainer.value = parseGithubRepo(ws?.remoteUrl);
+        }
+      } else {
+        // Listing failed — still allow creating into the tracker's default.
+        containerMode.value = 'select';
+        containerError.value = 'Could not load projects — the item will go to Inbox.';
+      }
+    }
+  }
+
   function unlinkTracker() {
     trackerId.value = null;
     trackerPreview.value = null;
@@ -565,13 +605,14 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
       const item = await createTrackerItem(trackerType.value, {
         title: createTitle.value.trim(),
         body: createBody.value.trim() || undefined,
-        repo: createRepo.value.trim() || undefined,
+        container: createContainer.value.trim() || undefined,
+        dueAt: dueAt.value || null,
       });
       trackerId.value = item.id;
       trackerPreview.value = item;
       showCreateForm.value = false;
     } catch (err) {
-      createError.value = err instanceof Error ? err.message : 'Failed to create issue.';
+      createError.value = err instanceof Error ? err.message : 'Failed to create the item.';
     } finally {
       createSaving.value = false;
     }
@@ -1403,7 +1444,7 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
             class="border border-input rounded-lg px-3 py-2 text-base md:text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
           >
             <option value="">Not linked</option>
-            {trackers.value.map((t) => (
+            {linkableTrackers.value.map((t) => (
               <option key={t.type} value={t.type}>
                 {t.displayName}
               </option>
@@ -1429,6 +1470,12 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
                     </a>
                     <span class="text-xs text-muted-foreground">
                       {TRACKER_STATE_LABELS[trackerPreview.value.state]}
+                      {trackerPreview.value.dueAt && (
+                        <span data-testid="task-tracker-preview-due">
+                          {' · Due '}
+                          {trackerPreview.value.dueAt}
+                        </span>
+                      )}
                     </span>
                   </div>
                   <button
@@ -1463,30 +1510,59 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
                   {!showCreateForm.value ? (
                     <button
                       type="button"
-                      onClick={() => (showCreateForm.value = true)}
+                      onClick={() => void openCreateForm()}
                       class="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
                     >
                       <Plus class="size-3" />
-                      Create new issue
+                      Create new {selectedTracker.value.displayName} item
                     </button>
                   ) : (
                     <div class="flex flex-col gap-2">
+                      {containerMode.value === 'loading' && (
+                        <p class="text-xs text-muted-foreground flex items-center gap-1.5">
+                          <Loader2 class="size-3 animate-spin" />
+                          Loading…
+                        </p>
+                      )}
+                      {containerMode.value === 'select' && (
+                        <select
+                          data-testid="task-tracker-container-select"
+                          aria-label="Project"
+                          value={createContainer.value}
+                          onChange={(e) => {
+                            createContainer.value = (e.target as HTMLSelectElement).value;
+                          }}
+                          class="border border-input rounded-lg px-3 py-2 text-base md:text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring/50"
+                        >
+                          <option value="">Inbox</option>
+                          {containers.value.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      {containerError.value && (
+                        <p class="text-xs text-destructive">{containerError.value}</p>
+                      )}
+                      {containerMode.value === 'text' && (
+                        <Input
+                          placeholder={trackerType.value === 'github' ? 'owner/repo' : 'Container'}
+                          value={createContainer.value}
+                          onInput={(e) => {
+                            createContainer.value = (e.target as HTMLInputElement).value;
+                          }}
+                        />
+                      )}
                       <Input
-                        placeholder="owner/repo"
-                        value={createRepo.value}
-                        onInput={(e) => {
-                          createRepo.value = (e.target as HTMLInputElement).value;
-                        }}
-                      />
-                      <Input
-                        placeholder="Issue title"
+                        placeholder="Title"
                         value={createTitle.value}
                         onInput={(e) => {
                           createTitle.value = (e.target as HTMLInputElement).value;
                         }}
                       />
                       <Textarea
-                        placeholder="Issue body (optional)"
+                        placeholder="Description (optional)"
                         value={createBody.value}
                         onInput={(e) => {
                           createBody.value = (e.target as HTMLTextAreaElement).value;
@@ -1508,10 +1584,14 @@ function TaskForm({ task, draft, defaultWorkspaceId, onSaved, onGoToChat }: Task
                         <Button
                           type="button"
                           size="xs"
-                          disabled={createSaving.value || !createTitle.value.trim()}
+                          disabled={
+                            createSaving.value ||
+                            !createTitle.value.trim() ||
+                            containerMode.value === 'loading'
+                          }
                           onClick={() => void handleCreateTrackerItem()}
                         >
-                          {createSaving.value ? 'Creating…' : 'Create issue'}
+                          {createSaving.value ? 'Creating…' : 'Create'}
                         </Button>
                       </div>
                     </div>

@@ -18,6 +18,7 @@ function fakeAdapter(type: string, overrides: Partial<TrackerAdapter> = {}): Tra
     icon: '<svg></svg>',
     authSchema: [],
     canCreate: false,
+    configured: true,
     resolveUrl: async () => {
       throw new Error('not implemented');
     },
@@ -84,6 +85,7 @@ describe('services/tracker-registry', () => {
             title: 'Found it',
             state: 'pending',
             trackerState: 'open',
+            dueAt: null,
           }),
         }),
       );
@@ -103,6 +105,7 @@ describe('services/tracker-registry', () => {
             title: 'Found it',
             state: 'pending',
             trackerState: 'open',
+            dueAt: null,
           }),
         }),
       );
@@ -146,6 +149,30 @@ describe('services/tracker-registry', () => {
       }
     });
 
+    it('skips unconfigured adapters entirely, so they neither match nor appear in the failure list [unit]', async () => {
+      const registry = new TrackerRegistry();
+      let unconfiguredCalled = false;
+      registry.register(
+        fakeAdapter('todoist', {
+          configured: false,
+          resolveUrl: async () => {
+            unconfiguredCalled = true;
+            throw new Error('Todoist adapter is not configured');
+          },
+        }),
+      );
+      registry.register(fakeAdapter('github'));
+      let message = '';
+      try {
+        await resolveTrackerUrlAnyAdapter(registry, 'https://example.com/x');
+      } catch (err) {
+        message = (err as Error).message;
+      }
+      expect(unconfiguredCalled, 'an unconfigured adapter must not be asked').to.equal(false);
+      expect(message).to.contain('github:');
+      expect(message).to.not.contain('todoist');
+    });
+
     it('rejects with a distinct message when no adapters are registered at all', async () => {
       const registry = new TrackerRegistry();
       try {
@@ -163,6 +190,13 @@ describe('services/tracker-registry', () => {
     afterEach(() => {
       if (originalPlugins === undefined) delete process.env['TRACKER_PLUGINS'];
       else process.env['TRACKER_PLUGINS'] = originalPlugins;
+    });
+
+    it('always registers the built-in Todoist adapter, token or not, so Settings can offer it for configuration [unit]', () => {
+      bootTrackerRegistry();
+      expect(getTrackerRegistry().get('todoist'), 'todoist adapter not registered').to.not.equal(
+        undefined,
+      );
     });
 
     it('always registers the built-in GitHub adapter', () => {
@@ -197,6 +231,10 @@ describe('services/tracker-registry', () => {
         const plugin = getTrackerRegistry().get('fake-plugin');
         expect(plugin, 'external plugin not registered').to.not.equal(undefined);
         expect(plugin!.displayName).to.equal('Fake Plugin');
+        expect(
+          plugin!.configured,
+          'a plugin without a configured flag should default to configured',
+        ).to.equal(true);
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }

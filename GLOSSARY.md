@@ -673,3 +673,29 @@ _Avoid_: Sanitizer, sanitize schema (ambiguous with the API's own differently-sc
 **SVG Sandbox**:
 The custom element + open Shadow DOM wrapper every rendered inline SVG is mounted into — `markdownComponents`'s `svg` override creates it and portals the SVG's already-sanitized, already-rendered subtree into its shadow root (`preact/compat`'s `createPortal`). Exists specifically so SVG-scoped `<style>` and internal `<use href="#id">` references can be allowed by the Markdown Sanitize Schema without reopening page-wide CSS injection or DOM-clobbering risk (see ADR-0072) — a separate mechanism from the Schema itself, applied uniformly to every rendered SVG regardless of whether that particular one uses `<style>`.
 _Avoid_: Shadow wrapper, SVG host, sandbox (bare — ambiguous once more than one sandboxing mechanism could exist)
+
+# External Trackers
+
+How a hashbrown task is linked to an item in an external task-management system (GitHub, Todoist, ...), through one pluggable adapter per system.
+
+## Language
+
+**Tracker Link**:
+A task's pointer to one item in an external tracker: the tracker's type plus that tracker's own item id. Only the pointer is persisted; the item's title and state are always read live from the tracker, never stored.
+_Avoid_: Tracker sync, external issue, linked issue
+
+**Canonical State**:
+The tracker-agnostic state (`pending`, `in_progress`, `done`, `cancelled`) every tracker's own raw state is mapped onto. An item only maps to `in_progress` when the tracker itself says work has started — "open" or "active" alone is `pending`.
+_Avoid_: Status (that's the hashbrown task's own field), tracker state (that's the raw, unmapped value)
+
+**Configured Tracker**:
+A tracker with what it needs to answer requests: credentials, if it requires them. Every built-in tracker is always present in Settings so it can be configured. Only Configured Trackers are offered when linking a task.
+_Avoid_: Registered tracker (every built-in tracker is registered), enabled tracker
+
+**Tracker Container**:
+The place in an external tracker that a newly created item lands in: a repository for GitHub, a project for Todoist.
+_Avoid_: Repo (GitHub-specific), project (Todoist-specific; also collides with hashbrown Projects), destination
+
+**Assignee Label**:
+The tracker-side label naming who a linked task is assigned to in hashbrown (`AH:User` or `AH:Agent` in Todoist). Owned by hashbrown: every label starting with `AH:` is hashbrown's, and every other label on the item belongs to the user. Kept current for as long as the Tracker Link exists, and removed when the link ends.
+_Avoid_: Assignment tag, owner label
