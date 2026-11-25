@@ -1808,6 +1808,61 @@ describe('agents/task-execution', () => {
     });
   });
 
+  describe('Placement Review Task (origin=agent, no role, no parent) runs as an ordinary task', () => {
+    afterEach(() => {
+      configManager.set('agent', { roles: {} });
+    });
+
+    function makePlacementEntry(): QueueEntryWithTask {
+      // Mirrors after-agent.ts's createPlacementReviewTask.
+      const task = store.createTask({
+        title: 'Wiki placement: Grafana',
+        assignedTo: 'agent',
+        origin: 'agent',
+      });
+      store.patchTask(task.id, { status: 'ready', assignedTo: 'agent' });
+      store.enqueueTask(task.id, { triggerSource: 'agent' });
+      return store.dequeueNext()! as QueueEntryWithTask;
+    }
+
+    it('runs on the ordinary task builder, not the sub-agent builder, and does not need a Role [orchestration]', async () => {
+      configManager.set('agent', { roles: {} });
+      const entry = makePlacementEntry();
+      let taskBuilderCalled = false;
+      let subAgentBuilderCalled = false;
+
+      await executeTask(entry, {
+        buildTaskAgent: ((...args: unknown[]) => {
+          taskBuilderCalled = true;
+          return fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS))(
+            ...(args as Parameters<typeof buildTaskAgent>),
+          );
+        }) as typeof buildTaskAgent,
+        buildSubAgentAgent: ((...args: unknown[]) => {
+          subAgentBuilderCalled = true;
+          return fakeBuildSubAgentAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS))(
+            ...(args as Parameters<typeof buildSubAgentAgent>),
+          );
+        }) as typeof buildSubAgentAgent,
+      });
+
+      expect(taskBuilderCalled, 'ordinary builder (has ask_user) must be used').to.equal(true);
+      expect(subAgentBuilderCalled, 'sub-agent builder has no ask_user').to.equal(false);
+      expect(store.getTask(entry.task.id)!.status).to.equal('done');
+      expect(store.getQueueEntry(entry.id)!.summary ?? '').to.not.include('no longer exists');
+    });
+
+    it('uses the shared env.agent.recursionLimit, not subAgentRecursionLimit [orchestration]', async () => {
+      configManager.set('agent', { roles: {}, subAgentRecursionLimit: 7, recursionLimit: 999 });
+      const entry = makePlacementEntry();
+      const { agent, configs } = spyStreamEventsConfig(fakeAgent(COMPLETE_TASK_DONE_EVENTS));
+
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+      expect((configs[0] as { recursionLimit: number }).recursionLimit).to.equal(999);
+    });
+  });
+
   describe('StagnationLimitError on a non-sub-agent task (defensive case)', () => {
     it("still fails the task cleanly if a StagnationLimitError somehow reaches a plain origin='user' task", async () => {
       const entry = makeGlobalEntry('Ordinary task');

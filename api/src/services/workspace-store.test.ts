@@ -5,7 +5,12 @@ import { describe, it, beforeEach, afterEach } from 'mocha';
 import { expect } from 'chai';
 import { openDatabase } from '@tkottke90/llm-common-types/db';
 import { configManager } from '../config/env.js';
-import { TASK_TITLE_MAX_LENGTH, WorkspaceStore } from './workspace-store.js';
+import {
+  TASK_TITLE_MAX_LENGTH,
+  WorkspaceStore,
+  isSubAgentTask,
+  subAgentTaskSql,
+} from './workspace-store.js';
 
 describe('services/workspace-store', () => {
   describe('recoverRunningQueueEntries() (crash recovery, runs in the constructor)', () => {
@@ -2757,6 +2762,138 @@ describe('services/workspace-store', () => {
       expect(
         store.listDependencyEdgesForTasks([waiting.id]).get(waiting.id)![0].satisfied,
       ).to.equal(true);
+    });
+  });
+  describe('Sub-Agent Task vs Placement Review Task (origin=agent without a dispatching parent)', () => {
+    let db: ReturnType<typeof openDatabase>;
+    let store: WorkspaceStore;
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'workspace-store-test-'));
+      db = openDatabase(join(dir, 'test.db'));
+      store = new WorkspaceStore(db);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    // Mirrors after-agent.ts's createPlacementReviewTask: origin='agent', no
+    // role, no parent thread.
+    function enqueuePlacementTask(title = 'Wiki placement: x'): string {
+      const task = store.createTask({ title, assignedTo: 'agent', origin: 'agent' });
+      store.patchTask(task.id, { status: 'ready', assignedTo: 'agent' });
+      store.enqueueTask(task.id, { triggerSource: 'agent' });
+      return task.id;
+    }
+
+    function enqueueSubAgentTask(): string {
+      return store.createSubAgentTask({
+        role: 'researcher',
+        goal: 'Find something',
+        parentThreadId: 'parent-1',
+        dispatchGroupId: 'group-1',
+      }).id;
+    }
+
+    describe('isSubAgentTask()', () => {
+      it('is true for origin=agent with a dispatching parent thread [unit]', () => {
+        expect(isSubAgentTask({ origin: 'agent', parentThreadId: 'parent-1' })).to.equal(true);
+      });
+
+      it('is false for origin=agent without a parent — a Placement Review Task is not a sub-agent [unit]', () => {
+        expect(isSubAgentTask({ origin: 'agent', parentThreadId: null })).to.equal(false);
+      });
+
+      it('is false for a user-origin task [unit]', () => {
+        expect(isSubAgentTask({ origin: 'user', parentThreadId: null })).to.equal(false);
+      });
+    });
+
+    describe('subAgentTaskSql()', () => {
+      it('agrees with isSubAgentTask() for every origin/parent combination [unit]', () => {
+        const rows = [
+          { origin: 'agent', parent: 'p' },
+          { origin: 'agent', parent: null },
+          { origin: 'user', parent: 'p' },
+          { origin: 'user', parent: null },
+        ] as const;
+        for (const r of rows) {
+          const got = db
+            .prepare(
+              `SELECT ${subAgentTaskSql('t')} AS v FROM (SELECT ? AS origin, ? AS parent_thread_id) t`,
+            )
+            .get(r.origin, r.parent) as { v: number };
+          expect(got.v === 1, `origin=${r.origin} parent=${String(r.parent)}`).to.equal(
+            isSubAgentTask({ origin: r.origin, parentThreadId: r.parent }),
+          );
+        }
+      });
+    });
+
+    it('lists a placement task but hides a real sub-agent task [unit]', () => {
+      const placementId = enqueuePlacementTask();
+      const subAgentId = enqueueSubAgentTask();
+
+      const ids = store.listTasks().map((t) => t.id);
+
+      expect(ids).to.include(placementId);
+      expect(ids).to.not.include(subAgentId);
+    });
+
+    it('lets a placement task occupy its scope, so the next global task waits behind it [unit]', () => {
+      enqueuePlacementTask();
+      const followUp = store.createTask({ title: 'follow-up', assignedTo: 'agent' });
+      store.patchTask(followUp.id, { status: 'ready' });
+      store.enqueueTask(followUp.id);
+
+      const first = store.dequeueNext()!;
+      const second = store.dequeueNext();
+
+      expect(first.task.title).to.equal('Wiki placement: x');
+      expect(second, 'the inbox scope is occupied by the running placement task').to.equal(null);
+      expect(store.getRunningEntry('inbox')?.task.title).to.equal('Wiki placement: x');
+    });
+
+    it('does not let a real sub-agent task occupy its scope [unit]', () => {
+      enqueueSubAgentTask();
+      const ordinary = store.createTask({ title: 'ordinary', assignedTo: 'agent' });
+      store.patchTask(ordinary.id, { status: 'ready' });
+      store.enqueueTask(ordinary.id);
+
+      const first = store.dequeueNext()!;
+      const second = store.dequeueNext();
+
+      expect(first.task.origin).to.equal('agent');
+      expect(second?.task.title).to.equal('ordinary');
+      expect(store.getRunningEntry('inbox')?.task.title).to.equal('ordinary');
+    });
+
+    it('escalates a stuck placement run to the user instead of failing it for a parent [unit]', () => {
+      const taskId = enqueuePlacementTask();
+      store.dequeueNext();
+      const afterFirstCrash = new WorkspaceStore(db);
+      afterFirstCrash.dequeueNext();
+
+      const afterSecondCrash = new WorkspaceStore(db);
+
+      const task = afterSecondCrash.getTask(taskId)!;
+      expect(task.status).to.equal('waiting_on_user');
+      expect(task.assignedTo).to.equal('user');
+      expect(afterSecondCrash.drainPendingSubAgentCrashNotifications()).to.have.length(0);
+    });
+
+    it('still fails a stuck real sub-agent run and queues a crash notification for its parent [unit]', () => {
+      const taskId = enqueueSubAgentTask();
+      store.dequeueNext();
+      const afterFirstCrash = new WorkspaceStore(db);
+      afterFirstCrash.dequeueNext();
+
+      const afterSecondCrash = new WorkspaceStore(db);
+
+      expect(afterSecondCrash.getTask(taskId)!.status).to.equal('failed');
+      expect(afterSecondCrash.drainPendingSubAgentCrashNotifications()).to.have.length(1);
     });
   });
 });
