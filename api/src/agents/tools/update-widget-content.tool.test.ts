@@ -80,6 +80,38 @@ describe('agents/tools/update-widget-content', () => {
     expect(result).to.include('Widget not updated');
   });
 
+  it('updates an svg widget with a valid <svg> element [unit]', async () => {
+    const created = await createWidgetHandler(root, 'default', {
+      type: 'svg',
+      title: 'Gauge',
+      content: '<svg viewBox="0 0 1 1"></svg>',
+    });
+    if (!created.ok) throw new Error('setup failed');
+
+    const tool = makeUpdateWidgetContentTool({ dashboardRoot: root });
+    const result = await tool.invoke({
+      widgetId: created.data.id,
+      content: { content: '<svg viewBox="0 0 2 2"></svg>' },
+    });
+    expect(result).to.include(`Updated widget "${created.data.id}"`);
+  });
+
+  it('returns a descriptive string instead of throwing for a non-SVG svg-widget body [unit]', async () => {
+    const created = await createWidgetHandler(root, 'default', {
+      type: 'svg',
+      title: 'Gauge',
+      content: '<svg viewBox="0 0 1 1"></svg>',
+    });
+    if (!created.ok) throw new Error('setup failed');
+
+    const tool = makeUpdateWidgetContentTool({ dashboardRoot: root });
+    const result = await tool.invoke({
+      widgetId: created.data.id,
+      content: { content: '# not svg' },
+    });
+    expect(result).to.include('Widget not updated');
+  });
+
   it('returns a descriptive string instead of throwing for an invalid field value [unit]', async () => {
     const created = await createWidgetHandler(root, 'default', {
       type: 'big-number',
