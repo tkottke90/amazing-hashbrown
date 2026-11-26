@@ -13,6 +13,7 @@
 import { z } from 'zod';
 import {
   MarkdownWidgetFrontmatterSchema,
+  SvgWidgetFrontmatterSchema,
   BigNumberWidgetFrontmatterSchema,
   LineGraphWidgetFrontmatterSchema,
   PieGraphWidgetFrontmatterSchema,
@@ -52,6 +53,12 @@ export interface WidgetBase {
 export interface MarkdownWidget extends WidgetBase {
   type: 'markdown';
   /** Markdown source (the file's body, below its frontmatter). */
+  content: string;
+}
+
+export interface SvgWidget extends WidgetBase {
+  type: 'svg';
+  /** SVG Source (the file's body, below its frontmatter) — see GLOSSARY.md. */
   content: string;
 }
 
@@ -115,7 +122,13 @@ export interface SpacerWidget extends WidgetBase {
 }
 
 export type DashboardWidget =
-  MarkdownWidget | BigNumberWidget | LineGraphWidget | PieGraphWidget | SystemWidget | SpacerWidget;
+  | MarkdownWidget
+  | SvgWidget
+  | BigNumberWidget
+  | LineGraphWidget
+  | PieGraphWidget
+  | SystemWidget
+  | SpacerWidget;
 
 /**
  * `Omit<T, K>`, applied per-member when `T` is a union, instead of
@@ -157,6 +170,7 @@ export type WidgetLoadResult =
  */
 export type WidgetContentInput =
   | { type: 'markdown'; title: string; subtitle?: string; content: string }
+  | { type: 'svg'; title: string; subtitle?: string; content: string }
   | { type: 'big-number'; title: string; subtitle?: string; value?: number; unit?: string }
   | { type: 'line-graph'; title: string; subtitle?: string; data: string; color?: string }
   | { type: 'pie-graph'; title: string; subtitle?: string; data: string; colors?: string[] }
@@ -204,6 +218,11 @@ export type WidgetPersistInput = DistributiveOmit<
  */
 export const DashboardWidgetSchema = z.discriminatedUnion('type', [
   MarkdownWidgetFrontmatterSchema.extend({
+    id: z.string(),
+    updatedAt: z.string(),
+    content: z.string(),
+  }),
+  SvgWidgetFrontmatterSchema.extend({
     id: z.string(),
     updatedAt: z.string(),
     content: z.string(),

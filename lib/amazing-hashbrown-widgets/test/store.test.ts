@@ -114,6 +114,42 @@ describe('store', () => {
     });
   });
 
+  describe('svg widgets', () => {
+    const SVG = '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>';
+
+    it("round-trips an svg widget's SVG Source through create and load", async () => {
+      const root = await tmpRoot();
+      const created = await store.createWidget(root, 'default', {
+        type: 'svg',
+        title: 'Gauge',
+        source: 'manual',
+        content: SVG,
+      });
+      const loaded = await store.loadWidget(root, 'default', created.id);
+      expect(loaded).to.deep.include({ type: 'svg', title: 'Gauge' });
+      expect((loaded as { content: string }).content.trim()).to.equal(SVG);
+    });
+
+    it('replaces the SVG Source on update while keeping the widget id', async () => {
+      const root = await tmpRoot();
+      const created = await store.createWidget(root, 'default', {
+        type: 'svg',
+        title: 'Gauge',
+        source: 'manual',
+        content: SVG,
+      });
+      const next = '<svg viewBox="0 0 1 1"></svg>';
+      const updated = await store.updateWidget(root, 'default', created.id, {
+        type: 'svg',
+        title: 'Gauge',
+        source: 'manual',
+        content: next,
+      });
+      expect(updated.id).to.equal(created.id);
+      expect((updated as { content: string }).content.trim()).to.equal(next);
+    });
+  });
+
   describe('loadWidget', () => {
     it('returns null for a missing widget', async () => {
       const root = await tmpRoot();
@@ -304,6 +340,12 @@ describe('store', () => {
         source: 'manual',
         content: 'x',
       });
+      const svg = await store.createWidget(root, 'default', {
+        type: 'svg',
+        title: 'Svg',
+        source: 'manual',
+        content: '<svg></svg>',
+      });
       const bigNumber = await store.createWidget(root, 'default', {
         type: 'big-number',
         title: 'Num',
@@ -327,6 +369,7 @@ describe('store', () => {
         source: 'manual',
       });
       expect(markdown).to.deep.include({ w: 3, h: 2 });
+      expect(svg).to.deep.include({ w: 3, h: 2 });
       expect(bigNumber).to.deep.include({ w: 2, h: 2 });
       expect(lineGraph).to.deep.include({ w: 4, h: 3 });
       expect(pieGraph).to.deep.include({ w: 6, h: 3 });

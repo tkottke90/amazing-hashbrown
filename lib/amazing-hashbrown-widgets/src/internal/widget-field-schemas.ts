@@ -30,7 +30,7 @@ const WidgetMaintainerSchema = z.string().optional();
  * source of real sizing numbers in this repo (design spec, Problem section).
  */
 export const WIDGET_SIZE_MIN: Record<
-  'markdown' | 'big-number' | 'line-graph' | 'pie-graph' | 'system' | 'spacer',
+  'markdown' | 'svg' | 'big-number' | 'line-graph' | 'pie-graph' | 'system' | 'spacer',
   { w: number; h: number }
 > = {
   'big-number': { w: 2, h: 2 },
@@ -40,6 +40,8 @@ export const WIDGET_SIZE_MIN: Record<
   // overflowing the card at the smallest usable size.
   'pie-graph': { w: 6, h: 3 },
   markdown: { w: 3, h: 2 },
+  // Shares Markdown's floor (spec: svg-dashboard-widget-design §1).
+  svg: { w: 3, h: 2 },
   // Shares Markdown's floor — a Metric's resolved shape (big-number or
   // markdown, for now) isn't known until read time, so the stored widget
   // type alone can't pick a tighter minimum the way the other types do.
@@ -59,6 +61,18 @@ export const MarkdownWidgetFrontmatterSchema = z.object({
   order: z.number(),
   w: z.number().min(WIDGET_SIZE_MIN.markdown.w).max(WIDGET_SIZE_MAX.w),
   h: z.number().min(WIDGET_SIZE_MIN.markdown.h).max(WIDGET_SIZE_MAX.h),
+  source: WidgetSourceSchema,
+  maintainer: WidgetMaintainerSchema,
+});
+
+/** Validated shape of an `SvgWidget`'s frontmatter block (no `id`/`content` — those come from the filename and body). */
+export const SvgWidgetFrontmatterSchema = z.object({
+  title: z.string().min(1),
+  subtitle: z.string().optional(),
+  type: z.literal('svg'),
+  order: z.number(),
+  w: z.number().min(WIDGET_SIZE_MIN.svg.w).max(WIDGET_SIZE_MAX.w),
+  h: z.number().min(WIDGET_SIZE_MIN.svg.h).max(WIDGET_SIZE_MAX.h),
   source: WidgetSourceSchema,
   maintainer: WidgetMaintainerSchema,
 });
@@ -142,6 +156,7 @@ export const SpacerWidgetFrontmatterSchema = z.object({
 
 export const WidgetFrontmatterSchema = z.discriminatedUnion('type', [
   MarkdownWidgetFrontmatterSchema,
+  SvgWidgetFrontmatterSchema,
   BigNumberWidgetFrontmatterSchema,
   LineGraphWidgetFrontmatterSchema,
   PieGraphWidgetFrontmatterSchema,
