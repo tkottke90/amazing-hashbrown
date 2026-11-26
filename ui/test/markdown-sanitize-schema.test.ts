@@ -5,7 +5,7 @@ import remarkRehype from 'remark-rehype';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
 import rehypeStringify from 'rehype-stringify';
-import { markdownSanitizeSchema } from '../src/lib/markdown-sanitize-schema';
+import { markdownSanitizeSchema, svgSanitizeSchema } from '../src/lib/markdown-sanitize-schema';
 
 // First test of its kind in this repo: builds the real unified/rehype
 // pipeline directly against markdown-with-raw-HTML source strings, bypassing
@@ -16,13 +16,13 @@ import { markdownSanitizeSchema } from '../src/lib/markdown-sanitize-schema';
 // Mirrors markdown.tsx's real remarkPlugins list (remarkGfm included) so the
 // "existing non-SVG Markdown unaffected" case below actually reflects what
 // the real component does with GFM tables/task-lists.
-function render(markdown: string): string {
+function render(markdown: string, schema = markdownSanitizeSchema): string {
   const file = unified()
     .use(remarkParse)
     .use(remarkGfm)
     .use(remarkRehype, { allowDangerousHtml: true })
     .use(rehypeRaw)
-    .use(rehypeSanitize, markdownSanitizeSchema)
+    .use(rehypeSanitize, schema)
     .use(rehypeStringify)
     .processSync(markdown);
   return String(file).trim();
@@ -121,5 +121,78 @@ describe('markdownSanitizeSchema', () => {
     expect(out).toContain('<h1>title</h1>');
     expect(out).toContain('<table>');
     expect(out).toContain('type="checkbox"');
+  });
+});
+
+// An SVG Widget's SVG Source is sanitized with `svgSanitizeSchema` — the SVG
+// subset of the same enumeration `markdownSanitizeSchema` is built from (one
+// allowlist, two compositions), so the whole safety matrix must hold here too.
+describe('svgSanitizeSchema', () => {
+  const renderSvg = (source: string) => render(source, svgSanitizeSchema).toLowerCase();
+
+  it('renders a representative safe SVG intact [unit]', () => {
+    const out = renderSvg(
+      '<svg viewBox="0 0 10 10"><defs><symbol id="dot"><circle cx="5" cy="5" r="5"/></symbol></defs><use href="#dot"/><rect width="2" height="2"/></svg>',
+    );
+    expect(out).toContain('<svg');
+    expect(out).toContain('href="#dot"');
+    expect(out).toContain('<rect');
+  });
+
+  it('strips <script>, even nested inside an svg [unit]', () => {
+    const out = renderSvg('<svg><script>alert(1)</script></svg>');
+    expect(out).not.toContain('<script');
+    expect(out).not.toContain('alert(1)');
+  });
+
+  it('strips <iframe> [unit]', () => {
+    expect(renderSvg('<svg><iframe src="https://evil.example"></iframe></svg>')).not.toContain(
+      '<iframe',
+    );
+  });
+
+  it('strips on* event handler attributes [unit]', () => {
+    expect(renderSvg('<svg><rect onclick="alert(1)" width="1" height="1"/></svg>')).not.toContain(
+      'onclick',
+    );
+  });
+
+  it('strips a javascript: href on use [unit]', () => {
+    expect(renderSvg('<svg><use href="javascript:alert(1)"/></svg>')).not.toContain('javascript:');
+  });
+
+  it('strips an external href on use (tracking-pixel vector) [unit]', () => {
+    expect(renderSvg('<svg><use href="https://evil.example/x.svg#a"/></svg>')).not.toContain(
+      'evil.example',
+    );
+  });
+
+  it('strips an external href on animate [unit]', () => {
+    expect(
+      renderSvg('<svg><animate href="https://evil.example/x" attributeName="x"/></svg>'),
+    ).not.toContain('evil.example');
+  });
+
+  it('strips <foreignObject> [unit]', () => {
+    expect(renderSvg('<svg><foreignObject><div>html</div></foreignObject></svg>')).not.toContain(
+      'foreignobject',
+    );
+  });
+
+  it('strips <image> (external fetch vector) [unit]', () => {
+    expect(renderSvg('<svg><image href="https://evil.example/p.png"/></svg>')).not.toContain(
+      '<image',
+    );
+  });
+
+  it('does not allow Markdown-only tags at the top level (<p>, <a>) [unit]', () => {
+    const out = renderSvg('<p>hi</p><a href="https://example.com">x</a>');
+    expect(out).not.toContain('<p');
+    expect(out).not.toContain('<a');
+  });
+
+  it('keeps <style> only inside an svg [unit]', () => {
+    expect(renderSvg('<svg><style>.a{fill:red}</style></svg>')).toContain('<style');
+    expect(renderSvg('<style>body{display:none}</style>')).not.toContain('<style');
   });
 });
