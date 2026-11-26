@@ -279,8 +279,8 @@ const chartWidgetsSuite: TestSuite = {
     },
     {
       tags: ['@user-workflow'],
-      action: 'Seed one widget of each of the 4 types via the API, load the dashboard',
-      expectedOutcome: 'All four render without error',
+      action: 'Seed one widget of each of the 5 types via the API, load the dashboard',
+      expectedOutcome: 'All five render without error',
       test: () => {},
     },
   ],
@@ -468,6 +468,7 @@ test.describe(
         bigNumber: `E2E all-types num ${testInfo.testId}`,
         line: `E2E all-types line ${testInfo.testId}`,
         pie: `E2E all-types pie ${testInfo.testId}`,
+        svg: `E2E all-types svg ${testInfo.testId}`,
       };
 
       async function seed(data: Record<string, unknown>) {
@@ -480,6 +481,7 @@ test.describe(
         await seed({ type: 'big-number', title: titles.bigNumber, value: 1 });
         await seed({ type: 'line-graph', title: titles.line, data: 'label,value\nA,1' });
         await seed({ type: 'pie-graph', title: titles.pie, data: 'label,value\nA,1' });
+        await seed({ type: 'svg', title: titles.svg, content: '<svg viewBox="0 0 1 1"></svg>' });
 
         await page.goto('/');
         await pauseBeforeAction(page, testInfo);
@@ -1106,6 +1108,146 @@ test.describe(
         // Confirms the content region itself is the one that overflows and
         // scrolls — not just "the card happens to be tall enough".
         expect(scrollHeight).toBeGreaterThan(clientHeight);
+      } finally {
+        if (widgetId) await deleteWidgetIfExists(page.request, widgetId);
+      }
+    });
+  },
+);
+
+// SVG widget suite (#426). Jest can't mount the real Shadow DOM sandbox's CSS
+// isolation, so the style-leak check lives here (same reason as suite 62).
+const svgWidgetSuite: TestSuite = {
+  id: 104,
+  name: 'Dashboard SVG widget',
+  description:
+    'Verifies an SVG widget can be added from its raw SVG source, renders inside the SVG Sandbox, persists across a reload, rejects non-SVG content, and keeps an embedded <style> from leaking into the page',
+  purpose:
+    'Catch regressions in issue #426 — the SVG widget must persist and render like Markdown, reject non-SVG bodies at write time, and stay CSS-isolated from the rest of the dashboard',
+  tags: ['@user-workflow'],
+  steps: [
+    {
+      tags: ['@user-workflow'],
+      action: 'Add an SVG widget with a valid <svg> element and reload',
+      expectedOutcome: 'A real svg renders inside the sandbox in the widget card and persists',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: 'Attempt to save an SVG widget whose content is not an <svg> element',
+      expectedOutcome: 'The save is rejected, the drawer stays open, and no widget is created',
+      test: () => {},
+    },
+    {
+      tags: ['@user-workflow'],
+      action: 'Add an SVG widget whose <style> would hide every div on the page',
+      expectedOutcome: 'The dashboard stays visible: the rule applies only inside the SVG',
+      test: () => {},
+    },
+  ],
+};
+
+test.describe(
+  '@user-workflow',
+  {
+    annotation: suiteAnnotations(svgWidgetSuite),
+  },
+  () => {
+    async function findWidgetId(page: Page, title: string) {
+      const widgets = await page.request.get('/api/v1/dashboards/default/widgets');
+      const body = (await widgets.json()) as Array<{
+        status: string;
+        widget?: { id: string; title: string };
+      }>;
+      return body.find((r) => r.status === 'ok' && r.widget?.title === title)?.widget?.id ?? null;
+    }
+
+    async function addSvgWidget(page: Page, title: string, content: string) {
+      await page.getByTestId('dashboard-add-widget').click();
+      const addDrawer = page.locator('dialog[open]');
+      await selectWidgetType(page, addDrawer, 'SVG');
+      await addDrawer.getByLabel('Title', { exact: true }).fill(title);
+      await addDrawer.getByLabel('Content (SVG)').fill(content);
+      await addDrawer.getByRole('button', { name: 'Save' }).click();
+      return addDrawer;
+    }
+
+    test('add an svg widget — renders inside the sandbox and persists', async ({
+      page,
+    }, testInfo) => {
+      const title = `E2E svg ${testInfo.testId}`;
+      let widgetId: string | null = null;
+
+      try {
+        await page.goto('/');
+        await pauseBeforeAction(page, testInfo);
+
+        await addSvgWidget(
+          page,
+          title,
+          '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#06c"/></svg>',
+        );
+
+        const card = page.getByTestId('widget-card').filter({ hasText: title });
+        await expect(card).toBeVisible();
+        // Playwright's CSS engine pierces open shadow roots.
+        await expect(card.getByTestId('svg-sandbox').locator('svg circle')).toHaveCount(1);
+
+        widgetId = await findWidgetId(page, title);
+
+        await page.reload();
+        await expect(
+          page
+            .getByTestId('widget-card')
+            .filter({ hasText: title })
+            .getByTestId('svg-sandbox')
+            .locator('svg circle'),
+        ).toHaveCount(1);
+      } finally {
+        if (widgetId) await deleteWidgetIfExists(page.request, widgetId);
+      }
+    });
+
+    test('content that is not an <svg> element is rejected and no widget is created', async ({
+      page,
+    }, testInfo) => {
+      const title = `E2E svg invalid ${testInfo.testId}`;
+
+      await page.goto('/');
+      await pauseBeforeAction(page, testInfo);
+
+      const drawer = await addSvgWidget(page, title, '# this is markdown, not svg');
+
+      await expect(drawer).toBeVisible();
+      await expect(
+        drawer.getByText('SVG content must be a single <svg>…</svg> element.'),
+      ).toBeVisible();
+      expect(await findWidgetId(page, title)).toBeNull();
+    });
+
+    test("an svg's embedded <style> does not leak into the rest of the dashboard", async ({
+      page,
+    }, testInfo) => {
+      const title = `E2E svg style ${testInfo.testId}`;
+      let widgetId: string | null = null;
+
+      try {
+        await page.goto('/');
+        await pauseBeforeAction(page, testInfo);
+
+        await addSvgWidget(
+          page,
+          title,
+          '<svg viewBox="0 0 10 10"><style>div, span, p, h2 { display: none !important; }</style><rect width="5" height="5"/></svg>',
+        );
+
+        const card = page.getByTestId('widget-card').filter({ hasText: title });
+        await expect(card).toBeVisible();
+        await expect(card.getByTestId('svg-sandbox').locator('svg rect')).toHaveCount(1);
+        const box = await card.boundingBox();
+        expect(box?.height ?? 0).toBeGreaterThan(0);
+
+        widgetId = await findWidgetId(page, title);
       } finally {
         if (widgetId) await deleteWidgetIfExists(page.request, widgetId);
       }
