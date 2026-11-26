@@ -1,5 +1,6 @@
 export type WidgetFrontmatterInput =
   | { type: 'markdown'; title: string; subtitle?: string; order: number; content: string }
+  | { type: 'svg'; title: string; subtitle?: string; order: number; content: string }
   | {
       type: 'big-number';
       title: string;
@@ -59,7 +60,7 @@ function assertNeverWidgetType(type: never): never {
  * string array is already a valid YAML flow sequence.
  *
  * Per-type persistence shape (ADR-0002): Markdown's body is its prose
- * `content`; Big Number has no body; Line/Pie Graph's body is their CSV
+ * `content` and an SVG Widget's body is its SVG Source `content`; Big Number has no body; Line/Pie Graph's body is their CSV
  * Body (`data`), verbatim.
  */
 export function serializeWidgetFile(input: WidgetFrontmatterInput): string {
@@ -73,6 +74,7 @@ export function serializeWidgetFile(input: WidgetFrontmatterInput): string {
   let body: string;
   switch (input.type) {
     case 'markdown':
+    case 'svg':
       body = input.content;
       break;
     case 'big-number':

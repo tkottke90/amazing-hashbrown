@@ -101,4 +101,16 @@ describe('serializeWidgetFile', () => {
     expect(raw).toContain('colors: ["#111111","#222222"]');
     expect(raw.endsWith('---\n\nlabel,value\nQuery,30')).toBe(true);
   });
+
+  it(`writes an svg widget's SVG Source as the body, like markdown ${TestTypes.UNIT}`, () => {
+    const raw = serializeWidgetFile({
+      title: 'Logo',
+      type: 'svg',
+      order: 2,
+      content: '<svg viewBox="0 0 1 1"></svg>',
+    });
+    expect(raw).toBe(
+      '---\ntitle: "Logo"\ntype: "svg"\norder: 2\n---\n\n<svg viewBox="0 0 1 1"></svg>',
+    );
+  });
 });

@@ -111,7 +111,11 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
   const subtitle = useSignal(initialWidget?.subtitle ?? '');
   const order = useSignal(initialWidget?.order ?? 0);
 
-  const content = useSignal(initialWidget?.type === 'markdown' ? initialWidget.content : '');
+  const content = useSignal(
+    initialWidget?.type === 'markdown' || initialWidget?.type === 'svg'
+      ? initialWidget.content
+      : '',
+  );
   const value = useSignal(
     initialWidget?.type === 'big-number' && initialWidget.value !== undefined
       ? String(initialWidget.value)
@@ -143,6 +147,8 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
     switch (widget.type) {
       case 'markdown':
         return { ...base, type: 'markdown', content: widget.content };
+      case 'svg':
+        return { ...base, type: 'svg', content: widget.content };
       case 'big-number':
         return { ...base, type: 'big-number', value: widget.value, unit: widget.unit };
       case 'line-graph':
@@ -189,7 +195,10 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
     title.value = initialWidget?.title ?? '';
     subtitle.value = initialWidget?.subtitle ?? '';
     order.value = initialWidget?.order ?? 0;
-    content.value = initialWidget?.type === 'markdown' ? initialWidget.content : '';
+    content.value =
+      initialWidget?.type === 'markdown' || initialWidget?.type === 'svg'
+        ? initialWidget.content
+        : '';
     value.value =
       initialWidget?.type === 'big-number' && initialWidget.value !== undefined
         ? String(initialWidget.value)
@@ -286,6 +295,8 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
     switch (type) {
       case 'markdown':
         return { type: 'markdown' as const, content: content.value };
+      case 'svg':
+        return { type: 'svg' as const, content: content.value };
       case 'big-number':
         return {
           type: 'big-number' as const,
@@ -405,6 +416,7 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
     order.value = widget.order;
     switch (widget.type) {
       case 'markdown':
+      case 'svg':
         content.value = widget.content;
         break;
       case 'big-number':
@@ -524,6 +536,9 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
                     <SelectItem value="markdown" data-testid="widget-type-option-markdown">
                       Markdown
                     </SelectItem>
+                    <SelectItem value="svg" data-testid="widget-type-option-svg">
+                      SVG
+                    </SelectItem>
                     <SelectItem value="big-number" data-testid="widget-type-option-big-number">
                       Big Number
                     </SelectItem>
@@ -569,6 +584,18 @@ function WidgetDrawerForm(props: WidgetDrawerProps & { openCount: Signal<number>
             {widgetType.value === 'markdown' && (
               <div className="flex flex-col gap-2">
                 <Label htmlFor={`${instanceKey}-content`}>Content (Markdown)</Label>
+                <Textarea
+                  id={`${instanceKey}-content`}
+                  rows={10}
+                  value={content.value}
+                  onInput={(e) => (content.value = (e.target as HTMLTextAreaElement).value)}
+                />
+              </div>
+            )}
+
+            {widgetType.value === 'svg' && (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor={`${instanceKey}-content`}>Content (SVG)</Label>
                 <Textarea
                   id={`${instanceKey}-content`}
                   rows={10}

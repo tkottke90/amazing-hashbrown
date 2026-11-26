@@ -52,6 +52,28 @@ describe('WidgetRenderer', () => {
     expect(screen.getByText('hello')).toBeInTheDocument();
   });
 
+  it('dispatches an ok svg result to SvgWidget [orchestration]', () => {
+    const result: WidgetLoadResult = {
+      status: 'ok',
+      widget: {
+        id: 'w-svg',
+        type: 'svg',
+        title: 'My Drawing',
+        order: 0,
+        source: 'manual',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        content: '<svg viewBox="0 0 1 1"><rect/></svg>',
+      },
+    };
+    const { container } = render(
+      <WidgetRenderer result={result} dashboardId="default" density="compact" onChanged={noop} />,
+    );
+    expect(screen.getByText('My Drawing')).toBeInTheDocument();
+    expect(
+      container.querySelector('markdown-svg-sandbox')?.shadowRoot?.querySelector('rect'),
+    ).not.toBeNull();
+  });
+
   it('dispatches an ok big-number result to BigNumberWidget [unit]', () => {
     const result: WidgetLoadResult = {
       status: 'ok',

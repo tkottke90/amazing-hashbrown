@@ -13,14 +13,29 @@ const TAG_NAME = 'markdown-svg-sandbox';
 // Reproduces the responsive-sizing rule the normal Tailwind/`prose` cascade
 // can no longer reach once content is shadow-scoped — trusted,
 // developer-authored CSS, unrelated to the Markdown Sanitize Schema.
-const HOST_STYLE = ':host svg { max-width: 100%; height: auto; }';
+const FLOW_HOST_STYLE = ':host svg { max-width: 100%; height: auto; }';
+
+// An SVG Widget's card gives the drawing a fixed box rather than text flow:
+// the SVG fills it and the default `preserveAspectRatio` (meet) scales and
+// centers the drawing inside, never overflowing or scrolling.
+const CARD_HOST_STYLE =
+  ':host { display: block; width: 100%; height: 100%; } ' +
+  ':host svg { display: block; width: 100%; height: 100%; }';
+
+/**
+ * `flow`: Markdown's inline-in-prose sizing (the default).
+ * `card`: fit the enclosing box — used by the SVG Widget.
+ */
+export type SvgSandboxFit = 'flow' | 'card';
 
 export class MarkdownSvgSandboxElement extends HTMLElement {
   connectedCallback() {
     if (this.shadowRoot) return;
     const root = this.attachShadow({ mode: 'open' });
     const style = document.createElement('style');
-    style.textContent = HOST_STYLE;
+    // Read once at connection: Preact applies props before inserting the
+    // element, so `data-fit` is already set by now.
+    style.textContent = this.dataset['fit'] === 'card' ? CARD_HOST_STYLE : FLOW_HOST_STYLE;
     root.appendChild(style);
   }
 }
@@ -31,9 +46,11 @@ if (typeof customElements !== 'undefined' && !customElements.get(TAG_NAME)) {
 
 export interface SvgSandboxProps {
   children?: ComponentChildren;
+  /** Fixed for the sandbox's lifetime — the host stylesheet is built once. */
+  fit?: SvgSandboxFit;
 }
 
-export function SvgSandbox({ children }: SvgSandboxProps) {
+export function SvgSandbox({ children, fit = 'flow' }: SvgSandboxProps) {
   const hostRef = useRef<MarkdownSvgSandboxElement | null>(null);
   // The ref callback fires during commit, before this component's own next
   // render — forcing one extra render is what lets the portal below read a
@@ -49,6 +66,7 @@ export function SvgSandbox({ children }: SvgSandboxProps) {
   return (
     <markdown-svg-sandbox
       data-testid="svg-sandbox"
+      data-fit={fit}
       ref={(el: MarkdownSvgSandboxElement | null) => {
         hostRef.current = el;
       }}

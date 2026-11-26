@@ -7,6 +7,7 @@ import { BigNumberWidget } from './big-number-widget';
 import { LineGraphWidget } from './line-graph-widget';
 import { MarkdownWidget } from './markdown-widget';
 import { PieGraphWidget } from './pie-graph-widget';
+import { SvgWidget } from './svg-widget';
 import { SystemWidget } from './system-widget';
 import { SpacerWidget } from './spacer-widget';
 import { WidgetErrorCard } from './widget-error-card';
@@ -47,6 +48,18 @@ function renderWidget(widget: DashboardWidget, options: RenderWidgetOptions) {
           h={h}
           minW={WIDGET_SIZE_MIN.markdown.w}
           minH={WIDGET_SIZE_MIN.markdown.h}
+          {...shared}
+        />
+      );
+    case 'svg':
+      return (
+        <SvgWidget
+          widget={widget}
+          onChanged={options.onChanged}
+          w={w}
+          h={h}
+          minW={WIDGET_SIZE_MIN.svg.w}
+          minH={WIDGET_SIZE_MIN.svg.h}
           {...shared}
         />
       );
