@@ -33,7 +33,7 @@ The YAML metadata block at the top of a widget's file: the fields every widget s
 _Avoid_: Metadata, header
 
 **Widget Body**:
-The widget file's content below the frontmatter delimiter. Its meaning is type-specific: Markdown's Body is free-text prose; Line Graph's and Pie Graph's Body is a CSV Body; Big Number has no Body at all.
+The widget file's content below the frontmatter delimiter. Its meaning is type-specific: Markdown's Body is free-text prose; an SVG Widget's Body is its SVG Source; Line Graph's and Pie Graph's Body is a CSV Body; Big Number has no Body at all.
 _Avoid_: Content (ambiguous once more than one type exists)
 
 **CSV Body**:
@@ -45,7 +45,7 @@ A widget's own `color` (Line Graph) or `colors` (Pie Graph) Widget Frontmatter f
 _Avoid_: Theme, palette override
 
 **Widget Payload**:
-A widget's type-specific fields, excluding the shared `title`/`subtitle`/`order` — Markdown's Widget Body; Big Number's `value`/`unit`; Line Graph's and Pie Graph's CSV Body plus Color Override. The only part of a widget an Agent or the CLI may write.
+A widget's type-specific fields, excluding the shared `title`/`subtitle`/`order` — Markdown's Widget Body; an SVG Widget's SVG Source; Big Number's `value`/`unit`; Line Graph's and Pie Graph's CSV Body plus Color Override. The only part of a widget an Agent or the CLI may write.
 _Avoid_: Content (see Widget Body's own avoid-note), data
 
 **Widget Metadata**:
@@ -63,6 +63,14 @@ _Avoid_: Edit state, drag mode
 **Spacer Widget**:
 A Widget type with no content of its own — pure grid-occupying whitespace a user places and reorders like any other Widget, giving manual control over layout gaps without absolute positioning. Invisible outside Edit Mode; in Edit Mode it renders as a labeled, draggable, resizable placeholder like any other widget, minus a title/subtitle/provenance footer.
 _Avoid_: Whitespace widget, blank widget, filler
+
+**SVG Widget**:
+A Widget type whose whole purpose is one hand-authored drawing (diagram, icon, badge, gauge, logo) rather than prose. Its Widget Body is its SVG Source; it has no payload scalars. Rendered through the same SVG Sandbox and the SVG subset of the Markdown Sanitize Schema as inline Markdown SVG, so the two surfaces share one sanitize policy.
+_Avoid_: Custom widget, image widget, drawing widget
+
+**SVG Source**:
+An SVG Widget's Body: raw SVG markup that must be exactly one root `<svg>` element once parsed. Anything else is invalid — shown as an inline "Invalid SVG" state in the card, and rejected with a 400 when written through the API — while the stored text is never altered.
+_Avoid_: SVG content, SVG payload
 
 **Ghost Cell**:
 A decorative, non-interactive overlay shown only in Edit Mode over grid cells no Widget currently occupies — a dashed, 50%-opacity visual aid for arranging Widgets and Spacer Widgets. Never a drop target itself; see ADR-0011 for how its occupancy is computed.
@@ -671,7 +679,7 @@ The explicit allowlist (tags, attributes, URL protocols) `rehype-sanitize` enfor
 _Avoid_: Sanitizer, sanitize schema (ambiguous with the API's own differently-scoped sanitizer)
 
 **SVG Sandbox**:
-The custom element + open Shadow DOM wrapper every rendered inline SVG is mounted into — `markdownComponents`'s `svg` override creates it and portals the SVG's already-sanitized, already-rendered subtree into its shadow root (`preact/compat`'s `createPortal`). Exists specifically so SVG-scoped `<style>` and internal `<use href="#id">` references can be allowed by the Markdown Sanitize Schema without reopening page-wide CSS injection or DOM-clobbering risk (see ADR-0072) — a separate mechanism from the Schema itself, applied uniformly to every rendered SVG regardless of whether that particular one uses `<style>`.
+The custom element + open Shadow DOM wrapper every rendered SVG — inline in Markdown, or an SVG Widget's SVG Source — is mounted into — `markdownComponents`'s `svg` override creates it and portals the SVG's already-sanitized, already-rendered subtree into its shadow root (`preact/compat`'s `createPortal`). Exists specifically so SVG-scoped `<style>` and internal `<use href="#id">` references can be allowed by the Markdown Sanitize Schema without reopening page-wide CSS injection or DOM-clobbering risk (see ADR-0072) — a separate mechanism from the Schema itself, applied uniformly to every rendered SVG regardless of whether that particular one uses `<style>`.
 _Avoid_: Shadow wrapper, SVG host, sandbox (bare — ambiguous once more than one sandboxing mechanism could exist)
 
 # External Trackers
