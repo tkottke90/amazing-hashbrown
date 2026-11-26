@@ -724,6 +724,21 @@ export function normalizeScope(value: string | null): string {
   return (value ?? '').trim().replace(/\s+/g, ' ');
 }
 
+// A Sub-Agent Task is one dispatched by spawn_sub_agent: origin='agent' *and*
+// a dispatching parent thread. origin='agent' alone is not enough — after-agent.ts's
+// Placement Review Task is also origin='agent' (agent-initiated, kept for
+// provenance) but is an ordinary task that must reach the user. This is the
+// single definition; SQL callers use subAgentTaskSql() so the two can't drift.
+export function isSubAgentTask(task: Pick<Task, 'origin' | 'parentThreadId'>): boolean {
+  return task.origin === 'agent' && task.parentThreadId !== null;
+}
+
+/** SQL form of isSubAgentTask(). `table` qualifies the columns when the query joins. */
+export function subAgentTaskSql(table?: string): string {
+  const prefix = table ? `${table}.` : '';
+  return `(${prefix}origin = 'agent' AND ${prefix}parent_thread_id IS NOT NULL)`;
+}
+
 export function scopeUnchanged(
   task: { title: string; description: string | null },
   snapshot: { scopeTitle: string | null; scopeDescription: string | null },
@@ -1217,6 +1232,7 @@ export class WorkspaceStore extends BaseStore {
       .prepare(
         `SELECT task_queue.id AS id, task_queue.task_id AS task_id,
                 task_queue.recovery_attempts AS recovery_attempts, tasks.origin AS origin,
+                tasks.parent_thread_id AS parent_thread_id,
                 task_queue.trigger_source AS trigger_source, tasks.trigger_type AS trigger_type
          FROM task_queue
          JOIN tasks ON tasks.id = task_queue.task_id
@@ -1227,6 +1243,7 @@ export class WorkspaceStore extends BaseStore {
       task_id: string;
       recovery_attempts: number;
       origin: 'user' | 'agent';
+      parent_thread_id: string | null;
       trigger_source: TriggerSource;
       trigger_type: TriggerType;
     }[];
@@ -1241,11 +1258,11 @@ export class WorkspaceStore extends BaseStore {
     const mirrorReady = this.db.prepare(
       `UPDATE tasks SET status = 'ready', updated_at = ? WHERE id = ? AND status = 'running'`,
     );
-    // origin='user': hand back to the human via /hitl-style escalation —
-    // there's no one else to resolve it. origin='agent' has no human on the
-    // other end, so it's just marked failed and queued for the
-    // spawn_sub_agent completion-notification flow instead (see
-    // drainPendingSubAgentCrashNotifications() above).
+    // An ordinary task (including a Placement Review Task): hand back to the
+    // human via /hitl-style escalation — there's no one else to resolve it. A
+    // Sub-Agent Task has no human on the other end, so it's just marked failed
+    // and queued for the spawn_sub_agent completion-notification flow instead
+    // (see drainPendingSubAgentCrashNotifications() above).
     const mirrorEscalate = this.db.prepare(
       `UPDATE tasks SET status = 'waiting_on_user', assigned_to = 'user', updated_at = ? WHERE id = ? AND status = 'running'`,
     );
@@ -1257,7 +1274,7 @@ export class WorkspaceStore extends BaseStore {
       if (row.recovery_attempts < MAX_QUEUE_RECOVERY_ATTEMPTS) {
         retry.run(row.id);
         mirrorReady.run(now, row.task_id);
-      } else if (row.origin === 'agent') {
+      } else if (isSubAgentTask({ origin: row.origin, parentThreadId: row.parent_thread_id })) {
         giveUp.run(now, row.id);
         mirrorFail.run(now, row.task_id);
         const task = this.getTask(row.task_id);
@@ -1644,15 +1661,13 @@ export class WorkspaceStore extends BaseStore {
   // board/drawer, the list_tasks tool) gets this for free. See ADR-0055 and
   // GLOSSARY.md § Sub-Agent Dispatch.
   //
-  // origin='agent' alone is NOT the right discriminator — after-agent.ts's
-  // Placement Review Task also sets origin='agent' (it's agent-*initiated*,
-  // for provenance/tracking), but it's an ordinary task meant to surface to
-  // a human for review, nothing like a Sub-Agent Task. The migration-27
-  // comment above this table's schema is the actual invariant: for a real
-  // spawn_sub_agent dispatch, parent_thread_id/dispatch_group_id/role are
-  // always set together; every other origin='agent' row leaves them null.
+  // origin='agent' alone is NOT the right discriminator — see
+  // isSubAgentTask(). The migration-27 comment above this table's schema is
+  // the actual invariant: for a real spawn_sub_agent dispatch,
+  // parent_thread_id/dispatch_group_id/role are always set together; every
+  // other origin='agent' row leaves them null.
   listTasks(filters: TaskListFilters = {}): Task[] {
-    const conditions: string[] = [`NOT (origin = 'agent' AND parent_thread_id IS NOT NULL)`];
+    const conditions: string[] = [`NOT ${subAgentTaskSql()}`];
     const values: unknown[] = [];
 
     if ('workspaceId' in filters) {
@@ -2830,7 +2845,8 @@ export class WorkspaceStore extends BaseStore {
   dequeueNext(): (TaskQueueEntry & { task: Task }) | null {
     const pending = this.db
       .prepare(
-        `SELECT task_queue.*, tasks.workspace_id AS task_workspace_id, tasks.origin AS task_origin
+        `SELECT task_queue.*, tasks.workspace_id AS task_workspace_id, tasks.origin AS task_origin,
+                tasks.parent_thread_id AS task_parent_thread_id
          FROM task_queue
          JOIN tasks ON tasks.id = task_queue.task_id
          WHERE task_queue.status = 'pending'
@@ -2839,6 +2855,7 @@ export class WorkspaceStore extends BaseStore {
       .all() as (RawQueueRow & {
       task_workspace_id: string | null;
       task_origin: 'user' | 'agent';
+      task_parent_thread_id: string | null;
     })[];
     if (pending.length === 0) return null;
 
@@ -2849,7 +2866,7 @@ export class WorkspaceStore extends BaseStore {
     // alone would read the scope as free the instant that row closes, even
     // though the task is only paused, not finished, and still owns the
     // scope's shared thread. Sourcing straight from `tasks` catches both
-    // cases without a join. origin='agent' (spawn_sub_agent) rows never
+    // cases without a join. Sub-Agent Task (spawn_sub_agent) rows never
     // occupy or contend for a scope slot — see
     // docs/superpowers/specs/2026-09-09-sub-agent-tooling-design.md §2.
     const runningScopes = new Set(
@@ -2858,14 +2875,16 @@ export class WorkspaceStore extends BaseStore {
           .prepare(
             `SELECT COALESCE(workspace_id, 'inbox') AS scope
              FROM tasks
-             WHERE status IN ('running', 'waiting_on_user') AND origin != 'agent'`,
+             WHERE status IN ('running', 'waiting_on_user') AND NOT ${subAgentTaskSql()}`,
           )
           .all() as { scope: string }[]
       ).map((r) => r.scope),
     );
 
     const row = pending.find(
-      (r) => r.task_origin === 'agent' || !runningScopes.has(r.task_workspace_id ?? 'inbox'),
+      (r) =>
+        isSubAgentTask({ origin: r.task_origin, parentThreadId: r.task_parent_thread_id }) ||
+        !runningScopes.has(r.task_workspace_id ?? 'inbox'),
     );
     if (!row) return null;
 
@@ -3127,7 +3146,7 @@ export class WorkspaceStore extends BaseStore {
   }
 
   // scope is COALESCE(workspace_id, 'inbox') — see dequeueNext()'s comment.
-  // origin='agent' rows are excluded, same as dequeueNext()'s runningScopes
+  // Sub-Agent Task rows are excluded, same as dequeueNext()'s runningScopes
   // query — they never occupy a scope's one-running-task slot.
   getRunningEntry(scope: string): (TaskQueueEntry & { task: Task }) | null {
     const row = this.db
@@ -3135,7 +3154,7 @@ export class WorkspaceStore extends BaseStore {
         `SELECT task_queue.*
          FROM task_queue
          JOIN tasks ON tasks.id = task_queue.task_id
-         WHERE task_queue.status = 'running' AND tasks.origin != 'agent'
+         WHERE task_queue.status = 'running' AND NOT ${subAgentTaskSql('tasks')}
            AND COALESCE(tasks.workspace_id, 'inbox') = ?
          LIMIT 1`,
       )

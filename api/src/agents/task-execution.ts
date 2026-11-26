@@ -6,6 +6,7 @@ import { env, type AnyProviderConfig, type RoleConfig } from '../config/env.js';
 import { getThreadStore, type ThreadStore } from '../services/thread-store.js';
 import {
   getWorkspaceStore,
+  isSubAgentTask,
   scopeUnchanged,
   type FailureReason,
   type Task,
@@ -346,7 +347,7 @@ export async function executeTask(
     });
     store.setQueueEntrySummary(entry.id, 'Failed to resolve an execution thread.');
     store.completeQueueEntry(entry.id, 'failed');
-    if (task.origin === 'agent') {
+    if (isSubAgentTask(task)) {
       await deliverSubAgentCompletion(task, 'failed', 'Failed to resolve an execution thread.');
     }
     clearTaskAbort(entry.id);
@@ -370,7 +371,7 @@ export async function executeTask(
   // listWorkspaceTaskFiles only ever sees files that exist on disk). See
   // docs/superpowers/specs/2026-10-21-workspace-task-files-design.md,
   // GLOSSARY.md § Task Files.
-  const taskFileEligible = Boolean(workspaceScope) && task.origin !== 'agent';
+  const taskFileEligible = Boolean(workspaceScope) && !isSubAgentTask(task);
 
   // Everything below claims threadId's per-thread mutex (active-sse-writer.ts)
   // and actually streams — wrapped in a closure and run via
@@ -542,10 +543,10 @@ export async function executeTask(
       // (spawn-sub-agent.tool.ts), so a missing Role here means it was
       // deleted after dispatch but before this run started — a genuine
       // run-time failure (thrown, caught by this closure's own catch block
-      // below, which already handles task.origin === 'agent' notification
+      // below, which already handles Sub-Agent Task notification
       // for every other thrown-error case), not one to silently recover from.
       let roleConfig: RoleConfig | undefined;
-      if (runTask.origin === 'agent') {
+      if (isSubAgentTask(runTask)) {
         roleConfig = env.agent.roles[runTask.role ?? ''];
         if (!roleConfig) {
           throw new Error(`Role "${runTask.role}" no longer exists.`);
@@ -663,27 +664,26 @@ export async function executeTask(
       // externally-consumed shape (streamEvents()/graph.getState(), all
       // this file ever touches) is the same at runtime regardless of which
       // middleware tuple was passed. See stream-handler.ts's AgentWithGraph.
-      const built =
-        runTask.origin === 'agent'
-          ? ((await buildSubAgent(
-              runTask,
-              roleConfig!,
-              workspaceScope ? { workspaceContext: workspaceScope.workspaceContext } : undefined,
-              taskCompleteHook,
-            )) as unknown as { agent: ChatAgent; systemPrompt: string })
-          : await buildAgent(
-              runTask,
-              provider,
-              model,
-              workspaceScope ? { workspaceContext: workspaceScope.workspaceContext } : undefined,
-              taskCompleteHook,
-              {
-                runId: entry.id,
-                hasPreviousRun: previousRuns.length > 0,
-                hadHitlInterrupt: entry.pauseReason === 'chat',
-              },
-              taskFileScope ? { filePath: taskFileScope.filePath } : undefined,
-            );
+      const built = isSubAgentTask(runTask)
+        ? ((await buildSubAgent(
+            runTask,
+            roleConfig!,
+            workspaceScope ? { workspaceContext: workspaceScope.workspaceContext } : undefined,
+            taskCompleteHook,
+          )) as unknown as { agent: ChatAgent; systemPrompt: string })
+        : await buildAgent(
+            runTask,
+            provider,
+            model,
+            workspaceScope ? { workspaceContext: workspaceScope.workspaceContext } : undefined,
+            taskCompleteHook,
+            {
+              runId: entry.id,
+              hasPreviousRun: previousRuns.length > 0,
+              hadHitlInterrupt: entry.pauseReason === 'chat',
+            },
+            taskFileScope ? { filePath: taskFileScope.filePath } : undefined,
+          );
       agent = built.agent;
       turnObs = startTurnObservability({
         threadId,
@@ -783,10 +783,9 @@ export async function executeTask(
                   // larger env.agent.recursionLimit regardless of origin,
                   // leaving subAgentRecursionLimit enforcing nothing of its
                   // own (see ADR-0062).
-                  recursionLimit:
-                    runTask.origin === 'agent'
-                      ? (env.agent?.subAgentRecursionLimit ?? 25)
-                      : (env.agent?.recursionLimit ?? 100),
+                  recursionLimit: isSubAgentTask(runTask)
+                    ? (env.agent?.subAgentRecursionLimit ?? 25)
+                    : (env.agent?.recursionLimit ?? 100),
                   signal: controller.signal,
                   context: {
                     provider,
@@ -861,7 +860,7 @@ export async function executeTask(
             startSha,
           });
         }
-        if (task.origin === 'agent') {
+        if (isSubAgentTask(task)) {
           await deliverSubAgentCompletion(
             task,
             completeTaskBox.current.outcome,
@@ -898,7 +897,7 @@ export async function executeTask(
             startSha,
           });
         }
-        if (task.origin === 'agent') {
+        if (isSubAgentTask(task)) {
           await deliverSubAgentCompletion(task, 'handed_off', handOffBox.current.summary, threadId);
         }
         if (taskFileScope) {
@@ -947,7 +946,7 @@ export async function executeTask(
             startSha,
           });
         }
-        if (task.origin === 'agent') {
+        if (isSubAgentTask(task)) {
           await deliverSubAgentCompletion(task, 'handed_off', blockBox.current.note, threadId);
         }
         if (taskFileScope) {
@@ -1000,7 +999,7 @@ export async function executeTask(
             startSha,
           });
         }
-        if (task.origin === 'agent') {
+        if (isSubAgentTask(task)) {
           await deliverSubAgentCompletion(task, 'failed', stoppedSummary, threadId);
         }
         if (taskFileScope) {
@@ -1055,7 +1054,7 @@ export async function executeTask(
             startSha,
           });
         }
-        if (task.origin === 'agent') {
+        if (isSubAgentTask(task)) {
           await deliverSubAgentCompletion(task, 'failed', notifyMessage, threadId, failureReason);
         }
         if (taskFileScope) {
@@ -1099,7 +1098,7 @@ export async function executeTask(
             startSha,
           });
         }
-        if (task.origin === 'agent') {
+        if (isSubAgentTask(task)) {
           await deliverSubAgentCompletion(task, 'handed_off', summary, threadId);
         }
         if (taskFileScope) {
@@ -1127,7 +1126,7 @@ export async function executeTask(
         // remainingCount — nothing else would ever clear it (design's Out-of-
         // scope note only says there's no new *cancellation UX*, not that a
         // cancelled origin='agent' row skips notification entirely).
-        if (task.origin === 'agent') {
+        if (isSubAgentTask(task)) {
           await deliverSubAgentCompletion(task, 'cancelled', undefined, threadId);
         }
         // Cancel and take-over (below) both extend Task File coverage
@@ -1234,7 +1233,7 @@ export async function executeTask(
         // so this is how the run reports a stuck investigation back to its
         // parent instead of hanging. finishFailedRun already does everything
         // needed: records the summary, completes the queue entry as failed,
-        // and (task.origin === 'agent') notifies the parent via
+        // and (a Sub-Agent Task) notifies the parent via
         // deliverSubAgentCompletion — no new reporting code required.
         logger.info('task-execution: run stopped by the loop guard (stagnation limit)', {
           taskId: task.id,

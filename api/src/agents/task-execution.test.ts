@@ -1808,6 +1808,61 @@ describe('agents/task-execution', () => {
     });
   });
 
+  describe('Placement Review Task (origin=agent, no role, no parent) runs as an ordinary task', () => {
+    afterEach(() => {
+      configManager.set('agent', { roles: {} });
+    });
+
+    function makePlacementEntry(): QueueEntryWithTask {
+      // Mirrors after-agent.ts's createPlacementReviewTask.
+      const task = store.createTask({
+        title: 'Wiki placement: Grafana',
+        assignedTo: 'agent',
+        origin: 'agent',
+      });
+      store.patchTask(task.id, { status: 'ready', assignedTo: 'agent' });
+      store.enqueueTask(task.id, { triggerSource: 'agent' });
+      return store.dequeueNext()! as QueueEntryWithTask;
+    }
+
+    it('runs on the ordinary task builder, not the sub-agent builder, and does not need a Role [orchestration]', async () => {
+      configManager.set('agent', { roles: {} });
+      const entry = makePlacementEntry();
+      let taskBuilderCalled = false;
+      let subAgentBuilderCalled = false;
+
+      await executeTask(entry, {
+        buildTaskAgent: ((...args: unknown[]) => {
+          taskBuilderCalled = true;
+          return fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS))(
+            ...(args as Parameters<typeof buildTaskAgent>),
+          );
+        }) as typeof buildTaskAgent,
+        buildSubAgentAgent: ((...args: unknown[]) => {
+          subAgentBuilderCalled = true;
+          return fakeBuildSubAgentAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS))(
+            ...(args as Parameters<typeof buildSubAgentAgent>),
+          );
+        }) as typeof buildSubAgentAgent,
+      });
+
+      expect(taskBuilderCalled, 'ordinary builder (has ask_user) must be used').to.equal(true);
+      expect(subAgentBuilderCalled, 'sub-agent builder has no ask_user').to.equal(false);
+      expect(store.getTask(entry.task.id)!.status).to.equal('done');
+      expect(store.getQueueEntry(entry.id)!.summary ?? '').to.not.include('no longer exists');
+    });
+
+    it('uses the shared env.agent.recursionLimit, not subAgentRecursionLimit [orchestration]', async () => {
+      configManager.set('agent', { roles: {}, subAgentRecursionLimit: 7, recursionLimit: 999 });
+      const entry = makePlacementEntry();
+      const { agent, configs } = spyStreamEventsConfig(fakeAgent(COMPLETE_TASK_DONE_EVENTS));
+
+      await executeTask(entry, { buildTaskAgent: fakeBuildTaskAgent(agent) });
+
+      expect((configs[0] as { recursionLimit: number }).recursionLimit).to.equal(999);
+    });
+  });
+
   describe('StagnationLimitError on a non-sub-agent task (defensive case)', () => {
     it("still fails the task cleanly if a StagnationLimitError somehow reaches a plain origin='user' task", async () => {
       const entry = makeGlobalEntry('Ordinary task');
@@ -2655,17 +2710,31 @@ describe('agents/task-execution', () => {
 
     afterEach(() => {
       rmSync(workspaceDir, { recursive: true, force: true });
+      configManager.set('agent', { roles: {} });
     });
 
     function makeFileEligibleEntry(
-      opts: { title?: string; origin?: 'user' | 'agent' } = {},
+      opts: {
+        title?: string;
+        origin?: 'user' | 'agent';
+        // A real Sub-Agent Task is origin='agent' with a dispatching parent
+        // (see isSubAgentTask()) — origin='agent' alone is a Placement Review
+        // Task, which is an ordinary task and does get a Task File.
+        subAgent?: { parentThreadId: string; role: string };
+      } = {},
     ): QueueEntryWithTask {
       const workspace = store.createWorkspace({ name: 'W', location: workspaceDir });
+      if (opts.subAgent) {
+        threadStore.upsertThreadOnFirstMessage(opts.subAgent.parentThreadId, 'Parent', 'chat');
+      }
       const task = store.createTask({
         title: opts.title ?? 'Task File task',
         assignedTo: 'agent',
         workspaceId: workspace.id,
-        origin: opts.origin,
+        origin: opts.subAgent ? 'agent' : opts.origin,
+        parentThreadId: opts.subAgent?.parentThreadId,
+        dispatchGroupId: opts.subAgent ? 'group-tf' : undefined,
+        role: opts.subAgent?.role,
       });
       store.patchTask(task.id, { status: 'ready' });
       store.enqueueTask(task.id);
@@ -2696,19 +2765,35 @@ describe('agents/task-execution', () => {
       expect(store.getTask(entry.task.id)!.taskFilePath).to.equal(null);
     });
 
-    it("is skipped entirely for a Sub-Agent Task (origin: 'agent'), even though it has a workspace", async () => {
-      const entry = makeFileEligibleEntry({ origin: 'agent' });
+    it("is skipped entirely for a Sub-Agent Task (origin: 'agent' with a parent), even though it has a workspace", async () => {
+      configManager.set('agent', { roles: { researcher: {} } });
+      const entry = makeFileEligibleEntry({
+        subAgent: { parentThreadId: 'parent-tf', role: 'researcher' },
+      });
       await executeTask(entry, {
-        buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+        buildSubAgentAgent: fakeBuildSubAgentAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
       });
 
       expect(store.getTask(entry.task.id)!.taskFilePath).to.equal(null);
     });
 
-    it("never appears in another task's Previous Tasks list (origin: 'agent')", async () => {
-      const subAgentEntry = makeFileEligibleEntry({ title: 'Helper', origin: 'agent' });
-      await executeTask(subAgentEntry, {
+    it("gets a Task File for a Placement Review Task (origin: 'agent' with no parent), since it is an ordinary task", async () => {
+      const entry = makeFileEligibleEntry({ origin: 'agent' });
+      await executeTask(entry, {
         buildTaskAgent: fakeBuildTaskAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
+      });
+
+      expect(store.getTask(entry.task.id)!.taskFilePath).to.be.a('string');
+    });
+
+    it("never appears in another task's Previous Tasks list (Sub-Agent Task)", async () => {
+      configManager.set('agent', { roles: { researcher: {} } });
+      const subAgentEntry = makeFileEligibleEntry({
+        title: 'Helper',
+        subAgent: { parentThreadId: 'parent-tf2', role: 'researcher' },
+      });
+      await executeTask(subAgentEntry, {
+        buildSubAgentAgent: fakeBuildSubAgentAgent(fakeAgent(COMPLETE_TASK_DONE_EVENTS)),
       });
       const workspace = store.getWorkspace(subAgentEntry.task.workspaceId!)!;
 
