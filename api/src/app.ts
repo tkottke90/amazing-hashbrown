@@ -6,6 +6,7 @@ import { configManager } from './config/env.js';
 import { logger } from './config/logger.js';
 import { requestLogger } from './middleware/request-logger.js';
 import { apiRouter } from './routes/index.js';
+import { telemetryRouter } from './routes/telemetry.route.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, '..', 'public');
@@ -24,6 +25,8 @@ export function createApp() {
   app.use(express.json({ limit: '5mb' }));
   app.use(requestLogger);
   app.use('/api', apiRouter);
+  // Before the static/SPA fallbacks, or the SPA's index.html would answer it.
+  app.use('/metrics', telemetryRouter);
   app.use(express.static(publicDir));
 
   // Serve index.html for all other routes (for SPA support)
