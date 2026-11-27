@@ -1141,6 +1141,12 @@ describe('agents/system-prompt', () => {
       expect(result).to.include('<search_skills>');
     });
 
+    it('keeps the skills section when only use_skill is available, since it carries use_skill guidance', () => {
+      const available = new Set(['use_skill']);
+      const result = filterHarnessSections(buildSystemPrompt(), available);
+      expect(result).to.include('<search_skills>');
+    });
+
     it('removes create_tasks when create_tasks is unavailable', () => {
       const available = new Set(['web_fetch']);
       const result = filterHarnessSections(buildSystemPrompt(), available);

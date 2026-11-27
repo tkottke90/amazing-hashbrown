@@ -3,7 +3,7 @@ import { HumanMessage } from '@langchain/core/messages';
 import type { SkillsManager } from '@tkottke90/skills-manager';
 import { skillsManager as defaultSkillsManager } from '../services/skills-manager.js';
 import { activeSkillStateSchema } from './skill-gated-tools.middleware.js';
-import { buildArtifactIndex } from './artifact-index.js';
+import { expandSkill, type SkillExpansion } from './skill-expansion.js';
 
 // Expands a slash command in the latest human message immediately before each
 // LLM call. Historical messages with slash commands are passed through as-is.
@@ -46,7 +46,6 @@ export function createSkillExpansionMiddleware(
       const commandName = spaceIdx === -1 ? content.slice(1) : content.slice(1, spaceIdx);
       const args = spaceIdx === -1 ? '' : content.slice(spaceIdx + 1);
 
-      let expanded: string;
       // Always explicitly resolved on every successful or failed command
       // match rather than left unset — an omitted key here would leave a
       // stale value from an earlier turn untouched. Plain-chat turns never
@@ -54,16 +53,18 @@ export function createSkillExpansionMiddleware(
       // which is intentional: mid-flow field collection and post-rejection
       // tool retry both rely on the value staying put across non-slash-
       // command turns.
+      let expanded: string;
       let activeSkill: string | null;
+      let expansion: SkillExpansion;
       try {
-        const manager = await getSkills();
-        const skill = await manager.load(commandName);
-        const body = skill.body;
-        expanded = args ? `${body}\n\n${args}` : body;
-        activeSkill = commandName;
-        const index = buildArtifactIndex(skill.scripts, skill.references);
-        if (index) expanded = `${expanded}\n\n${index}`;
+        expansion = await expandSkill(await getSkills(), commandName, args);
       } catch {
+        expansion = { ok: false };
+      }
+      if (expansion.ok) {
+        expanded = expansion.text;
+        activeSkill = commandName;
+      } else {
         expanded = `[Skill "/${commandName}" not found — use the search_skills tool to see what's available]${args ? '\n\n' + args : ''}`;
         activeSkill = null;
       }

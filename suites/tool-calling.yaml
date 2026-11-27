@@ -64,6 +64,36 @@ scenarios:
       - path: keyword
         match: exists
 
+  - id: tools-006-use-skill-named-skill
+    name: Agent calls use_skill when the request names an installed skill
+    purpose: >
+      Confirms the agent loads a skill itself (use_skill) when the user or a
+      task description names one, instead of paraphrasing what it guesses the
+      skill does or only searching for it. This is the self-invocation path
+      non-interactive runs depend on: nobody types a slash command there, so
+      if the agent doesn't call use_skill it never gets the skill's
+      instructions or gated tools.
+    type: tool-call
+    input: >
+      Use the ingest-document skill to break these meeting notes into wiki
+      pages: "Q3 planning: ship v2 in October; hire two engineers."
+    tool: use_skill
+    argChecks:
+      - path: name
+        match: exists
+
+  - id: tools-007-search-before-use-skill
+    name: Agent still searches when the request names a topic but no skill
+    purpose: >
+      Guards the discovery half of search_skills -> use_skill: when the
+      request names only a topic, the agent must look skills up rather than
+      guess a skill name for use_skill. Without this, adding use_skill could
+      make the agent hallucinate skill names and call it blind.
+    type: tool-call
+    input: >
+      Is there a skill that can help me summarize a long document?
+    tool: search_skills
+
   # tools-005-create-tasks-after-plan-approved: removed in auto-eval round 1
   # (2026-09-22). create_tasks is deliberately absent from the plain-chat
   # tool set both in production (chat-agent.ts: "'create_tasks' is

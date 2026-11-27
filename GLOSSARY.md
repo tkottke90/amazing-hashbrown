@@ -199,7 +199,7 @@ How a running skill learns which skill is currently active, and reaches its own 
 ## Language
 
 **Active Skill**:
-The name of whichever skill a slash-command invocation most recently resolved to, tracked in agent state and persisted across subsequent non-slash-command turns until another slash command resolves. Set for every skill invocation, not only the ones with a Skill-Gated Tools registration — broadening what the field (formerly `activeGatedSkill`) tracks (see ADR-0019).
+The name of whichever skill a slash-command invocation or a `use_skill` call (Skill Self-Invocation) most recently resolved to, tracked in agent state and persisted across subsequent turns until another invocation replaces it. Single-valued: a second invocation replaces the first rather than stacking. Set for every skill invocation, not only the ones with a Skill-Gated Tools registration — broadening what the field (formerly `activeGatedSkill`) tracks (see ADR-0019).
 _Avoid_: Current skill, invoked skill, activeGatedSkill
 
 **Skill-Gated Tools**:
@@ -211,8 +211,12 @@ The `tools` frontmatter field on a `SKILL.md` — a comma-separated list of tool
 _Avoid_: allowed-tools, gated-tools
 
 **Skill-Scoped Tools**:
-Tools visible whenever any skill is the Active Skill, rather than one specific registered skill — and that resolve "which skill" implicitly from the Active Skill at call time instead of taking a skill name as an argument. `read_skill_reference` and `run_skill_script` are Skill-Scoped Tools.
+Tools visible whenever any skill is the Active Skill, rather than one specific registered skill — and that resolve "which skill" implicitly from the Active Skill at call time instead of taking a skill name as an argument. `read_skill_reference` and `run_skill_script` are Skill-Scoped Tools. Bound in every thread type that can have an Active Skill — chat, workspace chat, task and sub-agent runs — since `use_skill` can set it without a slash command.
 _Avoid_: Gated tools, active-skill tools
+
+**Skill Self-Invocation**:
+The agent loading a skill itself by calling `use_skill(name)`, instead of a user typing `/name`. Equivalent to the slash command: the skill's body and Artifact Index come back as the tool result, the skill becomes the Active Skill, and its Skill-Gated Tools and Skill-Scoped Tools bind from the next model call. Names resolve through the same per-agent skill source as `/name`; an unknown name returns text and changes nothing. Exists for non-interactive runs (tasks, sub-agents), where no human turn exists to type a slash command. The skill body is a tool result, so unlike a slash command's expansion it can be condensed by history compaction on a long run — the agent re-invokes if it needs it again.
+_Avoid_: Auto-invoke, skill call
 
 **Skill Artifact**:
 A file belonging to a skill's `scripts/` or `references/` directory — its executable scripts and reference docs, collectively, as distinct from the skill's own `SKILL.md` body and frontmatter.

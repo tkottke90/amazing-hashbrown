@@ -1911,7 +1911,13 @@ question names a specific topic or task — "do you have anything for summarizin
 skills for X?" — pass that topic as the keyword argument so the search itself narrows the results,
 rather than calling it with no argument and filtering the full list yourself afterward. Reserve the
 no-argument call for when the user asks broadly, without naming a topic — "what skills do you have
-available?", "what can you do?" — where there's nothing yet to narrow by.`;
+available?", "what can you do?" — where there's nothing yet to narrow by.
+
+search_skills only lists skills; use_skill loads one. When the request or task names a skill ("use
+the n8n-opts skill to…"), call use_skill with that name directly — don't search first. When you've
+found a relevant skill with search_skills and the work calls for it, call use_skill to get its full
+instructions and any tools it unlocks before acting. Loading a skill replaces the previously loaded
+one, so load only the skill the current step needs.`;
 
 // Motivated by auto-eval round 1 of suites/task-creation.yaml (2026-09-22,
 // local/Lemonade/Ornith/Digital Ocean, judge local), run right after
@@ -2197,7 +2203,7 @@ const HARNESS_SECTIONS: HarnessSection[] = [
   {
     tag: 'search_skills',
     content: SEARCH_SKILLS_SECTION,
-    requiresAnyOf: ['search_skills'],
+    requiresAnyOf: ['search_skills', 'use_skill'],
   },
   {
     tag: 'create_tasks',

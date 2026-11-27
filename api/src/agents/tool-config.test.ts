@@ -352,6 +352,12 @@ describe('agents/tool-config', () => {
         'get_tool_key',
         'rlm_query',
         'search_skills',
+        // Added deliberately so a sub-agent can load a skill it found and
+        // use that skill's references/scripts — see tool-config.ts's own
+        // comment on LEGACY_SUB_AGENT_TOOL_IDS.
+        'use_skill',
+        'read_skill_reference',
+        'run_skill_script',
         'search_conversation',
         // Postdates the legacy snapshot but added deliberately, for
         // symmetry with search_conversation — see tool-config.ts's own
