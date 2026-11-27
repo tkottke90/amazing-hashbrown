@@ -24,7 +24,7 @@ Out of scope:
 
 - **Skill usage** — nothing persists skill invocations today, so there is no store to derive from. Tracked in [#451](https://github.com/tkottke90/amazing-hashbrown/issues/451).
 - Request/turn counts and latency histograms (no per-call rows to derive from; would need in-process instrumentation).
-- `prom-client` default process/GC/event-loop metrics.
+- `@prometheus-io/client` default process/GC/event-loop metrics.
 - Workspace/project counts and other dashboard Metrics.
 - Auth on the endpoint (the API has none anywhere; see §4).
 - Playwright E2E coverage for this endpoint (decided out of scope for this change).
@@ -44,17 +44,17 @@ Consequences / assumptions:
 
 - A counter must be monotonic. This holds only if usage rows and tool-call spans are never deleted. No pruning code exists in this repo (searched `lib/observability`, `api/src`); if rows are ever pruned, scraped counters will decrease and Prometheus will read that as a reset. This is acceptable but must be documented in the ADR.
 - Each scrape does a full-table aggregation. `queryUsage` is bounded by date and the aggregates are small (daily rows per provider/model, one row per tool), so cost is negligible at this app's scale. If it ever isn't, cache for a few seconds rather than change the model.
-- `prom-client`'s `Counter` has no "set" API. Collectors are implemented as a `collect()` hook on each counter that calls `inc()` with the **delta** since the last scrape, or equivalently the metric is registered as a custom collector that emits the cumulative value. The implementation plan must pick one and test it; the spec requirement is only that the exposed value equals the stored cumulative total and never decreases while data is intact.
+- `Counter` has no "set" API. Each counter's synchronous `collect()` hook calls `reset()` and then `inc()` with the stored cumulative total, so the exposed value equals the stored total and never decreases while data is intact. Verified against `@prometheus-io/client` 0.16.1, including label escaping; being synchronous, overlapping scrapes cannot interleave the reset and the increments.
 - Cost is a float (`estimatedCost`), which Prometheus counters accept.
 
 ## 4. Endpoint
 
 - `GET /metrics`, at the app root. Not under `/api/v1`: that prefix is for versioned API routes, and `/api/v1/metrics` is already the dashboard widget Metric route. Root `/metrics` is also Prometheus's default scrape path, so no `metrics_path` override is needed.
-- Response: `Content-Type` from the `prom-client` registry (`text/plain; version=0.0.4; charset=utf-8`).
+- Response: `Content-Type` from the `@prometheus-io/client` registry (`text/plain; version=0.0.4; charset=utf-8`).
 - **Disabled by default.** Controlled by `telemetry.enabled` (default `false`). When disabled the route returns 404 as if it did not exist. Rationale: the endpoint exposes provider/model names, token counts and spend, and the API has no auth. Defaulting off avoids leaking this by accident in the Docker image.
 - No bearer token or other auth in this change. Revisit if the API grows auth elsewhere.
 - Config follows the existing pattern (`UpdatesSchema` in `api/src/config/env.ts`): add a `TelemetrySchema` with `enabled: z.boolean().default(false)`, wire it as an optional section, expose via `env.telemetry`. Read per request (like `checkForUpdates`) so a settings change takes effect without a restart; confirm during implementation whether a settings-UI entry is wanted or whether config-file only is enough (default: config-file only).
-- Uses its own `Registry`, not `prom-client`'s global default, so nothing else can leak onto the endpoint.
+- Uses its own `Registry`, not `@prometheus-io/client`'s global default, so nothing else can leak onto the endpoint.
 
 ## 5. Structure
 
@@ -86,15 +86,14 @@ Per `api/AGENTS.md` / root `AGENTS.md`: Mocha + Chai, tests adjacent to source, 
 - **Collectors `[unit]`**: with stub stores, assert the exposed text for known rows — token totals per provider/model/direction, cost sums, tool call/failure counts; empty stores produce no series (not errors); a model/provider name containing odd characters is escaped correctly in label output; values equal stored totals across two consecutive scrapes (no double counting) and increase correctly when new rows appear.
 - **Handler `[orchestration]`/`[unit]`**: disabled → 404 result and stores are not read; enabled → 200 with the registry's content type and the combined body.
 - No Playwright E2E for this change (explicit decision).
-- No tests for the route wiring or third-party `prom-client` internals (testing blacklist).
+- No tests for the route wiring or third-party `@prometheus-io/client` internals (testing blacklist).
 - Not an LLM-facing change; no eval scenarios required.
 
 ## 8. Dependencies
 
-- Add `prom-client` to `api/package.json`. The repo uses a private npm registry for `@tkottke90/*` packages; confirm `prom-client` resolves there (or via the public registry) during implementation.
+- Add `@prometheus-io/client` (0.16.1) to `api/package.json`. This is the successor to `prom-client`, which npm now marks deprecated in its favour; it has the same `Registry`/`Counter` API. It resolves through the repo's private registry.
 
 ## 9. Open items to settle in the implementation plan (not design questions)
 
-- Delta-`inc()` vs custom-collector mechanism for emitting cumulative values (§3).
 - Exact `# HELP` strings.
 - Whether `telemetry.enabled` also needs a Settings UI toggle (default: no).

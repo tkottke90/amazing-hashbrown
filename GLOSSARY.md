@@ -88,7 +88,7 @@ _Avoid_: Targeting snippet, copy snippet, targeting info
 
 **System Widget**:
 A widget with `source: 'system'` whose payload is never stored in its file and never written by a person, Agent, or CLI — the dashboard read handler resolves it live, every time, from the app's own data via a Metric. Its Widget Metadata (title, subtitle, position, size) is file-backed and editable like any widget; only its payload is live-only.
-_Avoid_: Live widget, telemetry widget
+_Avoid_: Live widget (and don't call it "telemetry" — that word names the Prometheus Telemetry Endpoint, a different feature)
 
 **Metric**:
 A named, fixed computation a System Widget can display — one query against the app's own data (e.g. `workspace-count`, `usage-by-provider-tokens`), registered in code rather than user-definable. Chosen from a fixed catalog when a System Widget is created; the widget's frontmatter stores only the chosen Metric's id, never its result.
@@ -699,3 +699,13 @@ _Avoid_: Repo (GitHub-specific), project (Todoist-specific; also collides with h
 **Assignee Label**:
 The tracker-side label naming who a linked task is assigned to in hashbrown (`AH:User` or `AH:Agent` in Todoist). Owned by hashbrown: every label starting with `AH:` is hashbrown's, and every other label on the item belongs to the user. Kept current for as long as the Tracker Link exists, and removed when the link ends.
 _Avoid_: Assignment tag, owner label
+
+# Telemetry
+
+Exposing the app's own usage numbers to an external time-series system, rather than only showing them on the dashboard.
+
+## Language
+
+**Telemetry Endpoint**:
+The `GET /metrics` route, in Prometheus text format, that lets a Prometheus server scrape cumulative counters — token and cost totals per provider and model, and call and failure totals per tool — so usage can be graphed over time. Off by default (`telemetry.enabled`) because it exposes provider/model names and spend and the API has no auth. Every counter is derived at scrape time from stored data, never incremented as usage happens (ADR-0076). Unrelated to System Widget **Metrics**, which are dashboard computations served from `/api/v1/metrics`; the two read overlapping data but share no code.
+_Avoid_: Metrics endpoint, Prometheus metrics (ambiguous with Metric), monitoring

@@ -159,6 +159,44 @@ Overridable per-request via `GET /api/v1/threads/:id?showErrors=true`.
 
 ---
 
+## `telemetry`
+
+Exposes a Prometheus scrape endpoint at `GET /metrics` (the **Telemetry Endpoint**). It is off by
+default: it reveals provider and model names, token counts and spend, and the API has no
+authentication, so only enable it on a network you trust.
+
+| Key       | Type    | Default | Description                                                      |
+| --------- | ------- | ------- | ---------------------------------------------------------------- |
+| `enabled` | boolean | `false` | Whether `GET /metrics` is served. When `false` it answers `404`. |
+
+```yaml
+telemetry:
+  enabled: true
+```
+
+Exposed counters (all cumulative, restart-safe, derived from stored data at scrape time):
+
+| Metric                               | Labels                           |
+| ------------------------------------ | -------------------------------- |
+| `hashbrown_llm_tokens_total`         | `provider`, `model`, `direction` |
+| `hashbrown_llm_cost_usd_total`       | `provider`, `model`              |
+| `hashbrown_tool_calls_total`         | `tool`                           |
+| `hashbrown_tool_call_failures_total` | `tool`                           |
+
+`direction` is `input` or `output`. Tool failure rate is a query, not a metric:
+`rate(hashbrown_tool_call_failures_total[5m]) / rate(hashbrown_tool_calls_total[5m])`.
+
+A minimal Prometheus scrape config:
+
+```yaml
+scrape_configs:
+  - job_name: amazing-hashbrown
+    static_configs:
+      - targets: ['localhost:3000']
+```
+
+---
+
 ## Cost Rates
 
 Per-model pricing lives on `providers[].models[]` now — see
