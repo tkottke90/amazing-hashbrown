@@ -50,4 +50,31 @@ describe('SvgSandbox', () => {
     const style = host?.shadowRoot?.querySelector('style');
     expect(style?.textContent).toContain('max-width: 100%');
   });
+
+  it('uses flow sizing by default, with no card-fit rules [unit]', () => {
+    const { container } = render(
+      <SvgSandbox>
+        <svg />
+      </SvgSandbox>,
+    );
+    const css = container
+      .querySelector('markdown-svg-sandbox')
+      ?.shadowRoot?.querySelector('style')?.textContent;
+    expect(css).toContain('height: auto');
+    expect(css).not.toContain('height: 100%');
+  });
+
+  it('fills its container in card fit instead of flowing with text [unit]', () => {
+    const { container } = render(
+      <SvgSandbox fit="card">
+        <svg />
+      </SvgSandbox>,
+    );
+    const css = container
+      .querySelector('markdown-svg-sandbox')
+      ?.shadowRoot?.querySelector('style')?.textContent;
+    expect(css).toContain('width: 100%');
+    expect(css).toContain('height: 100%');
+    expect(css).not.toContain('height: auto');
+  });
 });

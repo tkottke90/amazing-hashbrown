@@ -89,6 +89,15 @@ const MarkdownWidgetInputSchema = z.object({
   h: z.number().min(WIDGET_SIZE_MIN.markdown.h).max(WIDGET_SIZE_MAX.h).optional(),
 });
 
+const SvgWidgetInputSchema = z.object({
+  type: z.literal('svg'),
+  title: z.string().min(1),
+  subtitle: z.string().optional(),
+  content: z.string(),
+  w: z.number().min(WIDGET_SIZE_MIN.svg.w).max(WIDGET_SIZE_MAX.w).optional(),
+  h: z.number().min(WIDGET_SIZE_MIN.svg.h).max(WIDGET_SIZE_MAX.h).optional(),
+});
+
 const BigNumberWidgetInputSchema = z.object({
   type: z.literal('big-number'),
   title: z.string().min(1),
@@ -144,6 +153,7 @@ const SpacerWidgetInputSchema = z.object({
 
 const WidgetInputSchema = z.discriminatedUnion('type', [
   MarkdownWidgetInputSchema,
+  SvgWidgetInputSchema,
   BigNumberWidgetInputSchema,
   LineGraphWidgetInputSchema,
   PieGraphWidgetInputSchema,
@@ -187,6 +197,11 @@ const MarkdownContentInputSchema = z.object({
   maintainer: z.string().optional(),
 });
 
+const SvgContentInputSchema = z.object({
+  content: z.string().optional(),
+  maintainer: z.string().optional(),
+});
+
 const BigNumberContentInputSchema = z.object({
   value: z.number().optional(),
   unit: z.string().optional(),
@@ -207,10 +222,24 @@ const PieGraphContentInputSchema = z.object({
 
 const CONTENT_INPUT_SCHEMAS = {
   markdown: MarkdownContentInputSchema,
+  svg: SvgContentInputSchema,
   'big-number': BigNumberContentInputSchema,
   'line-graph': LineGraphContentInputSchema,
   'pie-graph': PieGraphContentInputSchema,
 } as const;
+
+/**
+ * Write-time structural check for an SVG Source (GLOSSARY.md): one root
+ * `<svg>…</svg>`. Deliberately not a sanitizer — sanitizing stays
+ * client-side, so the renderer remains the security boundary, same as for
+ * Markdown. This only gives an Agent/CLI write immediate feedback instead
+ * of a success response and a broken card.
+ */
+function validateSvgSource(content: string): string | null {
+  const trimmed = content.trim();
+  if (/^<svg[\s>]/i.test(trimmed) && /<\/svg\s*>$/i.test(trimmed)) return null;
+  return 'SVG content must be a single <svg>…</svg> element.';
+}
 
 /**
  * The structural Zod schemas above only check `data: z.string()` for
@@ -219,11 +248,13 @@ const CONTENT_INPUT_SCHEMAS = {
  * (D5/D7) are checked here, reusing the lib's `parseCsvBody` — the same
  * function `parseWidgetFile` uses when reading a file back, so a create/
  * update and a later load can never disagree about what counts as valid.
+ * SVG widgets get their own structural check (`validateSvgSource`).
  * Also called by `updateWidgetContentHandler` against a full merged
  * `DashboardWidget`, not just a fresh `WidgetContentInput` — it only ever
- * reads `.type`/`.data`, so either shape works.
+ * reads `.type`/`.data`/`.content`, so either shape works.
  */
 function validateTypeSpecificPayload(input: WidgetContentInput | DashboardWidget): string | null {
+  if (input.type === 'svg') return validateSvgSource(input.content);
   if (input.type !== 'line-graph' && input.type !== 'pie-graph') return null;
   const csv = parseCsvBody(input.data);
   if (!csv.ok) return csv.error;

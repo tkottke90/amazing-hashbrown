@@ -21,8 +21,9 @@ const UpdateWidgetContentSchema = z.object({
     .record(z.string(), z.unknown())
     .describe(
       "Only the fields you're changing, e.g. { value, unit } for a Big Number widget, " +
-        '{ content } for a Markdown widget, { data, color } for a Line Graph widget, or ' +
-        '{ data, colors } for a Pie Graph widget. Anything you omit keeps its current stored ' +
+        '{ content } for a Markdown widget, { content } (a single <svg>…</svg> element) for an ' +
+        'SVG widget, { data, color } for a Line Graph widget, or { data, colors } for a Pie ' +
+        'Graph widget. Anything you omit keeps its current stored ' +
         "value — you never need to know or resupply the widget's title. Optionally also " +
         'include `maintainer`: a short label naming what is keeping this widget up to date ' +
         '(e.g. a script name), which is preserved across later updates that omit it.',

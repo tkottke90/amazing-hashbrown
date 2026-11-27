@@ -884,4 +884,94 @@ describe('routes/v1/dashboards.handlers', () => {
       if (!result.ok) expect(result.status).to.equal(404);
     });
   });
+
+  describe('svg widgets', () => {
+    const SVG = '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>';
+
+    it('creates an svg widget from a single <svg> element [unit]', async () => {
+      const result = await createWidgetHandler(root, 'default', {
+        type: 'svg',
+        title: 'Gauge',
+        content: SVG,
+      });
+      expect(result.ok).to.equal(true);
+      if (result.ok) expect(result.data.type).to.equal('svg');
+    });
+
+    it('rejects a create whose content is not an <svg> element with 400 [unit]', async () => {
+      const result = await createWidgetHandler(root, 'default', {
+        type: 'svg',
+        title: 'Gauge',
+        content: '<p>not an svg</p>',
+      });
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+    });
+
+    it('rejects content with prose before the <svg> element with 400 [unit]', async () => {
+      const result = await createWidgetHandler(root, 'default', {
+        type: 'svg',
+        title: 'Gauge',
+        content: `Here you go: ${SVG}`,
+      });
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+    });
+
+    it('rejects an update whose content is not an <svg> element with 400 [unit]', async () => {
+      const created = await createWidgetHandler(root, 'default', {
+        type: 'svg',
+        title: 'Gauge',
+        content: SVG,
+      });
+      if (!created.ok) throw new Error('setup failed');
+      const result = await updateWidgetHandler(root, 'default', created.data.id, {
+        type: 'svg',
+        title: 'Gauge',
+        content: 'plain text',
+      });
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+    });
+
+    it('merges a valid content update, stamping the agent source [unit]', async () => {
+      const created = await createWidgetHandler(root, 'default', {
+        type: 'svg',
+        title: 'Gauge',
+        content: SVG,
+      });
+      if (!created.ok) throw new Error('setup failed');
+      const next = '<svg viewBox="0 0 1 1"></svg>';
+      const result = await updateWidgetContentHandler(
+        root,
+        'default',
+        created.data.id,
+        { content: next },
+        'agent',
+      );
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(result.data).to.deep.include({ type: 'svg', source: 'agent', title: 'Gauge' });
+        expect((result.data as { content: string }).content.trim()).to.equal(next);
+      }
+    });
+
+    it('rejects a content update that is not an <svg> element with 400 [unit]', async () => {
+      const created = await createWidgetHandler(root, 'default', {
+        type: 'svg',
+        title: 'Gauge',
+        content: SVG,
+      });
+      if (!created.ok) throw new Error('setup failed');
+      const result = await updateWidgetContentHandler(
+        root,
+        'default',
+        created.data.id,
+        { content: '# markdown' },
+        'agent',
+      );
+      expect(result.ok).to.equal(false);
+      if (!result.ok) expect(result.status).to.equal(400);
+    });
+  });
 });

@@ -24,6 +24,7 @@ export function serialize(frontmatter: Record<string, unknown>, body: string): s
 export {
   HexColorSchema,
   MarkdownWidgetFrontmatterSchema,
+  SvgWidgetFrontmatterSchema,
   BigNumberWidgetFrontmatterSchema,
   LineGraphWidgetFrontmatterSchema,
   PieGraphWidgetFrontmatterSchema,
@@ -148,6 +149,7 @@ export function parseWidgetFile(raw: string): WidgetFileParseResult {
 
   switch (result.data.type) {
     case 'markdown':
+    case 'svg':
       return { ok: true, widget: { content: body, ...result.data } };
     case 'big-number':
       return { ok: true, widget: { ...result.data } };

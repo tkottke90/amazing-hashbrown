@@ -136,6 +136,8 @@ function buildWidget(
   switch (input.type) {
     case 'markdown':
       return { ...base, type: 'markdown', content: input.content };
+    case 'svg':
+      return { ...base, type: 'svg', content: input.content };
     case 'big-number':
       return { ...base, type: 'big-number', value: input.value, unit: input.unit };
     case 'line-graph':
@@ -191,7 +193,8 @@ async function writeFileAtomic(filePath: string, content: string): Promise<void>
 
 /**
  * Write a widget's frontmatter + body, per its type's persistence shape
- * (ADR-0002): Markdown's body is its prose `content`; Big Number has no
+ * (ADR-0002): Markdown's body is its prose `content` and an SVG
+ * Widget's body is its SVG Source `content`; Big Number has no
  * body; Line/Pie Graph's body is their CSV Body (`data`), verbatim. Dumb
  * persistence (ADR-0005): writes exactly the `source`/`maintainer` it's
  * handed, never computing or defaulting either itself.
@@ -216,6 +219,7 @@ async function writeWidgetFile(
   let body: string;
   switch (widget.type) {
     case 'markdown':
+    case 'svg':
       body = widget.content;
       break;
     case 'big-number':

@@ -13,7 +13,10 @@ const ESM_MARKDOWN_DEPS =
   'stringify-entities|ccount|escape-string-regexp|longest-streak|markdown-table|' +
   'character-entities[a-z0-9-]*|unist-util-[a-z0-9-]+|vfile[a-z0-9-]*|' +
   'mdast-util-[a-z0-9-]+|hast-util-[a-z0-9-]+|micromark[a-z0-9-]*|remark-[a-z0-9-]+|' +
-  'rehype-[a-z0-9-]+|@ungap/structured-clone';
+  'rehype-[a-z0-9-]+|@ungap/structured-clone|' +
+  // hast-util-to-jsx-runtime (the SVG Widget's hast -> Preact conversion)
+  // pulls these in; the rest of its closure is CommonJS or already covered.
+  'estree-util-is-identifier-name|style-to-js|style-to-object|inline-style-parser';
 
 /** @type {import('jest').Config} */
 export default {

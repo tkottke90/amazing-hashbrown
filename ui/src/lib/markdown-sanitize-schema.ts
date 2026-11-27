@@ -65,6 +65,118 @@ const SVG_ANCESTOR_TAGS = [
   'style',
 ] as const;
 
+// ---- The shared SVG subset (ADR-0071) ---------------------------------------
+// One enumeration, two compositions: `markdownSanitizeSchema` (SVG inside
+// Markdown) and `svgSanitizeSchema` (an SVG Widget's SVG Source) both build
+// from these constants, so the SVG allowlist stays a single auditable
+// surface instead of drifting apart across two consumers.
+
+export const SVG_ANCESTORS: NonNullable<Schema['ancestors']> = Object.fromEntries(
+  SVG_ANCESTOR_TAGS.map((tag) => [tag, ['svg']]),
+);
+
+// `id`/`name` deliberately dropped from clobber-protection (ADR-0072) so
+// `<use href="#id">` resolves — the SVG Sandbox's shadow root isolates any
+// id-clobbering effect from the app's real `window`/`document` globals.
+// `ariaDescribedBy`/`ariaLabelledBy` stay protected.
+export const SVG_CLOBBER: string[] = ['ariaDescribedBy', 'ariaLabelledBy'];
+
+export const SVG_TAG_NAMES: string[] = ['svg', ...SVG_ANCESTOR_TAGS];
+
+export const SVG_ATTRIBUTES: NonNullable<Schema['attributes']> = {
+  svg: ['xmlns', 'viewBox', 'width', 'height', 'preserveAspectRatio', 'className', 'id'],
+  path: ['d', ...SVG_SHARED_ATTRIBUTES],
+  circle: ['cx', 'cy', 'r', ...SVG_SHARED_ATTRIBUTES],
+  rect: ['x', 'y', 'width', 'height', 'rx', 'ry', ...SVG_SHARED_ATTRIBUTES],
+  ellipse: ['cx', 'cy', 'rx', 'ry', ...SVG_SHARED_ATTRIBUTES],
+  line: ['x1', 'y1', 'x2', 'y2', ...SVG_SHARED_ATTRIBUTES],
+  polyline: ['points', ...SVG_SHARED_ATTRIBUTES],
+  polygon: ['points', ...SVG_SHARED_ATTRIBUTES],
+  g: [...SVG_SHARED_ATTRIBUTES],
+  defs: ['id', 'className'],
+  symbol: ['viewBox', 'preserveAspectRatio', 'id', 'className'],
+  // href restricted to local/fragment references only (no scheme at all,
+  // same-document references like `#icon`) — an SVG `<use>` pointing at
+  // an external URL is a tracking-pixel/read-receipt vector on render,
+  // with zero script execution required (ADR-0071). This is a tag-scoped
+  // `attributes` regex, not the global `protocols` field — `protocols` is
+  // keyed by attribute name across every tag, so setting it on `href`
+  // would also restrict `<a href>`, which must stay unrestricted.
+  use: [['href', /^#/], 'x', 'y', 'width', 'height', 'transform', 'className', 'id'],
+  text: ['x', 'y', 'fontSize', 'fontFamily', 'textAnchor', 'fill', 'stroke', 'className', 'id'],
+  tspan: ['x', 'y', 'fontSize', 'fontFamily', 'textAnchor', 'fill', 'stroke', 'className', 'id'],
+  title: ['id', 'className'],
+  desc: ['id', 'className'],
+  clipPath: ['id', 'className'],
+  mask: ['id', 'className'],
+  linearGradient: ['x1', 'y1', 'x2', 'y2', 'gradientUnits', 'gradientTransform', 'id', 'className'],
+  radialGradient: ['cx', 'cy', 'r', 'gradientUnits', 'gradientTransform', 'id', 'className'],
+  stop: ['offset', 'stopColor', 'stopOpacity', 'className'],
+  marker: [
+    'markerWidth',
+    'markerHeight',
+    'refX',
+    'refY',
+    'orient',
+    'markerUnits',
+    'viewBox',
+    'preserveAspectRatio',
+    'id',
+    'className',
+  ],
+  // SMIL animation elements are allowed structurally with no
+  // duration/repeat-count enforcement (ADR-0071) — a sanitize schema can
+  // only allow/deny tags and attributes, not validate their values.
+  // `href` stays local-fragment-only, same rule as `use`.
+  animate: [
+    ['href', /^#/],
+    'attributeName',
+    'dur',
+    'repeatCount',
+    'repeatDur',
+    'begin',
+    'values',
+    'from',
+    'to',
+    'keyTimes',
+    'calcMode',
+    'id',
+    'className',
+  ],
+  animateTransform: [
+    ['href', /^#/],
+    'attributeName',
+    'dur',
+    'repeatCount',
+    'repeatDur',
+    'begin',
+    'values',
+    'from',
+    'to',
+    'keyTimes',
+    'calcMode',
+    'id',
+    'className',
+  ],
+  animateMotion: [
+    ['href', /^#/],
+    'dur',
+    'repeatCount',
+    'repeatDur',
+    'begin',
+    'keyTimes',
+    'calcMode',
+    'id',
+    'className',
+  ],
+  set: [['href', /^#/], 'attributeName', 'to', 'begin', 'dur', 'id', 'className'],
+  // `<style>`'s text content is never parsed/validated by this schema —
+  // only reachable at all with an `svg` ancestor (see `ancestors`), and
+  // CSS-scoped to that SVG's own shadow root once mounted by the SVG
+  // Sandbox (ADR-0072), not by anything this schema does.
+  style: [],
+};
+
 export const markdownSanitizeSchema: Schema = {
   tagNames: [
     // CommonMark
@@ -98,9 +210,7 @@ export const markdownSanitizeSchema: Schema = {
     'input',
     // rehype-highlight's injected syntax-highlighting token span
     'span',
-    // SVG root + the enumerated SVG tag list
-    'svg',
-    ...SVG_ANCESTOR_TAGS,
+    ...SVG_TAG_NAMES,
   ],
 
   attributes: {
@@ -114,106 +224,7 @@ export const markdownSanitizeSchema: Schema = {
     span: [['className', /^(language-|hljs)/]],
     input: [['type', 'checkbox'], 'checked', 'disabled'],
 
-    svg: ['xmlns', 'viewBox', 'width', 'height', 'preserveAspectRatio', 'className', 'id'],
-    path: ['d', ...SVG_SHARED_ATTRIBUTES],
-    circle: ['cx', 'cy', 'r', ...SVG_SHARED_ATTRIBUTES],
-    rect: ['x', 'y', 'width', 'height', 'rx', 'ry', ...SVG_SHARED_ATTRIBUTES],
-    ellipse: ['cx', 'cy', 'rx', 'ry', ...SVG_SHARED_ATTRIBUTES],
-    line: ['x1', 'y1', 'x2', 'y2', ...SVG_SHARED_ATTRIBUTES],
-    polyline: ['points', ...SVG_SHARED_ATTRIBUTES],
-    polygon: ['points', ...SVG_SHARED_ATTRIBUTES],
-    g: [...SVG_SHARED_ATTRIBUTES],
-    defs: ['id', 'className'],
-    symbol: ['viewBox', 'preserveAspectRatio', 'id', 'className'],
-    // href restricted to local/fragment references only (no scheme at all,
-    // same-document references like `#icon`) — an SVG `<use>` pointing at
-    // an external URL is a tracking-pixel/read-receipt vector on render,
-    // with zero script execution required (ADR-0071). This is a tag-scoped
-    // `attributes` regex, not the global `protocols` field — `protocols` is
-    // keyed by attribute name across every tag, so setting it on `href`
-    // would also restrict `<a href>`, which must stay unrestricted.
-    use: [['href', /^#/], 'x', 'y', 'width', 'height', 'transform', 'className', 'id'],
-    text: ['x', 'y', 'fontSize', 'fontFamily', 'textAnchor', 'fill', 'stroke', 'className', 'id'],
-    tspan: ['x', 'y', 'fontSize', 'fontFamily', 'textAnchor', 'fill', 'stroke', 'className', 'id'],
-    title: ['id', 'className'],
-    desc: ['id', 'className'],
-    clipPath: ['id', 'className'],
-    mask: ['id', 'className'],
-    linearGradient: [
-      'x1',
-      'y1',
-      'x2',
-      'y2',
-      'gradientUnits',
-      'gradientTransform',
-      'id',
-      'className',
-    ],
-    radialGradient: ['cx', 'cy', 'r', 'gradientUnits', 'gradientTransform', 'id', 'className'],
-    stop: ['offset', 'stopColor', 'stopOpacity', 'className'],
-    marker: [
-      'markerWidth',
-      'markerHeight',
-      'refX',
-      'refY',
-      'orient',
-      'markerUnits',
-      'viewBox',
-      'preserveAspectRatio',
-      'id',
-      'className',
-    ],
-    // SMIL animation elements are allowed structurally with no
-    // duration/repeat-count enforcement (ADR-0071) — a sanitize schema can
-    // only allow/deny tags and attributes, not validate their values.
-    // `href` stays local-fragment-only, same rule as `use`.
-    animate: [
-      ['href', /^#/],
-      'attributeName',
-      'dur',
-      'repeatCount',
-      'repeatDur',
-      'begin',
-      'values',
-      'from',
-      'to',
-      'keyTimes',
-      'calcMode',
-      'id',
-      'className',
-    ],
-    animateTransform: [
-      ['href', /^#/],
-      'attributeName',
-      'dur',
-      'repeatCount',
-      'repeatDur',
-      'begin',
-      'values',
-      'from',
-      'to',
-      'keyTimes',
-      'calcMode',
-      'id',
-      'className',
-    ],
-    animateMotion: [
-      ['href', /^#/],
-      'dur',
-      'repeatCount',
-      'repeatDur',
-      'begin',
-      'keyTimes',
-      'calcMode',
-      'id',
-      'className',
-    ],
-    set: [['href', /^#/], 'attributeName', 'to', 'begin', 'dur', 'id', 'className'],
-    // `<style>`'s text content is never parsed/validated by this schema —
-    // only reachable at all with an `svg` ancestor (see `ancestors`), and
-    // CSS-scoped to that SVG's own shadow root once mounted by the SVG
-    // Sandbox (ADR-0072), not by anything this schema does.
-    style: [],
+    ...SVG_ATTRIBUTES,
   },
 
   // `<a>` keeps the ordinary external-link protocol list a plain Markdown
@@ -224,12 +235,28 @@ export const markdownSanitizeSchema: Schema = {
     src: ['http', 'https'],
   },
 
-  ancestors: Object.fromEntries(SVG_ANCESTOR_TAGS.map((tag) => [tag, ['svg']])),
+  ancestors: SVG_ANCESTORS,
 
   // `id`/`name` deliberately dropped from clobber-protection (ADR-0072) so
   // `<use href="#id">` resolves — the SVG Sandbox's shadow root isolates
   // any id-clobbering effect from the app's real `window`/`document`
   // globals, so the protection this would normally justify keeping isn't
   // needed here. `ariaDescribedBy`/`ariaLabelledBy` stay protected.
-  clobber: ['ariaDescribedBy', 'ariaLabelledBy'],
+  clobber: SVG_CLOBBER,
+};
+
+/**
+ * The sanitize schema for an SVG Widget's SVG Source (GLOSSARY.md "SVG
+ * Widget"): the SVG subset only — none of Markdown's own tags (`p`, `a`,
+ * `img`, `input`, `span`, ...) — with the same ancestor, `id`-clobber and
+ * URL rules as `markdownSanitizeSchema` (ADR-0071/0072). A disallowed tag is
+ * unwrapped, not dropped, so its text survives into the tree; callers decide
+ * validity from the resulting shape (see `parseSvgSource`), not from this
+ * schema alone.
+ */
+export const svgSanitizeSchema: Schema = {
+  tagNames: SVG_TAG_NAMES,
+  attributes: SVG_ATTRIBUTES,
+  ancestors: SVG_ANCESTORS,
+  clobber: SVG_CLOBBER,
 };

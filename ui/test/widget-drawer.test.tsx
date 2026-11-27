@@ -371,6 +371,105 @@ describe('WidgetDrawer', () => {
     expect(screen.getByLabelText('Title')).toHaveValue('Original title');
   });
 
+  describe('svg widgets', () => {
+    const SVG_WIDGET = {
+      id: 'w-svg',
+      type: 'svg' as const,
+      title: 'Logo',
+      order: 0,
+      source: 'manual' as const,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      content: '<svg viewBox="0 0 1 1"></svg>',
+    };
+
+    it('the type picker offers SVG and swaps in an SVG content field [unit]', async () => {
+      renderDrawer(
+        <WidgetDrawer
+          mode="add"
+          dashboardId="default"
+          onSaved={jest.fn()}
+          trigger={<button>Add</button>}
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId('widget-type-picker'));
+      fireEvent.click(await screen.findByRole('option', { name: 'SVG' }));
+
+      expect(screen.getByLabelText('Content (SVG)')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Content (Markdown)')).not.toBeInTheDocument();
+    });
+
+    it('add mode submits an svg payload with the entered SVG Source [unit]', async () => {
+      mockCreate.mockResolvedValue({ ...SVG_WIDGET, w: 3, h: 2 });
+      const onSaved = jest.fn();
+      renderDrawer(
+        <WidgetDrawer
+          mode="add"
+          dashboardId="default"
+          onSaved={onSaved}
+          trigger={<button>Add</button>}
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId('widget-type-picker'));
+      fireEvent.click(await screen.findByRole('option', { name: 'SVG' }));
+      fireEvent.input(screen.getByLabelText('Title'), { target: { value: 'Logo' } });
+      fireEvent.input(screen.getByLabelText('Content (SVG)'), {
+        target: { value: '<svg></svg>' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() =>
+        expect(mockCreate).toHaveBeenCalledWith('default', {
+          type: 'svg',
+          title: 'Logo',
+          subtitle: undefined,
+          content: '<svg></svg>',
+        }),
+      );
+      expect(onSaved).toHaveBeenCalled();
+    });
+
+    it('edit mode pre-fills the SVG content field from the widget [unit]', () => {
+      renderDrawer(
+        <WidgetDrawer
+          mode="edit"
+          dashboardId="default"
+          target={{ status: 'ok', widget: SVG_WIDGET }}
+          onSaved={jest.fn()}
+          trigger={<button>Edit</button>}
+        />,
+      );
+      expect(screen.getByLabelText('Content (SVG)')).toHaveValue('<svg viewBox="0 0 1 1"></svg>');
+    });
+
+    it('edit mode saves the changed SVG Source through updateWidget [unit]', async () => {
+      mockUpdate.mockResolvedValue({ ...SVG_WIDGET, w: 3, h: 2 });
+      renderDrawer(
+        <WidgetDrawer
+          mode="edit"
+          dashboardId="default"
+          target={{ status: 'ok', widget: SVG_WIDGET }}
+          onSaved={jest.fn()}
+          trigger={<button>Edit</button>}
+        />,
+      );
+
+      fireEvent.input(screen.getByLabelText('Content (SVG)'), {
+        target: { value: '<svg><rect/></svg>' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() =>
+        expect(mockUpdate).toHaveBeenCalledWith(
+          'default',
+          'w-svg',
+          expect.objectContaining({ type: 'svg', content: '<svg><rect/></svg>' }),
+        ),
+      );
+    });
+  });
+
   describe('type picker and per-type field sets', () => {
     it('the type picker offers all 5 types and swaps the field set on selection [unit]', async () => {
       renderDrawer(

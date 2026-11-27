@@ -249,6 +249,7 @@ describe('frontmatter', () => {
     it('defaults w/h to the type minimum for a widget file predating the fields (ADR-0009)', () => {
       const cases: [string, number, number][] = [
         ['markdown', 3, 2],
+        ['svg', 3, 2],
         ['big-number', 2, 2],
         ['line-graph', 4, 3],
         ['pie-graph', 6, 3],
@@ -312,6 +313,54 @@ describe('frontmatter', () => {
       const result = frontmatter.parseWidgetFile(raw);
       expect(result.ok).to.equal(true);
       if (result.ok) expect(result.widget).to.include({ w: 6, h: 3 });
+    });
+  });
+
+  describe('SvgWidgetFrontmatterSchema', () => {
+    const valid = {
+      title: 'Logo',
+      type: 'svg',
+      order: 0,
+      w: 3,
+      h: 2,
+      source: 'manual',
+    };
+
+    it('accepts an svg widget at exactly its minimum size', () => {
+      expect(frontmatter.SvgWidgetFrontmatterSchema.safeParse(valid).success).to.equal(true);
+    });
+
+    it('rejects a width below the svg minimum', () => {
+      expect(frontmatter.SvgWidgetFrontmatterSchema.safeParse({ ...valid, w: 2 }).success).to.equal(
+        false,
+      );
+    });
+
+    it('rejects a height below the svg minimum', () => {
+      expect(frontmatter.SvgWidgetFrontmatterSchema.safeParse({ ...valid, h: 1 }).success).to.equal(
+        false,
+      );
+    });
+
+    it('is reachable through the WidgetFrontmatterSchema discriminated union', () => {
+      expect(frontmatter.WidgetFrontmatterSchema.safeParse(valid).success).to.equal(true);
+    });
+  });
+
+  describe('parseWidgetFile (svg)', () => {
+    it('reads the body below the frontmatter as the widget content', () => {
+      const raw = frontmatter.serialize(
+        { title: 'Logo', type: 'svg', order: 0, w: 3, h: 2, source: 'manual' },
+        '<svg viewBox="0 0 1 1"></svg>',
+      );
+      const result = frontmatter.parseWidgetFile(raw);
+      expect(result.ok).to.equal(true);
+      if (result.ok) {
+        expect(result.widget).to.include({ type: 'svg' });
+        expect((result.widget as { content: string }).content.trim()).to.equal(
+          '<svg viewBox="0 0 1 1"></svg>',
+        );
+      }
     });
   });
 
