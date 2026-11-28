@@ -1131,60 +1131,59 @@ const MIGRATIONS: DbMigration[] = [
       ALTER TABLE task_queue ADD COLUMN retry_context TEXT;
     `,
   },
-  {
-    version: 49,
-    // Telemetry views (docs/superpowers/specs/2026-11-28-task-hitl-telemetry-design.md).
-    // Owned here but they read thread_messages (ThreadStore) and
-    // observability_traces (ObservabilityStore) too — every store shares one
-    // database. SQLite doesn't resolve a view's tables until it is queried,
-    // so a WorkspaceStore built without those tables only fails if it queries
-    // these. To change either view, add a migration that drops and recreates
-    // it; CREATE VIEW IF NOT EXISTS silently keeps the old definition.
-    //
-    // v_escalation_outcomes: one row per ANSWERED Loop-Guard Escalation in a
-    // Task Run's own thread. A mirrored copy (payload.sourcePromptId) lives
-    // in a workspace chat thread, never a run thread, but is excluded
-    // explicitly so a copy can never be counted as a second escalation.
-    // v_task_run_durations: one row per settled Run. provider/model come from
-    // the Run's EARLIEST task-run trace (a resumed Run opens another trace on
-    // the same thread; the loop guard's own reflection call writes a
-    // 'loop-guard' trace there too, which must not name the Run's model).
-    sql: `
-      CREATE VIEW IF NOT EXISTS v_escalation_outcomes AS
-      SELECT
-        CASE json_extract(m.payload, '$.answer')
-          WHEN '${CONTINUE_CHOICE}' THEN 'continue'
-          WHEN '${STOP_AND_SUMMARIZE_CHOICE}' THEN 'stop_and_summarize'
-          ELSE 'custom'
-        END AS answer,
-        CASE q.status
-          WHEN 'done' THEN 'done'
-          WHEN 'handed_off' THEN 'blocked'
-          ELSE 'other'
-        END AS outcome
-      FROM thread_messages m
-      JOIN task_queue q ON q.thread_id = m.thread_id
-      WHERE m.kind = 'hitl_prompt'
-        AND m.status = 'answered'
-        AND json_extract(m.payload, '$.kind') IN (${LOOP_GUARD_ESCALATION_KINDS.map((k) => `'${k}'`).join(', ')})
-        AND json_extract(m.payload, '$.sourcePromptId') IS NULL;
-
-      CREATE VIEW IF NOT EXISTS v_task_run_durations AS
-      SELECT
-        COALESCE(t.provider, 'unknown') AS provider,
-        COALESCE(t.model, 'unknown')    AS model,
-        (julianday(q.finished_at) - julianday(q.started_at)) * 86400.0 AS seconds
-      FROM task_queue q
-      LEFT JOIN observability_traces t ON t.trace_id = (
-        SELECT trace_id FROM observability_traces
-        WHERE thread_id = q.thread_id AND source = 'task-run'
-        ORDER BY started_at ASC
-        LIMIT 1
-      )
-      WHERE q.started_at IS NOT NULL AND q.finished_at IS NOT NULL;
-    `,
-  },
 ];
+
+// ---------------------------------------------------------------------------
+// Telemetry SQL fragments (docs/superpowers/specs/2026-11-28-task-hitl-telemetry-design.md)
+//
+// Named subqueries rather than CREATE VIEWs, deliberately: they read
+// thread_messages (ThreadStore) and observability_traces (ObservabilityStore),
+// and SQLite re-parses every view on any ALTER TABLE — so a persisted view
+// naming a table that doesn't exist yet makes the OTHER store's migrations
+// fail ("error in view …: no such table"), depending on boot order.
+//
+// ESCALATION_OUTCOMES_SQL: one row per ANSWERED Loop-Guard Escalation in a
+// Task Run's own thread. A mirrored copy (payload.sourcePromptId) lives in a
+// workspace chat thread, never a run thread, but is excluded explicitly so a
+// copy can never be counted as a second escalation.
+// TASK_RUN_DURATIONS_SQL: one row per settled Run. provider/model come from the
+// Run's EARLIEST task-run trace (a resumed Run opens another trace on the same
+// thread; the loop guard's own reflection call writes a 'loop-guard' trace
+// there too, which must not name the Run's model).
+// ---------------------------------------------------------------------------
+
+const ESCALATION_OUTCOMES_SQL = `
+  SELECT
+    CASE json_extract(m.payload, '$.answer')
+      WHEN '${CONTINUE_CHOICE}' THEN 'continue'
+      WHEN '${STOP_AND_SUMMARIZE_CHOICE}' THEN 'stop_and_summarize'
+      ELSE 'custom'
+    END AS answer,
+    CASE q.status
+      WHEN 'done' THEN 'done'
+      WHEN 'handed_off' THEN 'blocked'
+      ELSE 'other'
+    END AS outcome
+  FROM thread_messages m
+  JOIN task_queue q ON q.thread_id = m.thread_id
+  WHERE m.kind = 'hitl_prompt'
+    AND m.status = 'answered'
+    AND json_extract(m.payload, '$.kind') IN (${LOOP_GUARD_ESCALATION_KINDS.map((k) => `'${k}'`).join(', ')})
+    AND json_extract(m.payload, '$.sourcePromptId') IS NULL`;
+
+const TASK_RUN_DURATIONS_SQL = `
+  SELECT
+    COALESCE(t.provider, 'unknown') AS provider,
+    COALESCE(t.model, 'unknown')    AS model,
+    (julianday(q.finished_at) - julianday(q.started_at)) * 86400.0 AS seconds
+  FROM task_queue q
+  LEFT JOIN observability_traces t ON t.trace_id = (
+    SELECT trace_id FROM observability_traces
+    WHERE thread_id = q.thread_id AND source = 'task-run'
+    ORDER BY started_at ASC
+    LIMIT 1
+  )
+  WHERE q.started_at IS NOT NULL AND q.finished_at IS NOT NULL`;
 
 // ---------------------------------------------------------------------------
 // WorkspaceStore
@@ -2423,7 +2422,7 @@ export class WorkspaceStore extends BaseStore {
   queryEscalationOutcomes(): Array<{ answer: string; outcome: string; count: number }> {
     return this.db
       .prepare(
-        `SELECT answer, outcome, COUNT(*) AS count FROM v_escalation_outcomes GROUP BY answer, outcome`,
+        `SELECT answer, outcome, COUNT(*) AS count FROM (${ESCALATION_OUTCOMES_SQL}) GROUP BY answer, outcome`,
       )
       .all() as Array<{ answer: string; outcome: string; count: number }>;
   }
@@ -2438,7 +2437,7 @@ export class WorkspaceStore extends BaseStore {
     return this.db
       .prepare(
         `SELECT provider, model, COUNT(*) AS count, SUM(seconds) AS seconds
-         FROM v_task_run_durations GROUP BY provider, model`,
+         FROM (${TASK_RUN_DURATIONS_SQL}) GROUP BY provider, model`,
       )
       .all() as Array<{ provider: string; model: string; count: number; seconds: number }>;
   }

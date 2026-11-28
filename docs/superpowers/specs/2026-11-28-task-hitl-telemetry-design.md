@@ -1,7 +1,7 @@
 # Task & Loop-Guard Telemetry — Design
 
 Date: 2026-11-28
-Status: Draft, awaiting review
+Status: Implemented (views revised to named query fragments — see § 5)
 
 Extends the Telemetry Endpoint from [2026-11-27-telemetry-endpoint-design.md](2026-11-27-telemetry-endpoint-design.md) (#452). Terms are defined in `GLOSSARY.md` (§ Telemetry, § Loop Guard, § Task Runs); this document does not restate them.
 
@@ -26,7 +26,7 @@ The Telemetry Endpoint exposes token, cost and tool-call totals only. It says no
 | Duration         | Wall-clock `finished_at − started_at`. Includes time waiting on a human during a HITL pause; accepted and stated in the metric help text.                                 |
 | Plan steps       | Current `tasks.plan` length of `done` Tasks; null/empty plans skipped. No migration. This is the final plan, not the original.                                            |
 | Averages         | Exposed as a sum/count pair, not a histogram. The average is a PromQL ratio.                                                                                              |
-| SQL views        | A view only where there is a join (#2, #4). #1, #3, #5 are plain queries.                                                                                                 |
+| SQL joins        | Named SQL fragments (not persisted views) only where there is a join (#2, #4). #1, #3, #5 are plain queries.                                                              |
 
 ## 3. Metric type: gauges, not counters (supersedes the counter assumption in ADR-0077)
 
@@ -51,11 +51,11 @@ All collectors follow the #452 pattern: one `register*Collector` call in `api/sr
 | Metric                                     | Type  | Labels                      | Source                                                        |
 | ------------------------------------------ | ----- | --------------------------- | ------------------------------------------------------------- |
 | `hashbrown_loop_guard_escalations`         | gauge | `kind`, `context`, `answer` | query over `thread_messages` (§ 4.1)                          |
-| `hashbrown_loop_guard_escalation_outcomes` | gauge | `answer`, `outcome`         | view `v_escalation_outcomes` (§ 4.2)                          |
+| `hashbrown_loop_guard_escalation_outcomes` | gauge | `answer`, `outcome`         | `ESCALATION_OUTCOMES_SQL` fragment (§ 4.2)                    |
 | `hashbrown_done_tasks`                     | gauge | —                           | `WorkspaceStore` query (§ 4.3)                                |
 | `hashbrown_done_task_runs`                 | gauge | —                           | `WorkspaceStore` query (§ 4.3); sum of Runs across done Tasks |
-| `hashbrown_task_runs_finished`             | gauge | `provider`, `model`         | view `v_task_run_durations` (§ 4.4); count                    |
-| `hashbrown_task_run_seconds`               | gauge | `provider`, `model`         | view `v_task_run_durations` (§ 4.4); sum of seconds           |
+| `hashbrown_task_runs_finished`             | gauge | `provider`, `model`         | `TASK_RUN_DURATIONS_SQL` fragment (§ 4.4); count              |
+| `hashbrown_task_run_seconds`               | gauge | `provider`, `model`         | `TASK_RUN_DURATIONS_SQL` fragment (§ 4.4); sum of seconds     |
 | `hashbrown_done_tasks_with_plan`           | gauge | —                           | `WorkspaceStore` query (§ 4.5); count                         |
 | `hashbrown_done_task_plan_steps`           | gauge | —                           | `WorkspaceStore` query (§ 4.5); sum                           |
 
@@ -75,7 +75,7 @@ The two choice strings are defined in `recursion-guard.middleware.ts`. The query
 
 `thread_messages` has no index on `kind`; the query scans the table each scrape. Acceptable at this app's size; if not, add the cache from ADR-0077's consequences rather than an index.
 
-### 4.2 Escalation outcomes (#2) — view `v_escalation_outcomes`
+### 4.2 Escalation outcomes (#2) — `ESCALATION_OUTCOMES_SQL`
 
 One row per **answered** original (non-mirror) escalation prompt in a Task Run thread, joined `thread_messages.thread_id = task_queue.thread_id`:
 
@@ -90,7 +90,7 @@ Outcome is the Run's, not the Task's: a Task's own status changes later when it 
 
 Over Tasks with `status = 'done'`, excluding Sub-Agent Tasks via `subAgentTaskSql()`: count of Tasks, and total `task_queue` rows for them. All Run statuses count.
 
-### 4.4 Run duration (#4) — view `v_task_run_durations`
+### 4.4 Run duration (#4) — `TASK_RUN_DURATIONS_SQL`
 
 One row per settled Run (`finished_at` and `started_at` both non-null), with `seconds` from `julianday()` difference, and `provider`/`model` taken from the Run's observability trace:
 
@@ -104,20 +104,22 @@ All settled Runs count, Sub-Agent Task Runs included (they use provider time too
 
 Over Tasks with `status = 'done'` and non-null, non-empty `plan`, excluding Sub-Agent Tasks: count of Tasks, and `SUM(json_array_length(plan))`. `plan` is reset at Run start (`task-execution.ts`), so this reflects the plan the final Run ended with.
 
-## 5. Views: ownership and migration
+## 5. Joins: named fragments, not persisted views
 
-- Both views reference `tasks`/`task_queue` (WorkspaceStore), `thread_messages`/`threads` (ThreadStore) and `observability_*` (ObservabilityStore). These all live in one shared SQLite database and connection (`openDatabase()`, `api/src/index.ts`), so the joins are plain SQL.
-- They are owned by an `api/` store migration, not `lib/observability`. `v_usage` is in the lib because it only touches observability tables; these would couple the lib to app tables.
-- Migration versions are shared across every store on the database ("Version numbers must be unique across ALL stores"). Take the next free version at implementation time; do not assume it from this document.
-- SQLite does not validate a view's referenced tables at `CREATE VIEW`. A store constructed standalone without the other tables (as WorkspaceStore is in many tests) fails at query time only. Tests for the views build the full table set.
-- Changing a view later needs a drop-and-recreate migration (see the warning on `v_usage` in `cost-store.ts`).
+The two joins are exported-nowhere `const` SQL strings in `workspace-store.ts` (`ESCALATION_OUTCOMES_SQL`, `TASK_RUN_DURATIONS_SQL`), embedded as `FROM (...)` subqueries by `queryEscalationOutcomes()` and `queryTaskRunDurations()`. There is no migration and no schema change.
+
+**This revises the originally approved "SQL views" decision.** The first implementation used `CREATE VIEW` in a WorkspaceStore migration, and it broke 23 existing tests. SQLite re-parses every view whenever any `ALTER TABLE` runs, so a persisted view that names another store's table (`thread_messages`, `observability_traces`) makes that store's migrations fail with `error in view …: no such table` whenever it boots before the table exists. Boot order across the stores is not guaranteed (production or tests), and `v_usage` only gets away with it because it reads tables its own store creates. The fragment keeps the SQL in one named, testable place and drops the ordering hazard.
+
+- All three stores share one SQLite database and connection (`openDatabase()`, `api/src/index.ts`), so the joins are plain SQL.
+- The choice strings and escalation kinds are interpolated from `loop-guard-choices.ts`, never re-typed.
+- Query tests build all three stores on one database.
 
 ## 6. Testing
 
 Per `AGENTS.md`, every new unit is tested; tests sit beside the source and carry `[unit]` / `[orchestration]` tags.
 
 - Collectors: unit tests with a stubbed store, in the style of `llm-usage.collector.test.ts` — one test per metric for label sets and values, plus an empty-store case.
-- Queries and views: unit tests against in-memory SQLite with seeded rows, covering at least:
+- Queries: unit tests against in-memory SQLite with seeded rows, covering at least:
   - an answered prompt per answer bucket, and a `pending` one;
   - a mirrored prompt copy is **not** double-counted;
   - Run status → outcome mapping, including an in-flight Run → `other`;
