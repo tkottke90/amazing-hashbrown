@@ -1906,6 +1906,15 @@ not as one call.`;
 // worked contrastive pair straight from this suite's own two scenarios
 // (tools-003's bare "what skills do you have" vs. tools-004's topic-named
 // "skills for summarizing") per interpreting-results.md §3.
+//
+// use_skill guidance added with the use_skill tool. First eval run of
+// tools-008-use-skill-named-skill (2026-11-28, judge anthropic): Ornith and
+// Digital Ocean called use_skill directly; local (gpt-oss:20b) and Lemonade
+// both called search_skills({keyword: "ingest-document"}) first even though
+// the request already named the skill — local's reasoning: "We need to check
+// search_skills. Let's search for ingest-document." The first wording said
+// "don't search first" but gave no reason. Added the reason plus the
+// contrasting topic-only case (tools-009), the same pair the suite tests.
 const SEARCH_SKILLS_SECTION = `search_skills looks up installed skills by name, description, or slash command. When the user's
 question names a specific topic or task — "do you have anything for summarizing content?", "any
 skills for X?" — pass that topic as the keyword argument so the search itself narrows the results,
@@ -1914,10 +1923,12 @@ no-argument call for when the user asks broadly, without naming a topic — "wha
 available?", "what can you do?" — where there's nothing yet to narrow by.
 
 search_skills only lists skills; use_skill loads one. When the request or task names a skill ("use
-the n8n-opts skill to…"), call use_skill with that name directly — don't search first. When you've
-found a relevant skill with search_skills and the work calls for it, call use_skill to get its full
-instructions and any tools it unlocks before acting. Loading a skill replaces the previously loaded
-one, so load only the skill the current step needs.`;
+the n8n-opts skill to…"), call use_skill with that name directly — don't search first. The name is
+all use_skill needs, so a search would only repeat what you were already told. Search only when you
+have a topic but no skill name ("is there a skill that can help me summarize a long document?"). When
+you've found a relevant skill with search_skills and the work calls for it, call use_skill to get its
+full instructions and any tools it unlocks before acting. Loading a skill replaces the previously
+loaded one, so load only the skill the current step needs.`;
 
 // Motivated by auto-eval round 1 of suites/task-creation.yaml (2026-09-22,
 // local/Lemonade/Ornith/Digital Ocean, judge local), run right after

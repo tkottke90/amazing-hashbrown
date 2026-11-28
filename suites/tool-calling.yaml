@@ -64,7 +64,7 @@ scenarios:
       - path: keyword
         match: exists
 
-  - id: tools-006-use-skill-named-skill
+  - id: tools-008-use-skill-named-skill
     name: Agent calls use_skill when the request names an installed skill
     purpose: >
       Confirms the agent loads a skill itself (use_skill) when the user or a
@@ -82,7 +82,7 @@ scenarios:
       - path: name
         match: exists
 
-  - id: tools-007-search-before-use-skill
+  - id: tools-009-search-before-use-skill
     name: Agent still searches when the request names a topic but no skill
     purpose: >
       Guards the discovery half of search_skills -> use_skill: when the
