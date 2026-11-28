@@ -15,6 +15,7 @@ import { wikiRegisterDomainTool } from '../api/src/agents/tools/wiki-register-do
 import { webFetchTool } from '../api/src/agents/tools/web-fetch.tool.js';
 import { makeGetToolKeyTool } from '../api/src/agents/tools/get-tool-key.tool.js';
 import { searchSkillsTool } from '../api/src/agents/tools/search-skills.tool.js';
+import { useSkillTool } from '../api/src/agents/tools/use-skill.tool.js';
 import { makeSearchMcpToolsTool } from '../api/src/agents/tools/search-mcp-tools.tool.js';
 import { makeUseMcpToolsTool } from '../api/src/agents/tools/use-mcp-tools.tool.js';
 import { makeCreateWorkspaceTool } from '../api/src/agents/tools/create-workspace.tool.js';
@@ -116,6 +117,10 @@ export const evalTools = [
   // wasn't bound. Confirmed against chat-agent.ts's STATIC_CHAT_TOOLS array
   // (line ~280), where searchSkillsTool is unconditionally included.
   searchSkillsTool,
+  // Same "flat superset, never executed" reasoning as searchSkillsTool: the
+  // runner only inspects response.tool_calls, so the global-singleton
+  // instance is enough for suites/tool-calling.yaml's use_skill scenarios.
+  useSkillTool,
   // Also part of STATIC_CHAT_TOOLS in production but never bound here
   // before issue #276's tool-catalog cross-reference found the gap — no
   // suite could offer either as an option. Safe to include unconditionally,

@@ -114,6 +114,25 @@ describe('agents/chat-agent', () => {
     });
   });
 
+  describe('use_skill wiring in sub-agents [unit]', () => {
+    it('buildSubAgentToolCandidates() includes use_skill and the Skill-Scoped Tools it unlocks', () => {
+      const task = { id: 'task-1', workspaceId: undefined } as Task;
+      const names = buildSubAgentToolCandidates(task, undefined, []).map((t) => t.name);
+      expect(names).to.include.members(['use_skill', 'read_skill_reference', 'run_skill_script']);
+    });
+
+    // Without a middleware declaring the activeSkill state channel, use_skill's
+    // Command would write to a channel the sub-agent graph doesn't have.
+    it('buildSubAgentMiddleware() carries the Active Skill state channel and skill gating', () => {
+      const middleware = buildSubAgentMiddleware({ recursionLimit: 25, hasDelivered: () => false });
+      expect(middleware.map((m) => m.name)).to.include.members([
+        'SkillGatedToolsMiddleware',
+        'SkillScopedToolsMiddleware',
+        'SkillGatedMcpToolsMiddleware',
+      ]);
+    });
+  });
+
   describe('buildSubAgentMiddleware (issue #411, ADR-0063) [unit]', () => {
     // Direct, live-provider-free proof that a Sub-Agent Task's Run never
     // triggers AfterAgent — buildSubAgentAgent() itself has no

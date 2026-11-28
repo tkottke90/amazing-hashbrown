@@ -86,6 +86,14 @@ export const TOOL_CATALOG: CatalogEntry[] = [
     alwaysOn: false,
   },
   {
+    toolId: 'use_skill',
+    name: 'Use Skill',
+    description:
+      "Load a skill's instructions and make it the active skill — the model-driven equivalent of a slash command.",
+    category: 'built-in',
+    alwaysOn: false,
+  },
+  {
     toolId: 'search_conversation',
     name: 'Search Conversation',
     description: "Search this thread's own message history.",

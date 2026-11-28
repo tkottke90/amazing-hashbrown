@@ -32,6 +32,13 @@ const LEGACY_SUB_AGENT_TOOL_IDS = new Set([
   'get_tool_key',
   'rlm_query',
   'search_skills',
+  // use_skill and the two Skill-Scoped Tools it unlocks postdate the legacy
+  // snapshot but are added deliberately: a sub-agent that can find a skill
+  // via search_skills should be able to load it, and a loaded skill is only
+  // useful if it can read its own references and run its scripts.
+  'use_skill',
+  'read_skill_reference',
+  'run_skill_script',
   'search_conversation',
   // search_threads postdates the "today's exact membership" snapshot above
   // but is added here deliberately, for symmetry with its read-only

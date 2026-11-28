@@ -64,6 +64,26 @@ scenarios:
       - path: keyword
         match: exists
 
+  # tools-008-use-skill-named-skill: removed 2026-11-28 after two eval runs.
+  # It asserted that a request naming a skill makes the agent call use_skill
+  # on the very first turn. local (gpt-oss:20b) and Lemonade always called
+  # search_skills first instead, through two prompt revisions; Ornith and
+  # Digital Ocean called use_skill directly. Searching first is harmless —
+  # the agent still reaches the skill — so tools-010 tests the step that
+  # matters (search_skills result in context -> use_skill) instead.
+
+  - id: tools-009-search-before-use-skill
+    name: Agent still searches when the request names a topic but no skill
+    purpose: >
+      Guards the discovery half of search_skills -> use_skill: when the
+      request names only a topic, the agent must look skills up rather than
+      guess a skill name for use_skill. Without this, adding use_skill could
+      make the agent hallucinate skill names and call it blind.
+    type: tool-call
+    input: >
+      Is there a skill that can help me summarize a long document?
+    tool: search_skills
+
   # tools-005-create-tasks-after-plan-approved: removed in auto-eval round 1
   # (2026-09-22). create_tasks is deliberately absent from the plain-chat
   # tool set both in production (chat-agent.ts: "'create_tasks' is
@@ -77,6 +97,38 @@ scenarios:
   # docs/superpowers/specs/2026-09-22-agent-task-creation-design.md), with
   # both a positive and a premature-creation negative case — this scenario
   # was a redundant, mis-scoped duplicate of that coverage.
+
+  - id: tools-010-use-skill-after-search
+    name: Agent loads the skill with use_skill after search_skills found it
+    purpose: >
+      Covers the search_skills -> use_skill pipeline that non-interactive runs
+      depend on: once a search has returned the matching skill, the agent must
+      load it with use_skill rather than paraphrasing its description or
+      stopping. Some models (local, Lemonade) always verify a named skill with
+      search_skills first — that order is harmless, so what matters is that
+      the agent then goes on to call use_skill. The seeded
+      search_skills result is wrapped in an object only because a seeded tool
+      result must be a record; the real tool returns the same entries as a bare
+      JSON array.
+    type: tool-sequence
+    turns:
+      - user: >
+          I need to break some meeting notes into wiki pages. Find the right
+          skill for that and use it.
+      - tool: search_skills
+        args: { keyword: 'wiki' }
+        result:
+          skills:
+            - name: ingest-document
+              slashCommand: /ingest-document
+              description: >
+                Decompose a pasted or attached document into wiki pages,
+                planning the breakdown and confirming it before writing anything.
+    tool: use_skill
+    argChecks:
+      - path: name
+        match: equals
+        value: 'ingest-document'
 
   - id: tools-002-comfyui-then-upload
     name: Agent uploads a previously-generated image via upload_image

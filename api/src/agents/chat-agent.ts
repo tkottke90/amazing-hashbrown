@@ -34,6 +34,7 @@ import { makeWikiUpdatePageTool } from './tools/wiki-update-page.tool.js';
 import { rlmQueryTool } from './tools/rlm-query.tool.js';
 import { searchHarnessDocsTool } from './tools/search-harness-docs.tool.js';
 import { makeSearchSkillsTool } from './tools/search-skills.tool.js';
+import { makeUseSkillTool } from './tools/use-skill.tool.js';
 import { makeSearchMcpToolsTool } from './tools/search-mcp-tools.tool.js';
 import { makeUseMcpToolsTool } from './tools/use-mcp-tools.tool.js';
 import { createMcpToolDiscoveryMiddleware } from './mcp-tool-discovery.middleware.js';
@@ -503,7 +504,9 @@ function workspaceSkills(workspaceId: string | null | undefined): SkillSource {
 }
 
 function buildSkillTools(skills: SkillSource) {
-  return [makeSearchSkillsTool(skills)];
+  // use_skill rides with search_skills: it takes the same per-agent source,
+  // so a self-invoked skill resolves exactly as /name would for that agent.
+  return [makeSearchSkillsTool(skills), makeUseSkillTool(skills)];
 }
 
 // Skill-gated tools — which skill(s) unlock them is declared on each
@@ -548,12 +551,12 @@ function buildCreateSkillTools() {
 // Skill-Scoped Tools (read_skill_reference, run_skill_script) — visible
 // whenever ANY skill is Active (skillScopedToolsMiddleware), not gated to
 // one specific skill the way buildCreateSkillTools() above is. Spread into
-// buildChatAgent and buildWorkspaceChatAgent only, not buildTaskAgent: an
-// automated task run never goes through slash-command invocation, so
-// activeSkill can never be non-null there, and not buildSubAgentAgent's
-// candidate pool, which already omits every skill-gating middleware for the
-// same reason (see its own comment below). Built fresh per agent
-// construction, same TDZ/circular-import reasoning as buildGatedTools().
+// every builder that also binds use_skill (chat, workspace chat, task, and
+// the sub-agent candidate pool): a task or sub-agent run has no slash
+// command, but use_skill sets activeSkill from a tool call, so a loaded
+// skill must be able to read its own references and run its scripts there
+// too. Built fresh per agent construction, same TDZ/circular-import
+// reasoning as buildGatedTools().
 function buildSkillScopedTools() {
   return [makeReadSkillReferenceTool(), makeRunSkillScriptTool()];
 }
@@ -1066,6 +1069,7 @@ export async function buildTaskAgent(
       ...buildWorkspaceScopedTools(task.id),
       ...buildTaskRecurrenceTools(task),
       ...buildGatedTools(),
+      ...buildSkillScopedTools(),
       ...buildWikiWriteTools(),
       makeCompleteTaskTool(task.id, {
         // Read at call time so steps update_plan checked earlier in this
@@ -1110,9 +1114,9 @@ export async function buildTaskAgent(
       // ChatAgent structural type derived from buildChatAgent's middleware
       // tuple — this keeps that tuple shape matching rather than loosening
       // the type. Both attachment middlewares ride along for this reason.
-      // skillScopedToolsMiddleware rides along the same way: its two tools
-      // are never bound in this builder's tools array (see
-      // buildSkillScopedTools()'s own comment), so its filter is inert here.
+      // skillScopedToolsMiddleware hides its two tools until a skill is
+      // Active — which a task run now reaches via use_skill (see
+      // buildSkillScopedTools()'s own comment).
       attachmentAwarenessMiddleware,
       wikiReferenceExpansionMiddleware,
       binaryContentFetchMiddleware,
@@ -1176,9 +1180,11 @@ export async function buildTaskAgent(
 //     stagnation, or a long unbroken tool-call streak) stops the run and
 //     reports back to the parent via a thrown StagnationLimitError instead.
 //     The smaller hard env.agent.subAgentRecursionLimit ceiling remains a
-//     second, independent backstop underneath it. Omits the skill-gating
-//     middlewares (the only tools they gate — create-workspace/create-project
-//     — aren't in this tool list).
+//     second, independent backstop underneath it. Carries the Active Skill
+//     state channel plus the skill-gating middlewares so use_skill works
+//     here: a loaded skill's `tools:` (skill-gated MCP tools) and the
+//     Skill-Scoped Tools bind exactly as in chat. The built-in gated tools
+//     (create-workspace/create-project) still aren't in this tool list.
 // See docs/superpowers/specs/2026-09-09-sub-agent-tooling-design.md §3 and
 // docs/superpowers/specs/2026-09-13-tool-settings-redesign-design.md §6.
 // ---------------------------------------------------------------------------
@@ -1200,6 +1206,7 @@ export function buildSubAgentToolCandidates(
     ...STATIC_CHAT_TOOLS,
     makeGetToolKeyTool(workspaceScope?.workspaceContext.location),
     ...buildSkillTools(workspaceSkills(task.workspaceId)),
+    ...buildSkillScopedTools(),
     ...buildWikiWriteTools(),
     makeShellExecTool(workspaceScope?.workspaceContext.location, {
       autoApprove: workspaceScope?.workspaceContext.autoApproveShell,
@@ -1259,8 +1266,13 @@ export function buildSubAgentMiddleware(options: {
     }),
     createHistoryCompactionMiddleware(env.chat?.contextWindow, env.chat?.historyCompaction),
     createContextWindowMiddleware(env.chat?.contextWindow),
+    // Declare the activeSkill state channel use_skill writes to, and apply
+    // the same gating chat does — see this builder's header comment.
+    skillGatedToolsMiddleware,
+    skillScopedToolsMiddleware,
     toolAccessMiddleware,
     createMcpToolDiscoveryMiddleware(options.mcpTools ?? []),
+    createSkillGatedMcpToolsMiddleware(options.mcpTools ?? []),
     ambientContextMiddleware,
     toolErrorRecoveryMiddleware,
   ];

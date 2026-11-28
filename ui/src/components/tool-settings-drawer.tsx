@@ -1,5 +1,5 @@
 import { useSignal, type Signal } from '@preact/signals';
-import { useEffect } from 'preact/hooks';
+import { useEffect, useLayoutEffect } from 'preact/hooks';
 import { DialogBody, DialogFooter, Drawer, useDialog } from '@tkottke90/preact-dialog';
 import { Loader2 } from 'lucide-preact';
 import { Label } from '@/components/ui/label';
@@ -154,8 +154,13 @@ function ToolSettingsForm({ tool, onSaved, openCount }: ToolSettingsFormProps) {
   // Dialog children stay mounted between opens (see mcp-server-drawer.tsx's
   // identical comment) — reset local form state every time this specific
   // tool's drawer is reopened.
+  //
+  // A layout effect, not a passive one: passive effects are deferred until
+  // after the next paint, and the drawer is already open (and typeable) by
+  // then — a value entered in that gap was overwritten by this reset, so
+  // Save sent the tool's original settings.
   const openedAt = openCount.value;
-  useEffect(() => {
+  useLayoutEffect(() => {
     description.value = tool.description;
     instructions.value = tool.instructions;
     enabled.value = tool.enabled;
