@@ -211,7 +211,9 @@ test.describe(
       await page.getByRole('button', { name: 'Open in editor' }).click();
 
       await expect(page.getByRole('button', { name: 'Document' })).toHaveClass(/bg-muted/);
-      expect(requestedUrl).not.toBeNull();
+      // The Document tab activates before its page fetch is issued, so wait
+      // for the request rather than asserting on it the instant the tab flips.
+      await expect.poll(() => requestedUrl).not.toBeNull();
       expect(requestedUrl).toContain('/domains/domain-a/pages/entities/n1');
       expect(requestedUrl).not.toContain('domain-a:entities');
       expect(requestedUrl).not.toContain('domain-a%3Aentities');

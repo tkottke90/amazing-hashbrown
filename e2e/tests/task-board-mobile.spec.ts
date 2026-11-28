@@ -259,6 +259,13 @@ test.describe(
 
       await pauseBeforeAction(page, testInfo);
       await page.getByTestId('quick-add-button').click();
+      // Wait for the sheet to actually be open before typing. Between the click
+      // and Dialog's showModal() the <dialog> is still inert (see Dialog.tsx),
+      // so fill() can't focus the input and silently types nothing — leaving
+      // "Add" disabled. A role query skips the still-hidden dialog, so this
+      // resolves only once the sheet is interactive (a user can't type that
+      // early; Playwright can).
+      await expect(page.getByRole('dialog', { name: 'New task' })).toBeVisible();
       await page.getByLabel('Task title').fill('Renew certificates');
       await pauseBeforeAction(page, testInfo);
       await page.getByTestId('quick-add-form').getByRole('button', { name: 'Add' }).click();
