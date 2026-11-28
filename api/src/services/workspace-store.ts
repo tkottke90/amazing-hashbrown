@@ -6,6 +6,11 @@ import { isCronTrigger, statusForSavedSchedule, type CronConfig } from './cron-c
 import { settleCronRun } from './cron-settlement.js';
 import { resolveProviderConfig } from './provider-factory.js';
 import { findDuplicateTask } from './task-dedup.js';
+import {
+  CONTINUE_CHOICE,
+  STOP_AND_SUMMARIZE_CHOICE,
+  LOOP_GUARD_ESCALATION_KINDS,
+} from '../agents/loop-guard-choices.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -1124,6 +1129,59 @@ const MIGRATIONS: DbMigration[] = [
       ALTER TABLE task_queue ADD COLUMN scope_title TEXT;
       ALTER TABLE task_queue ADD COLUMN scope_description TEXT;
       ALTER TABLE task_queue ADD COLUMN retry_context TEXT;
+    `,
+  },
+  {
+    version: 49,
+    // Telemetry views (docs/superpowers/specs/2026-11-28-task-hitl-telemetry-design.md).
+    // Owned here but they read thread_messages (ThreadStore) and
+    // observability_traces (ObservabilityStore) too — every store shares one
+    // database. SQLite doesn't resolve a view's tables until it is queried,
+    // so a WorkspaceStore built without those tables only fails if it queries
+    // these. To change either view, add a migration that drops and recreates
+    // it; CREATE VIEW IF NOT EXISTS silently keeps the old definition.
+    //
+    // v_escalation_outcomes: one row per ANSWERED Loop-Guard Escalation in a
+    // Task Run's own thread. A mirrored copy (payload.sourcePromptId) lives
+    // in a workspace chat thread, never a run thread, but is excluded
+    // explicitly so a copy can never be counted as a second escalation.
+    // v_task_run_durations: one row per settled Run. provider/model come from
+    // the Run's EARLIEST task-run trace (a resumed Run opens another trace on
+    // the same thread; the loop guard's own reflection call writes a
+    // 'loop-guard' trace there too, which must not name the Run's model).
+    sql: `
+      CREATE VIEW IF NOT EXISTS v_escalation_outcomes AS
+      SELECT
+        CASE json_extract(m.payload, '$.answer')
+          WHEN '${CONTINUE_CHOICE}' THEN 'continue'
+          WHEN '${STOP_AND_SUMMARIZE_CHOICE}' THEN 'stop_and_summarize'
+          ELSE 'custom'
+        END AS answer,
+        CASE q.status
+          WHEN 'done' THEN 'done'
+          WHEN 'handed_off' THEN 'blocked'
+          ELSE 'other'
+        END AS outcome
+      FROM thread_messages m
+      JOIN task_queue q ON q.thread_id = m.thread_id
+      WHERE m.kind = 'hitl_prompt'
+        AND m.status = 'answered'
+        AND json_extract(m.payload, '$.kind') IN (${LOOP_GUARD_ESCALATION_KINDS.map((k) => `'${k}'`).join(', ')})
+        AND json_extract(m.payload, '$.sourcePromptId') IS NULL;
+
+      CREATE VIEW IF NOT EXISTS v_task_run_durations AS
+      SELECT
+        COALESCE(t.provider, 'unknown') AS provider,
+        COALESCE(t.model, 'unknown')    AS model,
+        (julianday(q.finished_at) - julianday(q.started_at)) * 86400.0 AS seconds
+      FROM task_queue q
+      LEFT JOIN observability_traces t ON t.trace_id = (
+        SELECT trace_id FROM observability_traces
+        WHERE thread_id = q.thread_id AND source = 'task-run'
+        ORDER BY started_at ASC
+        LIMIT 1
+      )
+      WHERE q.started_at IS NOT NULL AND q.finished_at IS NOT NULL;
     `,
   },
 ];
@@ -2353,6 +2411,60 @@ export class WorkspaceStore extends BaseStore {
     const row = this.db.prepare(`SELECT * FROM task_queue WHERE id = ?`).get(id) as
       RawQueueRow | undefined;
     return row ? mapQueueEntry(row) : null;
+  }
+
+  // -------------------------------------------------------------------------
+  // Telemetry reads — see docs/superpowers/specs/2026-11-28-task-hitl-telemetry-design.md.
+  // Each returns the currently-stored population (rows are deletable, so
+  // these are gauges, never cumulative counters — ADR-0078).
+  // -------------------------------------------------------------------------
+
+  // Answered Loop-Guard Escalations by Escalation Answer × Escalation Outcome.
+  queryEscalationOutcomes(): Array<{ answer: string; outcome: string; count: number }> {
+    return this.db
+      .prepare(
+        `SELECT answer, outcome, COUNT(*) AS count FROM v_escalation_outcomes GROUP BY answer, outcome`,
+      )
+      .all() as Array<{ answer: string; outcome: string; count: number }>;
+  }
+
+  // Settled Runs and their total wall-clock seconds per provider/model.
+  queryTaskRunDurations(): Array<{
+    provider: string;
+    model: string;
+    count: number;
+    seconds: number;
+  }> {
+    return this.db
+      .prepare(
+        `SELECT provider, model, COUNT(*) AS count, SUM(seconds) AS seconds
+         FROM v_task_run_durations GROUP BY provider, model`,
+      )
+      .all() as Array<{ provider: string; model: string; count: number; seconds: number }>;
+  }
+
+  // Board Tasks currently 'done' and every Run (any status) they have.
+  queryDoneTaskRunStats(): { tasks: number; runs: number } {
+    return this.db
+      .prepare(
+        `SELECT
+           (SELECT COUNT(*) FROM tasks WHERE status = 'done' AND NOT ${subAgentTaskSql()}) AS tasks,
+           (SELECT COUNT(*) FROM task_queue q JOIN tasks t ON t.id = q.task_id
+              WHERE t.status = 'done' AND NOT ${subAgentTaskSql('t')}) AS runs`,
+      )
+      .get() as { tasks: number; runs: number };
+  }
+
+  // Board Tasks currently 'done' that have a non-empty plan, and their total steps.
+  queryDonePlanStats(): { tasksWithPlan: number; planSteps: number } {
+    return this.db
+      .prepare(
+        `SELECT COUNT(*) AS tasksWithPlan, COALESCE(SUM(json_array_length(plan)), 0) AS planSteps
+         FROM tasks
+         WHERE status = 'done' AND NOT ${subAgentTaskSql()}
+           AND plan IS NOT NULL AND json_array_length(plan) > 0`,
+      )
+      .get() as { tasksWithPlan: number; planSteps: number };
   }
 
   // Records the thread a run executes in — set once, on the run's first

@@ -2,6 +2,8 @@ import type { Registry } from '@prometheus-io/client';
 import { env } from '../config/env.js';
 import { getUsageStore } from '../services/usage.js';
 import { getObservabilityStore } from '../services/observability.js';
+import { getThreadStore } from '../services/thread-store.js';
+import { getWorkspaceStore } from '../services/workspace-store.js';
 import { createTelemetryRegistry } from '../services/telemetry/registry.js';
 
 export interface HandlerFailure {
@@ -28,7 +30,12 @@ const defaultDeps: ScrapeDeps = {
   // Read per request so toggling `telemetry.enabled` needs no restart.
   isEnabled: () => env.telemetry.enabled,
   getRegistry: () => {
-    _registry ??= createTelemetryRegistry({ getUsageStore, getObservabilityStore });
+    _registry ??= createTelemetryRegistry({
+      getUsageStore,
+      getObservabilityStore,
+      getThreadStore,
+      getWorkspaceStore,
+    });
     return _registry;
   },
 };

@@ -723,7 +723,7 @@ Exposing the app's own usage numbers to an external time-series system, rather t
 ## Language
 
 **Telemetry Endpoint**:
-The `GET /metrics` route, in Prometheus text format, that lets a Prometheus server scrape cumulative counters — token and cost totals per provider and model, and call and failure totals per tool — so usage can be graphed over time. Off by default (`telemetry.enabled`) because it exposes provider/model names and spend and the API has no auth. Every counter is derived at scrape time from stored data, never incremented as usage happens (ADR-0077). Unrelated to System Widget **Metrics**, which are dashboard computations served from `/api/v1/metrics`; the two read overlapping data but share no code.
+The `GET /metrics` route, in Prometheus text format, that lets a Prometheus server scrape cumulative counters — token and cost totals per provider and model, and call and failure totals per tool — so usage can be graphed over time. Off by default (`telemetry.enabled`) because it exposes provider/model names and spend and the API has no auth. Every counter or gauge is derived at scrape time from stored data, never incremented as usage happens (ADR-0077, ADR-0078). Unrelated to System Widget **Metrics**, which are dashboard computations served from `/api/v1/metrics`; the two read overlapping data but share no code.
 _Avoid_: Metrics endpoint, Prometheus metrics (ambiguous with Metric), monitoring
 
 **Escalation Outcome**:

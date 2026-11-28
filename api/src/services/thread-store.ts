@@ -1,5 +1,10 @@
 import { BaseStore, type DbMigration, type SqliteDatabase } from '@tkottke90/llm-common-types/db';
 import { logger } from '../config/logger.js';
+import {
+  CONTINUE_CHOICE,
+  STOP_AND_SUMMARIZE_CHOICE,
+  LOOP_GUARD_ESCALATION_KINDS,
+} from '../agents/loop-guard-choices.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -558,6 +563,46 @@ export class ThreadStore extends BaseStore {
       if (!result.has(row.thread_id)) result.set(row.thread_id, mapMessageRow(row));
     }
     return result;
+  }
+
+  // Telemetry read (docs/superpowers/specs/2026-11-28-task-hitl-telemetry-design.md
+  // §4.1): every stored Loop-Guard Escalation by kind, owning thread type and
+  // Escalation Answer. A gauge over what is stored now — threads are
+  // deletable (ADR-0078). Mirrored copies of a Task Run's prompt (they carry
+  // payload.sourcePromptId) are skipped so one escalation never counts twice.
+  // thread_messages has no index on kind; this scans it per scrape.
+  queryLoopGuardEscalations(): Array<{
+    kind: string;
+    context: string;
+    answer: string;
+    count: number;
+  }> {
+    const kinds = LOOP_GUARD_ESCALATION_KINDS.map(() => '?').join(', ');
+    return this.db
+      .prepare(
+        `SELECT
+           json_extract(m.payload, '$.kind') AS kind,
+           th.type AS context,
+           CASE
+             WHEN m.status = 'pending' THEN 'pending'
+             WHEN json_extract(m.payload, '$.answer') = ? THEN 'continue'
+             WHEN json_extract(m.payload, '$.answer') = ? THEN 'stop_and_summarize'
+             ELSE 'custom'
+           END AS answer,
+           COUNT(*) AS count
+         FROM thread_messages m
+         JOIN threads th ON th.id = m.thread_id
+         WHERE m.kind = 'hitl_prompt'
+           AND json_extract(m.payload, '$.kind') IN (${kinds})
+           AND json_extract(m.payload, '$.sourcePromptId') IS NULL
+         GROUP BY kind, context, answer`,
+      )
+      .all(CONTINUE_CHOICE, STOP_AND_SUMMARIZE_CHOICE, ...LOOP_GUARD_ESCALATION_KINDS) as Array<{
+      kind: string;
+      context: string;
+      answer: string;
+      count: number;
+    }>;
   }
 
   // Returns the id of the thread's most recent message if it's a failed

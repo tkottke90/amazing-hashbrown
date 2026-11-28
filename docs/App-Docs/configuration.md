@@ -186,6 +186,24 @@ Exposed counters (all cumulative, restart-safe, derived from stored data at scra
 `direction` is `input` or `output`. Tool failure rate is a query, not a metric:
 `rate(hashbrown_tool_call_failures_total[5m]) / rate(hashbrown_tool_calls_total[5m])`.
 
+Exposed gauges (the current total over what is stored right now, so they can fall when a Task,
+Run or thread is deleted; read them as levels, not with `rate()`):
+
+| Metric                                     | Labels                      | Meaning                                                                                     |
+| ------------------------------------------ | --------------------------- | ------------------------------------------------------------------------------------------- |
+| `hashbrown_loop_guard_escalations`         | `kind`, `context`, `answer` | Loop-Guard Escalations; `answer` is `continue`, `stop_and_summarize`, `custom` or `pending` |
+| `hashbrown_loop_guard_escalation_outcomes` | `answer`, `outcome`         | Answered escalations by how the Run ended: `done`, `blocked` or `other`                     |
+| `hashbrown_done_tasks`                     | —                           | Board Tasks currently done                                                                  |
+| `hashbrown_done_task_runs`                 | —                           | Runs (any status) of done Tasks                                                             |
+| `hashbrown_done_tasks_with_plan`           | —                           | Done Tasks with a non-empty plan                                                            |
+| `hashbrown_done_task_plan_steps`           | —                           | Plan steps across those Tasks                                                               |
+| `hashbrown_task_runs_finished`             | `provider`, `model`         | Settled Runs                                                                                |
+| `hashbrown_task_run_seconds`               | `provider`, `model`         | Wall-clock seconds of those Runs, including time waiting on a human                         |
+
+Averages are ratios of two gauges: `hashbrown_done_task_runs / hashbrown_done_tasks` (Runs per
+completed Task), `hashbrown_done_task_plan_steps / hashbrown_done_tasks_with_plan` (plan steps),
+`hashbrown_task_run_seconds / hashbrown_task_runs_finished` (average Run seconds per model).
+
 A minimal Prometheus scrape config:
 
 ```yaml
