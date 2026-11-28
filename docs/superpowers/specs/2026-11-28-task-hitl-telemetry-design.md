@@ -140,8 +140,8 @@ Per `AGENTS.md`, every new unit is tested; tests sit beside the source and carry
 - Shell-approval and `ask_user` HITL metrics.
 - Pruning/retention of Runs, threads or prompts; deletion is already handled by the gauge model.
 
-## 8. Points to confirm in review
+## 8. Review decisions
 
-1. **Gauges for everything** (§ 3). Earlier in the discussion #1, #2 and #4 were slated to be counters and only #3 and #5 gauges. Task and thread deletion makes that unsafe for all five.
-2. **Sub-Agent Task Runs are included in #4** but excluded from #3 and #5.
-3. **`hitl_prompt` scan has no index** on `kind` (§ 4.1).
+1. **Gauges for everything** (§ 3) — confirmed. Earlier in the discussion #1, #2 and #4 were slated to be counters and only #3 and #5 gauges; Task and thread deletion makes that unsafe for all five.
+2. **Sub-Agent Task Runs stay in #4** — confirmed. Run duration counts every settled Run, Sub-Agent Tasks included; runs-per-task (#3) and plan steps (#5) still exclude them.
+3. **Open: `hitl_prompt` scan has no index** on `kind` (§ 4.1). Accepted for now; add the short cache from ADR-0077 if scrapes get slow.
