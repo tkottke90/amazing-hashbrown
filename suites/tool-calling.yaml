@@ -64,23 +64,13 @@ scenarios:
       - path: keyword
         match: exists
 
-  - id: tools-008-use-skill-named-skill
-    name: Agent calls use_skill when the request names an installed skill
-    purpose: >
-      Confirms the agent loads a skill itself (use_skill) when the user or a
-      task description names one, instead of paraphrasing what it guesses the
-      skill does or only searching for it. This is the self-invocation path
-      non-interactive runs depend on: nobody types a slash command there, so
-      if the agent doesn't call use_skill it never gets the skill's
-      instructions or gated tools.
-    type: tool-call
-    input: >
-      Use the ingest-document skill to break these meeting notes into wiki
-      pages: "Q3 planning: ship v2 in October; hire two engineers."
-    tool: use_skill
-    argChecks:
-      - path: name
-        match: exists
+  # tools-008-use-skill-named-skill: removed 2026-11-28 after two eval runs.
+  # It asserted that a request naming a skill makes the agent call use_skill
+  # on the very first turn. local (gpt-oss:20b) and Lemonade always called
+  # search_skills first instead, through two prompt revisions; Ornith and
+  # Digital Ocean called use_skill directly. Searching first is harmless —
+  # the agent still reaches the skill — so tools-010 tests the step that
+  # matters (search_skills result in context -> use_skill) instead.
 
   - id: tools-009-search-before-use-skill
     name: Agent still searches when the request names a topic but no skill
@@ -114,9 +104,9 @@ scenarios:
       Covers the search_skills -> use_skill pipeline that non-interactive runs
       depend on: once a search has returned the matching skill, the agent must
       load it with use_skill rather than paraphrasing its description or
-      stopping. Added after tools-008 showed local and Lemonade always verify a
-      named skill with search_skills first — that order is harmless, so what
-      matters is that the agent then goes on to call use_skill. The seeded
+      stopping. Some models (local, Lemonade) always verify a named skill with
+      search_skills first — that order is harmless, so what matters is that
+      the agent then goes on to call use_skill. The seeded
       search_skills result is wrapped in an object only because a seeded tool
       result must be a record; the real tool returns the same entries as a bare
       JSON array.

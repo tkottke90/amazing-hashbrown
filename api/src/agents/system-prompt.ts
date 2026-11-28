@@ -1907,14 +1907,16 @@ not as one call.`;
 // (tools-003's bare "what skills do you have" vs. tools-004's topic-named
 // "skills for summarizing") per interpreting-results.md §3.
 //
-// use_skill guidance added with the use_skill tool. First eval run of
-// tools-008-use-skill-named-skill (2026-11-28, judge anthropic): Ornith and
-// Digital Ocean called use_skill directly; local (gpt-oss:20b) and Lemonade
-// both called search_skills({keyword: "ingest-document"}) first even though
-// the request already named the skill — local's reasoning: "We need to check
-// search_skills. Let's search for ingest-document." The first wording said
-// "don't search first" but gave no reason. Added the reason plus the
-// contrasting topic-only case (tools-009), the same pair the suite tests.
+// use_skill guidance added with the use_skill tool. First eval runs of a
+// since-removed scenario that asserted use_skill on the first turn for a
+// request naming the skill (2026-11-28, judge anthropic): Ornith and Digital
+// Ocean called use_skill directly; local (gpt-oss:20b) and Lemonade both
+// called search_skills first even though the request already named the skill
+// — local's reasoning: "We need to check search_skills. Let's search for
+// ingest-document." Adding the reason for "don't search first" plus the
+// contrasting topic-only case (tools-009) did not change that, so the
+// scenario was replaced by tools-010 (search_skills result -> use_skill).
+// The wording stays: it did no harm and the other two models follow it.
 const SEARCH_SKILLS_SECTION = `search_skills looks up installed skills by name, description, or slash command. When the user's
 question names a specific topic or task — "do you have anything for summarizing content?", "any
 skills for X?" — pass that topic as the keyword argument so the search itself narrows the results,
