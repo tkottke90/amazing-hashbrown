@@ -458,6 +458,14 @@ _Avoid_: Making progress, on track
 A one-time injected directive — fired the first time any loop-guard trigger (step-count check-in, Reflection's non-Converging verdict) would otherwise end a Sub-Agent Task's Run outright — telling it to stop investigating and call `complete_task` with whatever it has confirmed, since there is no further grace after this. If the same trigger fires again with nothing delivered, the Run ends as a Loop-Guard Exhaustion (GLOSSARY.md § Task Runs, ADR-0062).
 _Avoid_: Final warning, last chance, wrap-up nudge
 
+**Loop-Guard Escalation**:
+A HITL prompt raised by the Loop Guard on a board Task's Run or a chat turn — `loop_stagnation_warning` when Reflection judges the Run not Converging, `recursion_limit_warning` at the step-limit check-in — offering "Continue working", "Stop and summarize what you have done so far", or free text. Never raised on a Sub-Agent Task's Run, which gets a Delivery Nudge instead. Distinct from an `ask_user` or shell-approval prompt, which the agent or a tool raises for its own reasons.
+_Avoid_: Stuck prompt, progress prompt, loop warning
+
+**Escalation Answer**:
+Which of three things a user chose in response to a Loop-Guard Escalation: `continue` ("Continue working"), `stop_and_summarize` ("Stop and summarize what you have done so far"), or `custom` (any free text, injected back to the Run as user guidance). An unanswered Escalation is `pending`, not an Escalation Answer.
+_Avoid_: Choice, response, resolution
+
 # MCP Tooling
 
 How this app discovers and names tools exposed by a configured MCP server, so one server's tool can never collide with another's and the model always sees a single, unambiguous name.
@@ -719,5 +727,13 @@ Exposing the app's own usage numbers to an external time-series system, rather t
 ## Language
 
 **Telemetry Endpoint**:
-The `GET /metrics` route, in Prometheus text format, that lets a Prometheus server scrape cumulative counters — token and cost totals per provider and model, and call and failure totals per tool — so usage can be graphed over time. Off by default (`telemetry.enabled`) because it exposes provider/model names and spend and the API has no auth. Every counter is derived at scrape time from stored data, never incremented as usage happens (ADR-0077). Unrelated to System Widget **Metrics**, which are dashboard computations served from `/api/v1/metrics`; the two read overlapping data but share no code.
+The `GET /metrics` route, in Prometheus text format, that lets a Prometheus server scrape cumulative counters — token and cost totals per provider and model, and call and failure totals per tool — so usage can be graphed over time. Off by default (`telemetry.enabled`) because it exposes provider/model names and spend and the API has no auth. Every counter or gauge is derived at scrape time from stored data, never incremented as usage happens (ADR-0077, ADR-0078). Unrelated to System Widget **Metrics**, which are dashboard computations served from `/api/v1/metrics`; the two read overlapping data but share no code.
 _Avoid_: Metrics endpoint, Prometheus metrics (ambiguous with Metric), monitoring
+
+**Escalation Outcome**:
+How the Run that raised an answered Loop-Guard Escalation ended: `done` for a `done` Run, `blocked` for a Handed-Off Run (which settles its Task to `blocked`), `other` for anything else, including a Run not yet settled. A property of the Run, not the Task — a Task's own status changes again when it is reopened or rerun, a Run's does not.
+_Avoid_: Task outcome (that is a Task File's own record of its latest Run), result
+
+**Gauge Metric**:
+A Telemetry Endpoint value that is the current total over what is stored right now, so it can fall when a Task, Run or thread is deleted — unlike the cumulative counters, which are never expected to decrease. Read as a level, not a rate (ADR-0078).
+_Avoid_: Counter (reserved for the cumulative, never-decreasing metrics)

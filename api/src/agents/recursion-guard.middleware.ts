@@ -4,6 +4,7 @@ import { createMiddleware } from 'langchain';
 import { z } from 'zod';
 import type { LoopGuardConfig } from '../config/env.js';
 import { evaluateLoopProgress } from './loop-reflection.js';
+import { CONTINUE_CHOICE, STOP_AND_SUMMARIZE_CHOICE } from './loop-guard-choices.js';
 
 // Thrown instead of calling interrupt() when this middleware is running in
 // "throw" escalation mode (sub-agent runs — interrupt() has nothing watching
@@ -237,7 +238,7 @@ export function createRecursionGuardMiddleware(options: RecursionGuardOptions) {
       throw new StagnationLimitError(summary, reason);
     }
 
-    const choices = ['Continue working', 'Stop and summarize what you have done so far'];
+    const choices = [CONTINUE_CHOICE, STOP_AND_SUMMARIZE_CHOICE];
     const answer = interrupt(
       reason === 'step_limit'
         ? {
@@ -257,7 +258,7 @@ export function createRecursionGuardMiddleware(options: RecursionGuardOptions) {
           },
     );
 
-    if (typeof answer === 'string' && answer !== 'Continue working') {
+    if (typeof answer === 'string' && answer !== CONTINUE_CHOICE) {
       return { messages: [new HumanMessage(`[User guidance]: ${answer}`)] };
     }
     return undefined;
