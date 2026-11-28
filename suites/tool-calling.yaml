@@ -108,6 +108,38 @@ scenarios:
   # both a positive and a premature-creation negative case — this scenario
   # was a redundant, mis-scoped duplicate of that coverage.
 
+  - id: tools-010-use-skill-after-search
+    name: Agent loads the skill with use_skill after search_skills found it
+    purpose: >
+      Covers the search_skills -> use_skill pipeline that non-interactive runs
+      depend on: once a search has returned the matching skill, the agent must
+      load it with use_skill rather than paraphrasing its description or
+      stopping. Added after tools-008 showed local and Lemonade always verify a
+      named skill with search_skills first — that order is harmless, so what
+      matters is that the agent then goes on to call use_skill. The seeded
+      search_skills result is wrapped in an object only because a seeded tool
+      result must be a record; the real tool returns the same entries as a bare
+      JSON array.
+    type: tool-sequence
+    turns:
+      - user: >
+          I need to break some meeting notes into wiki pages. Find the right
+          skill for that and use it.
+      - tool: search_skills
+        args: { keyword: 'wiki' }
+        result:
+          skills:
+            - name: ingest-document
+              slashCommand: /ingest-document
+              description: >
+                Decompose a pasted or attached document into wiki pages,
+                planning the breakdown and confirming it before writing anything.
+    tool: use_skill
+    argChecks:
+      - path: name
+        match: equals
+        value: 'ingest-document'
+
   - id: tools-002-comfyui-then-upload
     name: Agent uploads a previously-generated image via upload_image
     purpose: >
