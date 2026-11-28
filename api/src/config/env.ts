@@ -349,6 +349,13 @@ export const UpdatesSchema = z.object({
   checkForUpdates: z.boolean().default(false),
 });
 
+// Opt-in, off by default: the Telemetry Endpoint (`GET /metrics`) exposes
+// provider/model names, token counts and spend, and the API has no auth.
+// See docs/superpowers/specs/2026-11-27-telemetry-endpoint-design.md.
+export const TelemetrySchema = z.object({
+  enabled: z.boolean().default(false),
+});
+
 export const ContextWindowSchema = z.object({
   enabled: z.boolean().default(true),
   // Floored well above MIN_BUDGET_FLOOR (chat-agent.ts) — a value this low
@@ -697,6 +704,7 @@ const AppConfigSchema = z.object({
   observability: ObservabilitySchema.optional(),
   afterAgent: AfterAgentSchema.optional(),
   updates: UpdatesSchema.optional(),
+  telemetry: TelemetrySchema.optional(),
   chat: ChatSchema.optional(),
   taskBoard: TaskBoardSchema.optional(),
   taskCreation: TaskCreationSchema.optional(),
@@ -832,6 +840,16 @@ export const env = {
       >;
     } catch {
       return UpdatesSchema.parse({});
+    }
+  },
+  get telemetry(): z.infer<typeof TelemetrySchema> {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (configManager as any).getSection('telemetry', TelemetrySchema) as z.infer<
+        typeof TelemetrySchema
+      >;
+    } catch {
+      return TelemetrySchema.parse({});
     }
   },
   get chat(): z.infer<typeof ChatSchema> {
